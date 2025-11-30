@@ -1,64 +1,150 @@
-import { Eye, RotateCcw, ClipboardCopy, Ban } from "lucide-react";
+import { useState } from "react";
+import { FaWindows, FaLinux, FaAws, FaServer } from "react-icons/fa";
+import { SiCisco, SiMysql, SiPostgresql } from "react-icons/si";
 
-const vaultItems = [
-  { account: "root", system: "Linux-Server-01", type: "Local Account", lastRotation: "Сегодня 09:20", status: "Protected" },
-  { account: "domain_admin", system: "AD-DC01", type: "Domain Admin", lastRotation: "Вчера 18:12", status: "Scheduled" },
-  { account: "sysdba", system: "Oracle-DB-PROD", type: "DBA Account", lastRotation: "17.11.2025 10:44", status: "Protected" },
-  { account: "enable_mode", system: "Cisco-ASA-FW", type: "Network Admin", lastRotation: "Сегодня 07:30", status: "Protected" },
-  { account: "root", system: "Solaris-CoreBank", type: "Privileged", lastRotation: "15.11.2025 22:11", status: "Protected" },
-  { account: "administrator", system: "Windows-RDP01", type: "RDP Access", lastRotation: "Сегодня 06:51", status: "Protected" },
-];
+import MFAConfirmModal from "../components/modals/MFAConfirmModal";
+
+interface SecretRecord {
+  system: string;
+  icon: JSX.Element;
+  login: string;
+  updated: string;
+  type: string;
+}
 
 export default function Vault() {
-  return (
-    <div className="space-y-8">
-      <h1 className="text-3xl font-bold">Vault — Хранилище привилегированных паролей</h1>
+  const [openMFA, setOpenMFA] = useState(false);
+  const [selectedSecret, setSelectedSecret] = useState<string | null>(null);
 
-      <div className="bg-white p-6 rounded-xl shadow-md">
-        <table className="w-full text-left">
+  const secrets: SecretRecord[] = [
+    {
+      system: "Windows Server 2019 Prod",
+      icon: <FaWindows className="text-blue-600" />,
+      login: "administrator",
+      updated: "12.11.2025",
+      type: "Пароль",
+    },
+    {
+      system: "Active Directory Admin",
+      icon: <FaWindows className="text-blue-700" />,
+      login: "corp-admin",
+      updated: "10.11.2025",
+      type: "Пароль",
+    },
+    {
+      system: "Linux Root (Ubuntu Prod)",
+      icon: <FaLinux className="text-orange-600" />,
+      login: "root",
+      updated: "05.11.2025",
+      type: "SSH ключ",
+    },
+    {
+      system: "Cisco ASA Firewall",
+      icon: <SiCisco className="text-red-600" />,
+      login: "enable",
+      updated: "01.11.2025",
+      type: "Пароль",
+    },
+    {
+      system: "PostgreSQL Cluster",
+      icon: <SiPostgresql className="text-blue-800" />,
+      login: "pg-admin",
+      updated: "20.10.2025",
+      type: "Пароль",
+    },
+    {
+      system: "MySQL Backup Server",
+      icon: <SiMysql className="text-blue-500" />,
+      login: "db-backup",
+      updated: "17.10.2025",
+      type: "Пароль",
+    },
+    {
+      system: "AWS Console Root",
+      icon: <FaAws className="text-yellow-500" />,
+      login: "aws-root",
+      updated: "25.09.2025",
+      type: "Access Keys",
+    },
+    {
+      system: "Solaris Root",
+      icon: <FaServer className="text-orange-600" />,
+      login: "root",
+      updated: "21.09.2025",
+      type: "SSH ключ",
+    },
+  ];
+
+  const handleAction = (secret: string) => {
+    setSelectedSecret(secret);
+    setOpenMFA(true);
+  };
+
+  return (
+    <div className="min-h-screen w-full bg-white p-8 text-black">
+      <h1 className="text-3xl font-bold mb-2">Хранилище привилегий (Vault)</h1>
+
+      <p className="text-gray-600 mb-6 text-lg">
+        Централизованное безопасное хранилище для паролей, SSH-ключей, root-доступов и токенов API.
+      </p>
+
+      <div className="flex justify-between mb-4">
+        <div className="text-gray-700 font-medium">
+          Количество секретов: <span className="font-bold">{secrets.length}</span>
+        </div>
+
+        <button className="k-btn-primary">+ Добавить секрет</button>
+      </div>
+
+      <div className="table-container animate-fadeIn">
+        <table className="k-table">
           <thead>
-            <tr className="border-b">
-              <th className="py-3 font-semibold text-gray-600">Аккаунт</th>
-              <th className="py-3 font-semibold text-gray-600">Система</th>
-              <th className="py-3 font-semibold text-gray-600">Тип доступа</th>
-              <th className="py-3 font-semibold text-gray-600">Rotation</th>
-              <th className="py-3 font-semibold text-gray-600">Статус</th>
-              <th className="py-3 font-semibold text-gray-600 text-center">Действия</th>
+            <tr>
+              <th className="k-th">Система</th>
+              <th className="k-th">Логин</th>
+              <th className="k-th">Последнее обновление</th>
+              <th className="k-th">Тип</th>
+              <th className="k-th text-center">Действие</th>
             </tr>
           </thead>
 
           <tbody>
-            {vaultItems.map((item, index) => (
-              <tr key={index} className="border-b hover:bg-gray-50 transition">
-                <td className="py-4">{item.account}</td>
-                <td className="py-4">{item.system}</td>
-                <td className="py-4">{item.type}</td>
-                <td className="py-4">{item.lastRotation}</td>
-                <td className="py-4">
-                  <span className="text-blue-600 font-semibold">{item.status}</span>
+            {secrets.map((item, index) => (
+              <tr className="k-tr" key={index}>
+                <td className="k-td flex items-center gap-2">
+                  {item.icon} {item.system}
                 </td>
+                <td className="k-td">{item.login}</td>
+                <td className="k-td">{item.updated}</td>
+                <td className="k-td">{item.type}</td>
+                <td className="k-td flex justify-center gap-2">
+                  <button
+                    className="k-btn-primary"
+                    onClick={() => handleAction(item.system)}
+                  >
+                    Показать
+                  </button>
 
-                <td className="py-4">
-                  <div className="flex justify-center gap-4 text-gray-700">
-                    <button className="hover:text-blue-600 transition" title="Просмотр пароля">
-                      <Eye size={22} />
-                    </button>
-                    <button className="hover:text-green-600 transition" title="Password Rotation">
-                      <RotateCcw size={22} />
-                    </button>
-                    <button className="hover:text-yellow-600 transition" title="Copy to Clipboard">
-                      <ClipboardCopy size={22} />
-                    </button>
-                    <button className="hover:text-red-600 transition" title="Отключить">
-                      <Ban size={22} />
-                    </button>
-                  </div>
+                  <button
+                    className="k-btn-secondary"
+                    onClick={() => handleAction(item.system)}
+                  >
+                    Скопировать
+                  </button>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      <MFAConfirmModal
+        open={openMFA}
+        onClose={() => setOpenMFA(false)}
+        onSuccess={() =>
+          alert(`🔓 Доступ к секрету "${selectedSecret}" разблокирован!`)
+        }
+      />
     </div>
   );
 }

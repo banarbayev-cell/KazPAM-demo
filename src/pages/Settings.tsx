@@ -1,50 +1,95 @@
-export default function Settings() {
+import { Settings as SettingsIcon } from "lucide-react";
+
+export default function SettingsPage() {
   return (
-    <div className="space-y-10">
-      <h1 className="text-3xl font-bold">Настройки системы</h1>
-
-      <div className="bg-white p-6 rounded-xl shadow-md space-y-4">
-        <h2 className="text-2xl font-semibold text-blue-600">Интеграция операционных систем</h2>
-
-        <ul className="space-y-3 text-lg">
-          <li>• Linux — SSH, sudo, запись терминала</li>
-          <li>• Windows — RDP, запись экрана, Active Directory</li>
-          <li>• Cisco / Network — Firewall & Switch access control</li>
-          <li>• VMware — администрирование виртуальных сред</li>
-          <li className="text-red-600 font-semibold">
-            • Solaris — поддержка привилегированного доступа (Уникально на рынке)
-          </li>
-        </ul>
+    <div className="min-h-screen bg-white text-black p-8">
+      <div className="flex items-center gap-3 mb-8">
+        <SettingsIcon size={32} className="text-[#0052FF]" />
+        <h1 className="text-3xl font-bold">Настройки системы</h1>
       </div>
 
-      <div className="bg-white p-6 rounded-xl shadow-md space-y-4">
-        <h2 className="text-2xl font-semibold text-blue-600">Параметры записи сессий</h2>
+      {/* ---------- Общие настройки --------- */}
+      <div className="bg-[#121A33] border border-[#1E2A45] rounded-xl shadow-xl p-6 mb-8 text-white">
+        <h2 className="text-xl font-semibold mb-4 text-[#3BE3FD]">Общие параметры</h2>
 
-        <ul className="space-y-3 text-lg">
-          <li>• Запись SSH / RDP / VNC</li>
-          <li>• Запуск записи при подозрительных действиях</li>
-          <li>• Защита от удаления и подмены видео</li>
-        </ul>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <label className="block text-sm text-gray-300 mb-1">Название системы</label>
+            <input
+              type="text"
+              defaultValue="KazPAM"
+              className="w-full bg-[#0E1A3A] border border-[#1E2A45] rounded-lg px-3 py-2 text-white"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm text-gray-300 mb-1">Язык интерфейса</label>
+            <select className="w-full bg-[#0E1A3A] border border-[#1E2A45] rounded-lg px-3 py-2 text-white">
+              <option>Русский</option>
+              <option>English</option>
+              <option>Қазақша</option>
+            </select>
+          </div>
+        </div>
+
+        <button className="mt-6 bg-[#0052FF] hover:bg-[#003ED9] text-white font-semibold px-6 py-2 rounded-lg transition">
+          Сохранить
+        </button>
       </div>
 
-      <div className="bg-white p-6 rounded-xl shadow-md space-y-4">
-        <h2 className="text-2xl font-semibold text-blue-600">Password Rotation</h2>
+      {/* ---------- Безопасность ---------- */}
+      <div className="bg-[#121A33] border border-[#1E2A45] rounded-xl shadow-xl p-6 mb-8 text-white">
+        <h2 className="text-xl font-semibold mb-4 text-[#3BE3FD]">Безопасность</h2>
 
-        <ul className="space-y-3 text-lg">
-          <li>• Автоматическая смена привилегированных паролей</li>
-          <li>• Rotation каждые: 1, 7, 14, 30 дней</li>
-          <li>• Автооповещение о смене</li>
-        </ul>
+        <div className="space-y-4 text-gray-200">
+          <label className="flex items-center gap-3">
+            <input type="checkbox" defaultChecked className="accent-[#0052FF] w-5 h-5" />
+            <span>Двухфакторная аутентификация (2FA)</span>
+          </label>
+
+          <label className="flex items-center gap-3">
+            <input type="checkbox" className="accent-[#0052FF] w-5 h-5" />
+            <span>Требовать смену пароля каждые 90 дней</span>
+          </label>
+
+          <label className="flex items-center gap-3">
+            <input type="checkbox" defaultChecked className="accent-[#0052FF] w-5 h-5" />
+            <span>Блокировать аккаунт после 5 неверных попыток входа</span>
+          </label>
+        </div>
+
+        <button className="mt-6 bg-[#0052FF] hover:bg-[#003ED9] text-white font-semibold px-6 py-2 rounded-lg transition">
+          Сохранить
+        </button>
       </div>
 
-      <div className="bg-white p-6 rounded-xl shadow-md space-y-4">
-        <h2 className="text-2xl font-semibold text-blue-600">Security Alerts</h2>
+      {/* ---------- Интеграция ---------- */}
+      <div className="bg-[#121A33] border border-[#1E2A45] rounded-xl shadow-xl p-6 text-white mb-10">
+        <h2 className="text-xl font-semibold mb-4 text-[#3BE3FD]">Интеграция</h2>
 
-        <ul className="space-y-3 text-lg">
-          <li>• Telegram / Email Webhook уведомления</li>
-          <li>• Алгоритм выявления подозрительных действий</li>
-          <li>• Политики безопасности SOC уровня</li>
-        </ul>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <label className="block text-sm text-gray-300 mb-1">LDAP / Active Directory</label>
+            <input
+              type="text"
+              placeholder="ldap://domain.local"
+              className="w-full bg-[#0E1A3A] border border-[#1E2A45] rounded-lg px-3 py-2 text-white"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm text-gray-300 mb-1">SIEM Webhook URL</label>
+            <input
+              type="text"
+              placeholder="https://siem.company.kz/hook"
+              className="w-full bg-[#0E1A3A] border border-[#1E2A45] rounded-lg px-3 py-2 text-white"
+            />
+          </div>
+        </div>
+
+        <button className="mt-6 bg-[#0052FF] hover:bg-[#003ED9] text-white font-semibold px-6 py-2 rounded-lg transition">
+          Сохранить
+        </button>
       </div>
     </div>
   );

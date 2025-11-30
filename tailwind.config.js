@@ -2,10 +2,14 @@
 export default {
   content: [
     "./index.html",
-    "./src/**/*.{js,ts,jsx,tsx}",
+    "./src/**/*.{js,ts,jsx,tsx}"
   ],
   theme: {
     extend: {},
   },
-  plugins: [],
-}
+  // Включаем режим совместимости Tailwind v3
+  future: {
+    hoverOnlyWhenSupported: true,
+  },
+  compatibility: "3.4",
+};

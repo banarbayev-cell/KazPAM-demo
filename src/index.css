@@ -1,3 +1,63 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: #2563eb; border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: #1e40af; }
+
+/* Animations */
+@keyframes fadeIn { from { opacity:0; transform:translateY(-3px);} to { opacity:1; transform:translateY(0);} }
+.animate-fadeIn { animation: fadeIn .15s ease-out; }
+
+/* Theme Variables */
+:root {
+  --bg: #0A0F24;
+  --bg-card: #121A33;
+  --accent: #0052FF;
+  --neon: #3BE3FD;
+  --text: #FFFFFF;
+  --text-secondary: #C9D1E7;
+  --border: #1E2A45;
+}
+
+/* Base */
+body {
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: "Inter", sans-serif;
+}
+
+* {
+  @apply transition-all duration-150 ease-out;
+}
+
+/* Components */
+@layer components {
+  .table-container { @apply bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-4 overflow-y-auto shadow-xl; }
+  .k-table { @apply w-full border-collapse text-sm; }
+  .k-th { @apply text-[var(--text-secondary)] font-semibold text-left border-b border-[var(--border)] pb-2; }
+  .k-td { @apply py-3 border-b border-[var(--border)] text-[var(--text)]; }
+
+  .k-btn-primary { @apply px-4 py-2 rounded-lg bg-[var(--accent)] hover:bg-blue-600 transition font-semibold text-white shadow-lg shadow-[rgba(0,82,255,0.2)]; }
+  .k-btn-secondary { @apply px-4 py-2 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition; }
+
+  .chip-active { @apply text-green-400 bg-green-900/40 px-3 py-1 rounded-full text-xs font-semibold; }
+  .chip-disabled { @apply text-red-400 bg-red-900/40 px-3 py-1 rounded-full text-xs font-semibold; }
+}
+@keyframes pulse-alert {
+  0% {
+    box-shadow: 0 0 0px rgba(255, 67, 67, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 25px rgba(255, 67, 67, 0.8), 0 0 45px rgba(255, 0, 0, 0.5);
+  }
+  100% {
+    box-shadow: 0 0 0px rgba(255, 67, 67, 0.4);
+  }
+}
+
+.alert-pulse {
+  animation: pulse-alert 1.8s infinite ease-in-out;
+}

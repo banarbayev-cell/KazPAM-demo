@@ -1,33 +1,104 @@
-import { Link, Route, Routes } from "react-router-dom";
+import { NavLink } from "react-router-dom";
 
-export default function App() {
+export default function Sidebar() {
   return (
-    <div className="flex h-screen">
-      {/* Sidebar */}
-      <aside className="w-64 bg-gray-900 text-white p-4">
-        <h1 className="text-2xl font-bold mb-6">KazPAM</h1>
+    <div className="w-64 h-screen bg-[#0A0F24] text-white flex flex-col p-6 border-r border-white/10">
+      <h1 className="text-3xl font-bold mb-10">
+        Kaz<span className="text-[#0052FF]">PAM</span>
+      </h1>
 
-        <nav className="flex flex-col gap-3">
-          <Link to="/" className="hover:text-blue-400">Главная</Link>
-          <Link to="/users" className="hover:text-blue-400">Пользователи</Link>
-          <Link to="/sessions" className="hover:text-blue-400">Сессии</Link>
-          <Link to="/vault" className="hover:text-blue-400">Хранилище</Link>
-          <Link to="/audit" className="hover:text-blue-400">Аудит</Link>
-          <Link to="/settings" className="hover:text-blue-400">Настройки</Link>
-        </nav>
-      </aside>
+      <nav className="space-y-2">
+        <NavLink
+          to="/dashboard"
+          className={({ isActive }) =>
+            `block px-4 py-2 rounded-md transition text-gray-300 ${
+              isActive
+                ? "bg-[#0052FF] text-white font-semibold"
+                : "hover:bg-[#1A2141] hover:text-[#3BE3FD]"
+            }`
+          }
+        >
+          Главная
+        </NavLink>
 
-      {/* Content area */}
-      <main className="flex-1 p-6">
-        <Routes>
-          <Route path="/" element={<h2 className="text-3xl font-bold">Главная</h2>} />
-          <Route path="/users" element={<h2 className="text-3xl font-bold">Пользователи</h2>} />
-          <Route path="/sessions" element={<h2 className="text-3xl font-bold">Сессии</h2>} />
-          <Route path="/vault" element={<h2 className="text-3xl font-bold">Хранилище</h2>} />
-          <Route path="/audit" element={<h2 className="text-3xl font-bold">Аудит</h2>} />
-          <Route path="/settings" element={<h2 className="text-3xl font-bold">Настройки</h2>} />
-        </Routes>
-      </main>
+        <NavLink
+          to="/users"
+          className={({ isActive }) =>
+            `block px-4 py-2 rounded-md transition text-gray-300 ${
+              isActive
+                ? "bg-[#0052FF] text-white font-semibold"
+                : "hover:bg-[#1A2141] hover:text-[#3BE3FD]"
+            }`
+          }
+        >
+          Пользователи
+        </NavLink>
+
+        <NavLink
+          to="/sessions"
+          className={({ isActive }) =>
+            `block px-4 py-2 rounded-md transition text-gray-300 ${
+              isActive
+                ? "bg-[#0052FF] text-white font-semibold"
+                : "hover:bg-[#1A2141] hover:text-[#3BE3FD]"
+            }`
+          }
+        >
+          Сессии
+        </NavLink>
+
+        <NavLink
+          to="/vault"
+          className={({ isActive }) =>
+            `block px-4 py-2 rounded-md transition text-gray-300 ${
+              isActive
+                ? "bg-[#0052FF] text-white font-semibold"
+                : "hover:bg-[#1A2141] hover:text-[#3BE3FD]"
+            }`
+          }
+        >
+          Хранилище
+        </NavLink>
+
+        <NavLink
+          to="/policies"
+          className={({ isActive }) =>
+            `block px-4 py-2 rounded-md transition text-gray-300 ${
+              isActive
+                ? "bg-[#0052FF] text-white font-semibold"
+                : "hover:bg-[#1A2141] hover:text-[#3BE3FD]"
+            }`
+          }
+        >
+          Политики безопасности
+        </NavLink>
+
+        <NavLink
+          to="/audit"
+          className={({ isActive }) =>
+            `block px-4 py-2 rounded-md transition text-gray-300 ${
+              isActive
+                ? "bg-[#0052FF] text-white font-semibold"
+                : "hover:bg-[#1A2141] hover:text-[#3BE3FD]"
+            }`
+          }
+        >
+          Аудит
+        </NavLink>
+
+        <NavLink
+          to="/settings"
+          className={({ isActive }) =>
+            `block px-4 py-2 rounded-md transition text-gray-300 ${
+              isActive
+                ? "bg-[#0052FF] text-white font-semibold"
+                : "hover:bg-[#1A2141] hover:text-[#3BE3FD]"
+            }`
+          }
+        >
+          Настройки
+        </NavLink>
+      </nav>
     </div>
   );
 }

@@ -1,65 +1,79 @@
+import { useEffect, useState } from "react";
 import {
   LineChart,
   Line,
+  CartesianGrid,
   XAxis,
   YAxis,
-  CartesianGrid,
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
 
-const data = [
-  { name: "Mon", sessions: 12 },
-  { name: "Tue", sessions: 18 },
-  { name: "Wed", sessions: 25 },
-  { name: "Thu", sessions: 30 },
-  { name: "Fri", sessions: 22 },
-  { name: "Sat", sessions: 10 },
-  { name: "Sun", sessions: 8 },
-];
-
 export default function Home() {
+  const [stats, setStats] = useState({
+    privileged: 0,
+    users: 0,
+    sessions: 0,
+  });
+
+  const [cpuData, setCpuData] = useState<{ label: string; value: number }[]>([]);
+
+  useEffect(() => {
+    async function load() {
+      const p = await fetch("http://127.0.0.1:8000/stats/privileged-accounts").then(res => res.json());
+      const u = await fetch("http://127.0.0.1:8000/stats/users").then(res => res.json());
+      const s = await fetch("http://127.0.0.1:8000/stats/sessions").then(res => res.json());
+      const cpu = await fetch("http://127.0.0.1:8000/stats/cpu").then(res => res.json());
+
+      setStats({
+        privileged: p.count,
+        users: u.count,
+        sessions: s.count,
+      });
+
+      const formatted = cpu.labels.map((label: string, i: number) => ({
+        label,
+        value: cpu.values[i],
+      }));
+      setCpuData(formatted);
+    }
+
+    load();
+  }, []);
+
   return (
-    <div className="space-y-8">
-      <h1 className="text-3xl font-bold">Обзор системы</h1>
+    <div className="text-black">
+      <h1 className="text-3xl font-bold mb-6">Главная</h1>
 
-      {/* Statistics Cards */}
-      <div className="grid grid-cols-4 gap-6">
-        <div className="bg-white p-6 rounded-xl shadow-md">
-          <p className="text-gray-600">Привилегированные аккаунты</p>
-          <h2 className="text-3xl font-bold mt-2">12</h2>
+      <div className="grid grid-cols-3 gap-6 mb-10">
+        <div className="p-6 bg-white rounded-xl shadow">
+          <p>Привилегированные аккаунты</p>
+          <h2 className="text-4xl font-bold">{stats.privileged}</h2>
         </div>
 
-        <div className="bg-white p-6 rounded-xl shadow-md">
-          <p className="text-gray-600">Всего пользователей</p>
-          <h2 className="text-3xl font-bold mt-2">142</h2>
+        <div className="p-6 bg-white rounded-xl shadow">
+          <p>Всего пользователей</p>
+          <h2 className="text-4xl font-bold">{stats.users}</h2>
         </div>
 
-        <div className="bg-white p-6 rounded-xl shadow-md">
-          <p className="text-gray-600">Нагрузка CPU</p>
-          <h2 className="text-3xl font-bold mt-2">65%</h2>
-        </div>
-
-        <div className="bg-white p-6 rounded-xl shadow-md">
-          <p className="text-gray-600">Активные сессии</p>
-          <h2 className="text-3xl font-bold mt-2">8</h2>
+        <div className="p-6 bg-white rounded-xl shadow">
+          <p>Активные сессии</p>
+          <h2 className="text-4xl font-bold">{stats.sessions}</h2>
         </div>
       </div>
 
-      {/* Graph */}
-<div className="bg-white p-6 rounded-xl shadow-md" style={{ height: "350px" }}>
-  <h2 className="text-xl font-semibold mb-4">Активные сессии за неделю</h2>
-
-  <ResponsiveContainer width="100%" height="80%">
-    <LineChart data={data}>
-      <CartesianGrid strokeDasharray="3 3" />
-      <XAxis dataKey="name" />
-      <YAxis />
-      <Tooltip />
-      <Line type="monotone" dataKey="sessions" stroke="#2563eb" strokeWidth={3} />
-    </LineChart>
-  </ResponsiveContainer>
-</div>
+      <div className="p-6 bg-white rounded-xl shadow">
+        <h2 className="text-xl font-bold mb-4">CPU Load (%)</h2>
+        <ResponsiveContainer width="100%" height={250}>
+          <LineChart data={cpuData}>
+            <Line type="monotone" dataKey="value" stroke="#2563eb" strokeWidth={3} />
+            <CartesianGrid stroke="#e5e7eb" />
+            <XAxis dataKey="label" />
+            <YAxis />
+            <Tooltip />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }

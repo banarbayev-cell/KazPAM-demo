@@ -1,12 +1,19 @@
+import { Outlet } from "react-router-dom";
 import Sidebar from "../components/ui/sidebar";
+import Header from "../components/Header";
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+export default function DashboardLayout() {
   return (
-    <div style={{ display: "flex", minHeight: "100vh" }}>
+    <div className="flex h-screen bg-[#F4F6FA]">
       <Sidebar />
-      <main style={{ padding: "20px", flex: 1, color: "white", background: "#1f2937" }}>
-        {children}
-      </main>
+
+      <div className="flex-1 flex flex-col">
+        <Header />
+
+        <main className="p-6 overflow-y-auto">
+          <Outlet />
+        </main>
+      </div>
     </div>
   );
 }

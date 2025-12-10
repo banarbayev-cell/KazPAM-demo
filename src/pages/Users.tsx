@@ -1,102 +1,194 @@
-import { useState } from "react";
-import { Plus, User2 } from "lucide-react";
-import ActionMenu from "../components/ActionMenu";
+import { useState, useMemo, useEffect } from "react";
+import { User2 } from "lucide-react";
+
+import ActionMenuUser from "../components/ActionMenuUser";
 import CreateUserModal from "../components/modals/CreateUserModal";
+import AssignRolesModal from "../components/modals/AssignRolesModal";
+
+import { Input } from "../components/ui/input";
+import { Button } from "../components/ui/button";
+import { toast } from "sonner";
+
+interface Role {
+  id: number;
+  name: string;
+}
 
 interface User {
-  name: string;
-  role: string;
-  status: "active" | "disabled";
+  id: number;
+  email: string;
+  roles: Role[];
 }
 
 export default function Users() {
-  const [users, setUsers] = useState<User[]>([
-    { name: "admin", role: "Администратор", status: "active" },
-    { name: "security", role: "Офицер безопасности", status: "active" },
-    { name: "operator01", role: "Оператор", status: "disabled" },
-    { name: "root", role: "Супер пользователь", status: "active" },
-  ]);
-
+  const [users, setUsers] = useState<User[]>([]);
   const [openModal, setOpenModal] = useState(false);
+  const [search, setSearch] = useState("");
+  const [statusFilter] = useState("all");
 
-  const handleCreate = (newUser: User) => {
-    setUsers((prev) => [...prev, newUser]);
+  const [assignRolesOpen, setAssignRolesOpen] = useState(false);
+  const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
+
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+
+  // ------------------------------
+  // LOAD USERS
+  // ------------------------------
+  const fetchUsers = async () => {
+    try {
+      const res = await fetch("http://127.0.0.1:8000/users/");
+      const data = await res.json();
+      setUsers(data);
+    } catch (err) {
+      console.error("Ошибка загрузки пользователей:", err);
+      toast.error("Ошибка загрузки пользователей");
+    }
   };
 
-  const handleActivate = (index: number) => {
-    setUsers((prev) =>
-      prev.map((u, i) => (i === index ? { ...u, status: "active" } : u))
-    );
-  };
+  useEffect(() => {
+    fetchUsers();
+  }, []);
 
-  const handleDisable = (index: number) => {
-    setUsers((prev) =>
-      prev.map((u, i) => (i === index ? { ...u, status: "disabled" } : u))
-    );
-  };
+  // ------------------------------
+  // STATS
+  // ------------------------------
+  const total = users.length;
+  const activeCount = users.length;
+  const disabledCount = 0;
+  const adminsCount = users.filter((u) =>
+    u.roles.some((r) => r.name.toLowerCase().includes("admin"))
+  ).length;
 
-  const handleDelete = (index: number) => {
-    setUsers((prev) => prev.filter((_, i) => i !== index));
-  };
+  // ------------------------------
+  // FILTER
+  // ------------------------------
+  const filtered = useMemo(() => {
+    return users.filter((user) => {
+      const matchEmail = user.email.toLowerCase().includes(search.toLowerCase());
+      const matchRole = user.roles.some((r) =>
+        r.name.toLowerCase().includes(search.toLowerCase())
+      );
+      return matchEmail || matchRole;
+    });
+  }, [users, search]);
 
+  // ------------------------------
+  // PAGINATION
+  // ------------------------------
+  const totalPages = Math.ceil(filtered.length / rowsPerPage);
+  const indexOfLast = currentPage * rowsPerPage;
+  const indexOfFirst = indexOfLast - rowsPerPage;
+  const currentRows = filtered.slice(indexOfFirst, indexOfLast);
+
+  const goToPage = (page: number) => setCurrentPage(page);
+
+  // ------------------------------
+  // UI
+  // ------------------------------
   return (
-    <div className="min-h-screen text-[var(--text)] p-8">
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            Пользователи
-          </h1>
-          <p className="text-gray-600 mb-6 text-lg">
-            Управление учётными записями и ролями доступа
-          </p>
+    <div className="p-6 w-full bg-gray-100 text-gray-900">
+      <h1 className="text-3xl font-bold mb-6">Пользователи</h1>
+
+      {/* Stats */}
+      <div className="grid grid-cols-4 gap-4 mb-8">
+        <div className="bg-[#121A33] p-4 rounded-xl shadow-md text-white">
+          <p className="text-gray-400 text-sm">Всего пользователей</p>
+          <p className="text-3xl font-bold">{total}</p>
         </div>
 
-        <button className="k-btn-primary flex items-center gap-2" onClick={() => setOpenModal(true)}>
-          <Plus className="w-4 h-4" /> Создать пользователя
-        </button>
+        <div className="bg-[#121A33] p-4 rounded-xl shadow-md text-white">
+          <p className="text-gray-400 text-sm">Активные</p>
+          <p className="text-3xl font-bold text-green-400">{activeCount}</p>
+        </div>
+
+        <div className="bg-[#121A33] p-4 rounded-xl shadow-md text-white">
+          <p className="text-gray-400 text-sm">Отключенные</p>
+          <p className="text-3xl font-bold text-red-400">{disabledCount}</p>
+        </div>
+
+        <div className="bg-[#121A33] p-4 rounded-xl shadow-md text-white">
+          <p className="text-gray-400 text-sm">Администраторы</p>
+          <p className="text-3xl font-bold text-blue-400">{adminsCount}</p>
+        </div>
       </div>
 
-      <div className="table-container">
-        <table className="k-table">
-          <thead>
+      {/* Filters */}
+      <div className="flex gap-3 items-center mb-6">
+        <Input
+          placeholder="Поиск по email или роли..."
+          className="w-72 bg-white border text-gray-900 placeholder-gray-500"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+
+        <Button onClick={() => setOpenModal(true)}>+ Создать пользователя</Button>
+      </div>
+
+      {/* TABLE */}
+      <div className="overflow-y-auto max-h-[500px] rounded-xl border border-[#1E2A45] shadow-lg bg-[#121A33]">
+        <table className="w-full text-sm text-white">
+          <thead className="bg-[#1A243F] text-gray-300 sticky top-0 z-10">
             <tr>
-              <th className="k-th">Имя</th>
-              <th className="k-th">Роль</th>
-              <th className="k-th">Статус</th>
-              <th className="k-th">Действия</th>
+              <th className="p-3 text-left">Email</th>
+              <th className="p-3 text-left">Роли</th>
+              <th className="p-3 text-left">Действия</th>
             </tr>
           </thead>
 
           <tbody>
-            {users.map((user, index) => (
-              <tr key={index} className="hover:bg-[#0E1A3A] transition">
-                <td className="k-td flex items-center gap-2">
-                  <User2 className="w-4 h-4 text-[var(--neon)]" />
-                  {user.name}
+            {currentRows.map((user) => (
+              <tr
+                key={user.id}
+                className="border-t border-[#1E2A45] hover:bg-[#0E1A3A] transition"
+              >
+                <td className="p-3 flex items-center gap-2">
+                  <User2 className="w-4 h-4 text-[#3BE3FD]" /> {user.email}
                 </td>
 
-                <td className="k-td text-[var(--text-secondary)]">
-                  {user.role}
+                <td className="p-3">
+                  {user.roles.length === 0 ? (
+                    <span className="text-gray-400 text-sm">Нет ролей</span>
+                  ) : (
+                    <div className="flex gap-2 flex-wrap">
+                      {user.roles.map((role) => (
+                        <span
+                          key={role.id}
+                          className="px-3 py-1 rounded-full text-xs font-bold bg-blue-600 text-white"
+                        >
+                          {role.name}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </td>
 
-                <td className="k-td">
-                  <span
-                    className={`${
-                      user.status === "active"
-                        ? "chip-active"
-                        : "chip-disabled"
-                    }`}
-                  >
-                    {user.status === "active" ? "Активен" : "Отключён"}
-                  </span>
-                </td>
+                {/* ACTION MENU */}
+                <td className="p-3 text-sm">
+                  <ActionMenuUser
+                    onView={() => toast.info("Открыт профиль пользователя")}
+                    onAssignRoles={() => {
+                      setSelectedUserId(user.id);
+                      setAssignRolesOpen(true);
+                    }}
+                    onResetPassword={() =>
+                      toast.info("Функция смены пароля будет добавлена")
+                    }
+                    onDelete={async () => {
+                      toast.info("Удаление пользователя...");
 
-                <td className="k-td">
-                  <ActionMenu
-                    status={user.status}
-                    onActivate={() => handleActivate(index)}
-                    onDisable={() => handleDisable(index)}
-                    onDelete={() => handleDelete(index)}
+                      try {
+                        await fetch(`http://127.0.0.1:8000/users/${user.id}`, {
+                          method: "DELETE",
+                        });
+
+                        toast.success("Пользователь удалён");
+                        fetchUsers();
+                      } catch {
+                        toast.error("Ошибка при удалении пользователя");
+                      }
+                    }}
                   />
                 </td>
               </tr>
@@ -105,7 +197,79 @@ export default function Users() {
         </table>
       </div>
 
-      <CreateUserModal open={openModal} onClose={() => setOpenModal(false)} onCreate={handleCreate} />
+      {/* Pagination */}
+      <div className="flex justify-between items-center p-4">
+        <div className="flex items-center gap-2">
+          <span>Показать:</span>
+          <select
+            className="border p-1 rounded"
+            value={rowsPerPage}
+            onChange={(e) => {
+              setRowsPerPage(Number(e.target.value));
+              setCurrentPage(1);
+            }}
+          >
+            <option value={10}>10</option>
+            <option value={25}>25</option>
+            <option value={50}>50</option>
+          </select>
+        </div>
+
+        <div className="flex gap-2 items-center">
+          <button className="px-2 text-black" onClick={() => goToPage(1)} disabled={currentPage === 1}>
+            {"<<"}
+          </button>
+
+          <button
+            className="px-2 text-black"
+            onClick={() => goToPage(currentPage - 1)}
+            disabled={currentPage === 1}
+          >
+            {"<"}
+          </button>
+
+          <span className="font-medium">{currentPage} / {totalPages}</span>
+
+          <button
+            className="px-2 text-black"
+            onClick={() => goToPage(currentPage + 1)}
+            disabled={currentPage === totalPages}
+          >
+            {">"}
+          </button>
+
+          <button
+            className="px-2 text-black"
+            onClick={() => goToPage(totalPages)}
+            disabled={currentPage === totalPages}
+          >
+            {">>"}
+          </button>
+        </div>
+      </div>
+
+      {/* Create User Modal */}
+      <CreateUserModal
+        open={openModal}
+        onClose={() => setOpenModal(false)}
+        onCreate={() => {
+          fetchUsers();
+          setOpenModal(false);
+          toast.success("Пользователь успешно создан");
+        }}
+      />
+
+      {/* Assign Roles Modal */}
+      <AssignRolesModal
+        open={assignRolesOpen}
+        onClose={() => setAssignRolesOpen(false)}
+        userId={selectedUserId}
+        onAssigned={() => {
+          fetchUsers();
+          setAssignRolesOpen(false);
+          toast.success("Роли успешно обновлены");
+        }}
+      />
     </div>
   );
 }

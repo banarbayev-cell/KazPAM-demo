@@ -42,31 +42,38 @@ export default function Home() {
   }, []);
 
   return (
-    <div className="text-black">
-      <h1 className="text-3xl font-bold mb-6">Главная</h1>
+    <div className="text-[#0A0F24]">
 
-      <div className="grid grid-cols-3 gap-6 mb-10">
-        <div className="p-6 bg-white rounded-xl shadow">
-          <p>Привилегированные аккаунты</p>
-          <h2 className="text-4xl font-bold">{stats.privileged}</h2>
+      {/* Заголовок */}
+      <h1 className="text-3xl font-bold mb-8">Главная</h1>
+
+      {/* KPI Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-10">
+
+        <div className="p-6 bg-white rounded-2xl shadow-lg border border-gray-100 transition hover:shadow-xl">
+          <p className="text-gray-500 text-sm">Привилегированные аккаунты</p>
+          <h2 className="text-5xl font-bold text-[#0052FF] mt-2">{stats.privileged}</h2>
         </div>
 
-        <div className="p-6 bg-white rounded-xl shadow">
-          <p>Всего пользователей</p>
-          <h2 className="text-4xl font-bold">{stats.users}</h2>
+        <div className="p-6 bg-white rounded-2xl shadow-lg border border-gray-100 transition hover:shadow-xl">
+          <p className="text-gray-500 text-sm">Всего пользователей</p>
+          <h2 className="text-5xl font-bold text-[#0052FF] mt-2">{stats.users}</h2>
         </div>
 
-        <div className="p-6 bg-white rounded-xl shadow">
-          <p>Активные сессии</p>
-          <h2 className="text-4xl font-bold">{stats.sessions}</h2>
+        <div className="p-6 bg-white rounded-2xl shadow-lg border border-gray-100 transition hover:shadow-xl">
+          <p className="text-gray-500 text-sm">Активные сессии</p>
+          <h2 className="text-5xl font-bold text-[#0052FF] mt-2">{stats.sessions}</h2>
         </div>
+
       </div>
 
-      <div className="p-6 bg-white rounded-xl shadow">
-        <h2 className="text-xl font-bold mb-4">CPU Load (%)</h2>
-        <ResponsiveContainer width="100%" height={250}>
+      {/* CPU Chart */}
+      <div className="p-6 bg-white rounded-2xl shadow-lg border border-gray-100">
+        <h2 className="text-xl font-semibold mb-4">CPU Load (%)</h2>
+
+        <ResponsiveContainer width="100%" height={260}>
           <LineChart data={cpuData}>
-            <Line type="monotone" dataKey="value" stroke="#2563eb" strokeWidth={3} />
+            <Line type="monotone" dataKey="value" stroke="#0052FF" strokeWidth={3} />
             <CartesianGrid stroke="#e5e7eb" />
             <XAxis dataKey="label" />
             <YAxis />
@@ -74,6 +81,7 @@ export default function Home() {
           </LineChart>
         </ResponsiveContainer>
       </div>
+
     </div>
   );
 }

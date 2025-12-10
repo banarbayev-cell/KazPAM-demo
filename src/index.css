@@ -18,6 +18,7 @@
   --accent: #0052FF;
   --neon: #3BE3FD;
   --text: #FFFFFF;
+  --text-primary: #FFFFFF; 
   --text-secondary: #C9D1E7;
   --border: #1E2A45;
 }
@@ -60,4 +61,37 @@ body {
 
 .alert-pulse {
   animation: pulse-alert 1.8s infinite ease-in-out;
+}
+canvas {
+  pointer-events: none !important;
+}
+/* MAKE RIGHT PANEL WIDER */
+.vault-side-panel {
+  width: 480px !important;
+  max-width: 480px !important;
+}
+
+/* TABLE FIX — prevent cell wrapping */
+.k-td, .k-th {
+  white-space: nowrap !important;
+}
+
+/* Fix long IP addresses display */
+.cell-ip {
+  font-family: monospace;
+  font-size: 14px;
+  letter-spacing: 0.5px;
+}
+
+/* Ensure buttons are always clickable */
+button, .k-btn-primary, .k-btn-secondary {
+  pointer-events: auto !important;
+  cursor: pointer !important;
+  z-index: 99;
+}
+
+/* Do NOT allow chart canvas to overlay */
+canvas {
+  pointer-events: none !important;
+  z-index: 0 !important;
 }

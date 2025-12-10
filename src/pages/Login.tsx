@@ -1,10 +1,10 @@
 import { FormEvent, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAuthStore } from "../store/auth";
+import { useAuth } from "../store/auth";
 
 export default function Login() {
   const navigate = useNavigate();
-  const setToken = useAuthStore((state) => state.setToken);
+  const login = useAuth((state) => state.login);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -12,13 +12,17 @@ export default function Login() {
   const handleLogin = async (e: FormEvent) => {
     e.preventDefault();
 
-    const response = await fetch("http://127.0.0.1:8000/login", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ email, password }),
-});
+    const formData = new URLSearchParams();
+    formData.append("username", email);
+    formData.append("password", password);
 
-
+    const response = await fetch("http://127.0.0.1:8000/auth/login", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: formData.toString(),
+    });
 
     if (!response.ok) {
       alert("Неверный логин или пароль");
@@ -26,15 +30,19 @@ export default function Login() {
     }
 
     const data = await response.json();
-    setToken(data.access_token);
 
+    // Сохраняем токен
+    localStorage.setItem("access_token", data.access_token);
+
+    // Обновляем Zustand store
+    login(data.access_token);
+
+    // Переход на Dashboard
     navigate("/dashboard");
   };
 
   return (
     <div className="relative h-screen w-full bg-[#0A0F24] flex items-center justify-center overflow-hidden">
-      
-      {/* Background gradient */}
       <div className="absolute inset-0 bg-gradient-to-br from-[#0052FF]/20 via-[#3BE3FD]/10 to-[#0A0F24] opacity-60 blur-3xl" />
 
       <form
@@ -68,7 +76,7 @@ export default function Login() {
         </button>
 
         <p className="text-center text-[#C9D1E7] text-xs mt-6">
-          Made in <span className="text-[#3BE3FD] font-bold">Kazakhstan </span>
+          Made in <span className="text-[#3BE3FD] font-bold">Kazakhstan</span>
         </p>
       </form>
     </div>

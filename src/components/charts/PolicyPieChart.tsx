@@ -1,38 +1,39 @@
-import { PieChart, Pie, Cell, Tooltip, Legend } from "recharts";
+import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 
 interface ChartProps {
   active: number;
   disabled: number;
+  title?: string; // новое поле
 }
 
-export default function PolicyPieChart({ active, disabled }: ChartProps) {
+export default function PolicyPieChart({ active, disabled, title = "Статистика" }: ChartProps) {
   const data = [
     { name: "Активные", value: active },
-    { name: "Отключенные", value: disabled },
+    { name: "Ошибочные / Завершённые", value: disabled },
   ];
 
-  const COLORS = ["#22C55E", "#EF4444"];
+  const COLORS = ["#3BE3FD", "#0052FF"];
 
   return (
-    <div className="bg-white border border-gray-300 rounded-xl shadow p-4 w-[320px]">
-      <h2 className="text-lg font-semibold mb-3 text-gray-800">Статистика политик</h2>
-      <PieChart width={300} height={240}>
-        <Pie
-          data={data}
-          cx={150}
-          cy={120}
-          innerRadius={50}
-          outerRadius={80}
-          dataKey="value"
-          paddingAngle={4}
-        >
-          {data.map((entry, idx) => (
-            <Cell key={idx} fill={COLORS[idx]} />
-          ))}
-        </Pie>
-        <Tooltip />
-        <Legend />
-      </PieChart>
+    <div className="w-[260px] h-[260px] bg-white border border-gray-200 shadow-md rounded-xl p-4">
+      <h3 className="text-center font-semibold text-gray-700 mb-3">
+        {title}
+      </h3>
+      <ResponsiveContainer width="100%" height="85%">
+        <PieChart>
+          <Pie
+            data={data}
+            innerRadius={60}
+            outerRadius={80}
+            paddingAngle={3}
+            dataKey="value"
+          >
+            {data.map((_, index) => (
+              <Cell key={index} fill={COLORS[index % COLORS.length]} />
+            ))}
+          </Pie>
+        </PieChart>
+      </ResponsiveContainer>
     </div>
   );
 }

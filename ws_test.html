@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>WS Test</title>
+</head>
+<body>
+<h2>WebSocket Test</h2>
+
+<button onclick="startWS()">Connect</button>
+
+<pre id="log">Waiting...</pre>
+
+<script>
+let ws;
+
+function log(msg) {
+    document.getElementById("log").textContent += "\n" + msg;
+}
+
+function startWS() {
+    ws = new WebSocket("ws://127.0.0.1:8000/ws/sessions");
+
+    ws.onopen = () => log("Connected!");
+    ws.onmessage = (msg) => log("Received: " + msg.data);
+    ws.onclose = () => log("Disconnected");
+    ws.onerror = (err) => log("Error: " + err);
+}
+</script>
+</body>
+</html>

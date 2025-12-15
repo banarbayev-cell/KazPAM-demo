@@ -8,37 +8,51 @@ export default function Login() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const handleLogin = async (e: FormEvent) => {
     e.preventDefault();
+    setLoading(true);
 
-    const formData = new URLSearchParams();
-    formData.append("username", email);
-    formData.append("password", password);
+    try {
+      const formData = new URLSearchParams();
+      formData.append("username", email);
+      formData.append("password", password);
 
-    const response = await fetch("http://127.0.0.1:8000/auth/login", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: formData.toString(),
-    });
+      const response = await fetch(
+        "http://127.0.0.1:8000/auth/login",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: formData.toString(),
+        }
+      );
 
-    if (!response.ok) {
-      alert("Неверный логин или пароль");
-      return;
+      if (!response.ok) {
+        throw new Error("Неверный логин или пароль");
+      }
+
+      const data = await response.json();
+
+      if (!data.access_token) {
+        throw new Error("Токен не получен от сервера");
+      }
+
+      // ✅ 1. СОХРАНЯЕМ JWT
+      localStorage.setItem("access_token", data.access_token);
+
+      // ✅ 2. КЛАДЁМ В ZUSTAND
+      login(data.access_token);
+
+      // ✅ 3. ПЕРЕХОД (ВАЖНО!)
+      navigate("/", { replace: true });
+    } catch (err: any) {
+      alert(err.message || "Ошибка авторизации");
+    } finally {
+      setLoading(false);
     }
-
-    const data = await response.json();
-
-    // Сохраняем токен
-    localStorage.setItem("access_token", data.access_token);
-
-    // Обновляем Zustand store
-    login(data.access_token);
-
-    // Переход на Dashboard
-    navigate("/dashboard");
   };
 
   return (
@@ -60,19 +74,26 @@ export default function Login() {
         <input
           type="email"
           placeholder="E-mail"
+          required
           className="w-full p-3 bg-white/10 border border-white/20 rounded-lg text-white mb-4 outline-none focus:border-[#0052FF]"
+          value={email}
           onChange={(e) => setEmail(e.target.value)}
         />
 
         <input
           type="password"
           placeholder="Пароль"
+          required
           className="w-full p-3 bg-white/10 border border-white/20 rounded-lg text-white mb-6 outline-none focus:border-[#0052FF]"
+          value={password}
           onChange={(e) => setPassword(e.target.value)}
         />
 
-        <button className="w-full py-3 bg-[#0052FF] rounded-lg text-white font-semibold text-lg tracking-wide hover:bg-[#003ECD] transition-all shadow-lg hover:scale-[1.02] active:scale-95">
-          Войти
+        <button
+          disabled={loading}
+          className="w-full py-3 bg-[#0052FF] rounded-lg text-white font-semibold text-lg tracking-wide hover:bg-[#003ECD] transition-all shadow-lg disabled:opacity-50"
+        >
+          {loading ? "Вход..." : "Войти"}
         </button>
 
         <p className="text-center text-[#C9D1E7] text-xs mt-6">

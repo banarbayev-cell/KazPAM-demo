@@ -8,6 +8,7 @@ import AssignRolesModal from "../components/modals/AssignRolesModal";
 import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
 import { toast } from "sonner";
+import { api } from "@/services/api";
 
 interface Role {
   id: number;
@@ -24,7 +25,6 @@ export default function Users() {
   const [users, setUsers] = useState<User[]>([]);
   const [openModal, setOpenModal] = useState(false);
   const [search, setSearch] = useState("");
-  const [statusFilter] = useState("all");
 
   const [assignRolesOpen, setAssignRolesOpen] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
@@ -38,18 +38,22 @@ export default function Users() {
   // ------------------------------
   const fetchUsers = async () => {
     try {
-      const res = await fetch("http://127.0.0.1:8000/users/");
-      const data = await res.json();
-      setUsers(data);
+      const data = await api.get<User[]>("/users/");
+      setUsers(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error("Ошибка загрузки пользователей:", err);
       toast.error("Ошибка загрузки пользователей");
+      setUsers([]);
     }
   };
 
   useEffect(() => {
     fetchUsers();
   }, []);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, rowsPerPage]);
 
   // ------------------------------
   // STATS
@@ -66,10 +70,14 @@ export default function Users() {
   // ------------------------------
   const filtered = useMemo(() => {
     return users.filter((user) => {
-      const matchEmail = user.email.toLowerCase().includes(search.toLowerCase());
+      const matchEmail = user.email
+        .toLowerCase()
+        .includes(search.toLowerCase());
+
       const matchRole = user.roles.some((r) =>
         r.name.toLowerCase().includes(search.toLowerCase())
       );
+
       return matchEmail || matchRole;
     });
   }, [users, search]);
@@ -123,7 +131,9 @@ export default function Users() {
           onChange={(e) => setSearch(e.target.value)}
         />
 
-        <Button onClick={() => setOpenModal(true)}>+ Создать пользователя</Button>
+        <Button onClick={() => setOpenModal(true)}>
+          + Создать пользователя
+        </Button>
       </div>
 
       {/* TABLE */}
@@ -144,7 +154,8 @@ export default function Users() {
                 className="border-t border-[#1E2A45] hover:bg-[#0E1A3A] transition"
               >
                 <td className="p-3 flex items-center gap-2">
-                  <User2 className="w-4 h-4 text-[#3BE3FD]" /> {user.email}
+                  <User2 className="w-4 h-4 text-[#3BE3FD]" />
+                  {user.email}
                 </td>
 
                 <td className="p-3">
@@ -167,7 +178,9 @@ export default function Users() {
                 {/* ACTION MENU */}
                 <td className="p-3 text-sm">
                   <ActionMenuUser
-                    onView={() => toast.info("Открыт профиль пользователя")}
+                    onView={() =>
+                      toast.info("Открыт профиль пользователя")
+                    }
                     onAssignRoles={() => {
                       setSelectedUserId(user.id);
                       setAssignRolesOpen(true);
@@ -179,10 +192,7 @@ export default function Users() {
                       toast.info("Удаление пользователя...");
 
                       try {
-                        await fetch(`http://127.0.0.1:8000/users/${user.id}`, {
-                          method: "DELETE",
-                        });
-
+                        await api.delete(`/users/${user.id}`);
                         toast.success("Пользователь удалён");
                         fetchUsers();
                       } catch {
@@ -216,7 +226,11 @@ export default function Users() {
         </div>
 
         <div className="flex gap-2 items-center">
-          <button className="px-2 text-black" onClick={() => goToPage(1)} disabled={currentPage === 1}>
+          <button
+            className="px-2 text-black"
+            onClick={() => goToPage(1)}
+            disabled={currentPage === 1}
+          >
             {"<<"}
           </button>
 
@@ -228,7 +242,9 @@ export default function Users() {
             {"<"}
           </button>
 
-          <span className="font-medium">{currentPage} / {totalPages}</span>
+          <span className="font-medium">
+            {currentPage} / {totalPages}
+          </span>
 
           <button
             className="px-2 text-black"

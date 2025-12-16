@@ -1,4 +1,5 @@
 import { Routes, Route, Navigate } from "react-router-dom";
+import React from "react";
 
 import Login from "./pages/Login";
 import DashboardLayout from "./layouts/dashboard-layout";
@@ -12,19 +13,12 @@ import Policies from "./pages/Policies";
 import Roles from "./pages/Roles";
 
 import ProtectedRoute from "./components/ProtectedRoute";
-
-// 🔥 Добавляем
 import { Toaster } from "sonner";
 
 export default function App() {
   return (
     <>
-      {/* Глобальные уведомления */}
-      <Toaster
-        richColors
-        closeButton
-        position="top-right"
-      />
+      <Toaster richColors closeButton position="top-right" />
 
       <Routes>
         <Route path="/login" element={<Login />} />
@@ -37,7 +31,7 @@ export default function App() {
             </ProtectedRoute>
           }
         >
-          <Route index element={<Navigate to="/dashboard" />} />
+          <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="users" element={<Users />} />
           <Route path="sessions" element={<Sessions />} />
@@ -48,7 +42,7 @@ export default function App() {
           <Route path="roles" element={<Roles />} />
         </Route>
 
-        <Route path="*" element={<Navigate to="/dashboard" />} />
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </>
   );

@@ -1,17 +1,16 @@
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 
 export default function ProtectedRoute({
   children,
 }: {
   children: JSX.Element;
 }) {
+  const location = useLocation();
   const token = localStorage.getItem("access_token");
 
-  // ❌ Нет токена — на логин
   if (!token) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
 
-  // ✅ Токен есть — пускаем
   return children;
 }

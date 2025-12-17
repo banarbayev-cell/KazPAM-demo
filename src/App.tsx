@@ -11,11 +11,20 @@ import Settings from "./pages/Settings";
 import Vault from "./pages/Vault";
 import Policies from "./pages/Policies";
 import Roles from "./pages/Roles";
-
+import { useEffect } from "react";
+import { useAuth } from "@/store/auth"
 import ProtectedRoute from "./components/ProtectedRoute";
 import { Toaster } from "sonner";
 
+
+
 export default function App() {
+  const loadFromStorage = useAuth((s) => s.loadFromStorage);
+
+  useEffect(() => {
+    loadFromStorage();
+  }, []);
+
   return (
     <>
       <Toaster richColors closeButton position="top-right" />

@@ -4,6 +4,7 @@ import { Button } from "../components/ui/button";
 import AssignPoliciesModal from "../components/modals/AssignPoliciesModal";
 import ActionMenuRole from "../components/ActionMenuRole";
 import { toast } from "sonner";
+import { api } from "@/services/api";
 
 interface Policy {
   id: number;
@@ -30,28 +31,49 @@ export default function Roles() {
   const rowsPerPage = 10;
   const [totalPages, setTotalPages] = useState(1);
 
-  const loadRoles = () => {
-    fetch(`http://127.0.0.1:8000/roles/?page=${currentPage}&limit=${rowsPerPage}`)
-      .then((res) => res.json())
-      .then((data) => {
-        // ВАЖНО: API возвращает объект, а не массив
-        if (!data.items || !Array.isArray(data.items)) {
-          console.error("Неверный формат API:", data);
-          toast.error("Ошибка данных от сервера");
-          return;
-        }
+  // --------------------------------------------------
+  // LOAD ROLES (поддержка обоих форматов API)
+  // --------------------------------------------------
+  const loadRoles = async () => {
+    try {
+      const data = await api.get<any>(
+        `/roles/?page=${currentPage}&limit=${rowsPerPage}`
+      );
 
+      // ✅ Формат 1: backend вернул массив
+      if (Array.isArray(data)) {
+        setRoles(data);
+        setTotalPages(1);
+        return;
+      }
+
+      // ✅ Формат 2: backend вернул пагинацию
+      if (Array.isArray(data.items)) {
         setRoles(data.items);
-        setTotalPages(Math.ceil(data.total / rowsPerPage));
-      })
-      .catch(() => toast.error("Ошибка загрузки ролей"));
+        setTotalPages(Math.ceil((data.total || data.items.length) / rowsPerPage));
+        return;
+      }
+
+      // ❌ Неверный формат
+      console.error("Неверный формат API:", data);
+      toast.error("Ошибка данных от сервера");
+      setRoles([]);
+      setTotalPages(1);
+    } catch (err) {
+      console.error("Ошибка загрузки ролей:", err);
+      toast.error("Ошибка загрузки ролей");
+      setRoles([]);
+      setTotalPages(1);
+    }
   };
 
   useEffect(() => {
     loadRoles();
   }, [currentPage]);
 
-  // Поиск
+  // --------------------------------------------------
+  // SEARCH
+  // --------------------------------------------------
   const filtered = useMemo(() => {
     return roles.filter((r) =>
       r.name.toLowerCase().includes(search.toLowerCase())
@@ -63,6 +85,9 @@ export default function Roles() {
     setAssignOpen(true);
   };
 
+  // --------------------------------------------------
+  // UI
+  // --------------------------------------------------
   return (
     <div className="p-6 w-full bg-gray-100 text-gray-900">
       <h1 className="text-3xl font-bold mb-4">Роли доступа</h1>
@@ -79,7 +104,7 @@ export default function Roles() {
           }}
         />
 
-        <Button onClick={() => toast.info("Создание роли позже")}>
+        <Button onClick={() => toast.info("Создание роли будет добавлено позже")}>
           + Создать роль
         </Button>
       </div>
@@ -130,18 +155,22 @@ export default function Roles() {
                 </td>
               </tr>
             ))}
+
+            {filtered.length === 0 && (
+              <tr>
+                <td colSpan={3} className="p-6 text-center text-gray-400">
+                  Роли не найдены
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
 
       {/* PAGINATION */}
       <div className="flex justify-between items-center p-4 text-gray-900 mt-3">
-
         <div className="flex items-center gap-2">
-          <button
-            disabled={currentPage === 1}
-            onClick={() => setCurrentPage(1)}
-          >
+          <button disabled={currentPage === 1} onClick={() => setCurrentPage(1)}>
             {"<<"}
           </button>
 
@@ -152,7 +181,9 @@ export default function Roles() {
             {"<"}
           </button>
 
-          <span>{currentPage} / {totalPages}</span>
+          <span>
+            {currentPage} / {totalPages}
+          </span>
 
           <button
             disabled={currentPage === totalPages}

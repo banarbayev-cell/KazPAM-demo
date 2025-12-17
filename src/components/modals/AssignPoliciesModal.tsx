@@ -8,6 +8,7 @@ import {
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
 import { toast } from "sonner";
+import { api } from "@/services/api"; // ✅ ВАЖНО
 
 interface Policy {
   id: number;
@@ -35,16 +36,20 @@ export default function AssignPoliciesModal({
   // -----------------------------
   const loadPolicies = async () => {
     try {
-      const res = await fetch("http://127.0.0.1:8000/policies/");
-      const data = await res.json();
-      setPolicies(data);
+      const data = await api.get<Policy[]>("/policies/");
+      setPolicies(Array.isArray(data) ? data : []);
     } catch (err) {
+      console.error(err);
       toast.error("Ошибка загрузки политик");
+      setPolicies([]); // защита
     }
   };
 
   useEffect(() => {
-    if (open) loadPolicies();
+    if (open) {
+      loadPolicies();
+      setSelected([]);
+    }
   }, [open]);
 
   const togglePolicy = (id: number) => {
@@ -61,16 +66,14 @@ export default function AssignPoliciesModal({
 
     try {
       for (const pid of selected) {
-        await fetch(
-          `http://127.0.0.1:8000/roles/${roleId}/add_policy/${pid}`,
-          { method: "POST" }
-        );
+        await api.post(`/roles/${roleId}/add_policy/${pid}`);
       }
 
       toast.success("Политики успешно привязаны!");
       onAssigned();
       onClose();
     } catch (err) {
+      console.error(err);
       toast.error("Ошибка назначения политик");
     }
   };
@@ -83,15 +86,22 @@ export default function AssignPoliciesModal({
         </DialogHeader>
 
         <div className="space-y-4 max-h-80 overflow-y-auto pr-2">
-          {policies.map((p) => (
-            <div key={p.id} className="flex items-center gap-3 p-2 border rounded-md">
-              <Checkbox
-                checked={selected.includes(p.id)}
-                onCheckedChange={() => togglePolicy(p.id)}
-              />
-              <span className="font-medium">{p.name}</span>
-            </div>
-          ))}
+          {policies.length === 0 ? (
+            <p className="text-sm text-gray-400">Политики не найдены</p>
+          ) : (
+            policies.map((p) => (
+              <div
+                key={p.id}
+                className="flex items-center gap-3 p-2 border rounded-md"
+              >
+                <Checkbox
+                  checked={selected.includes(p.id)}
+                  onCheckedChange={() => togglePolicy(p.id)}
+                />
+                <span className="font-medium">{p.name}</span>
+              </div>
+            ))
+          )}
         </div>
 
         <div className="flex justify-end gap-3 mt-4">

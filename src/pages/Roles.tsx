@@ -2,9 +2,14 @@ import { useState, useEffect, useMemo } from "react";
 import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
 import AssignPoliciesModal from "../components/modals/AssignPoliciesModal";
+import AssignPermissionsModal from "../components/modals/AssignPermissionsModal";
 import ActionMenuRole from "../components/ActionMenuRole";
 import { toast } from "sonner";
-import { api } from "@/services/api";
+import { api } from "../services/api";
+
+// ======================
+// Types
+// ======================
 
 interface Policy {
   id: number;
@@ -13,48 +18,64 @@ interface Policy {
   status: string;
 }
 
+interface Permission {
+  id: number;
+  code: string;
+}
+
 interface Role {
   id: number;
   name: string;
   policies: Policy[] | null;
+  permissions: Permission[];
 }
+
+// ======================
+// Component
+// ======================
 
 export default function Roles() {
   const [roles, setRoles] = useState<Role[]>([]);
   const [search, setSearch] = useState("");
 
+  // Assign policies
   const [assignOpen, setAssignOpen] = useState(false);
   const [selectedRoleId, setSelectedRoleId] = useState<number | null>(null);
 
-  // PAGINATION
+  // Assign permissions
+  const [selectedRole, setSelectedRole] = useState<Role | null>(null);
+
+  // Pagination
   const [currentPage, setCurrentPage] = useState(1);
   const rowsPerPage = 10;
   const [totalPages, setTotalPages] = useState(1);
 
-  // --------------------------------------------------
-  // LOAD ROLES (поддержка обоих форматов API)
-  // --------------------------------------------------
+  // ======================
+  // Load roles
+  // ======================
+
   const loadRoles = async () => {
     try {
       const data = await api.get<any>(
         `/roles/?page=${currentPage}&limit=${rowsPerPage}`
       );
 
-      // ✅ Формат 1: backend вернул массив
+      // Формат 1: массив
       if (Array.isArray(data)) {
         setRoles(data);
         setTotalPages(1);
         return;
       }
 
-      // ✅ Формат 2: backend вернул пагинацию
+      // Формат 2: пагинация
       if (Array.isArray(data.items)) {
         setRoles(data.items);
-        setTotalPages(Math.ceil((data.total || data.items.length) / rowsPerPage));
+        setTotalPages(
+          Math.ceil((data.total || data.items.length) / rowsPerPage)
+        );
         return;
       }
 
-      // ❌ Неверный формат
       console.error("Неверный формат API:", data);
       toast.error("Ошибка данных от сервера");
       setRoles([]);
@@ -71,23 +92,25 @@ export default function Roles() {
     loadRoles();
   }, [currentPage]);
 
-  // --------------------------------------------------
-  // SEARCH
-  // --------------------------------------------------
+  // ======================
+  // Search
+  // ======================
+
   const filtered = useMemo(() => {
     return roles.filter((r) =>
       r.name.toLowerCase().includes(search.toLowerCase())
     );
   }, [roles, search]);
 
-  const openAssignModal = (id: number) => {
-    setSelectedRoleId(id);
+  const openAssignPolicies = (roleId: number) => {
+    setSelectedRoleId(roleId);
     setAssignOpen(true);
   };
 
-  // --------------------------------------------------
+  // ======================
   // UI
-  // --------------------------------------------------
+  // ======================
+
   return (
     <div className="p-6 w-full bg-gray-100 text-gray-900">
       <h1 className="text-3xl font-bold mb-4">Роли доступа</h1>
@@ -147,10 +170,10 @@ export default function Roles() {
 
                 <td className="p-3">
                   <ActionMenuRole
-                    onAssign={() => openAssignModal(role.id)}
+                    onAssign={() => openAssignPolicies(role.id)}
                     onEdit={() => toast.info("Редактирование роли")}
                     onDelete={() => toast.info("Удаление роли")}
-                    onPermissions={() => toast.info("Права роли")}
+                    onPermissions={() => setSelectedRole(role)}
                   />
                 </td>
               </tr>
@@ -170,7 +193,10 @@ export default function Roles() {
       {/* PAGINATION */}
       <div className="flex justify-between items-center p-4 text-gray-900 mt-3">
         <div className="flex items-center gap-2">
-          <button disabled={currentPage === 1} onClick={() => setCurrentPage(1)}>
+          <button
+            disabled={currentPage === 1}
+            onClick={() => setCurrentPage(1)}
+          >
             {"<<"}
           </button>
 
@@ -201,13 +227,26 @@ export default function Roles() {
         </div>
       </div>
 
-      {/* MODAL */}
+      {/* Assign Policies Modal */}
       <AssignPoliciesModal
         open={assignOpen}
         onClose={() => setAssignOpen(false)}
         roleId={selectedRoleId}
         onAssigned={loadRoles}
       />
+
+      {/* Assign Permissions Modal */}
+      {selectedRole && (
+        <AssignPermissionsModal
+          roleId={selectedRole.id}
+          assignedPermissions={selectedRole.permissions}
+          onClose={() => setSelectedRole(null)}
+          onUpdated={() => {
+            setSelectedRole(null);
+            loadRoles();
+          }}
+        />
+      )}
     </div>
   );
 }

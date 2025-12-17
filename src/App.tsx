@@ -15,7 +15,7 @@ import { useEffect } from "react";
 import { useAuth } from "@/store/auth"
 import ProtectedRoute from "./components/ProtectedRoute";
 import { Toaster } from "sonner";
-
+import Permissions from "./pages/Permissions";
 
 
 export default function App() {
@@ -49,6 +49,7 @@ export default function App() {
           <Route path="audit" element={<Audit />} />
           <Route path="settings" element={<Settings />} />
           <Route path="roles" element={<Roles />} />
+          <Route path="permissions" element={<Permissions />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/dashboard" replace />} />

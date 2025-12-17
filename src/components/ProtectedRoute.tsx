@@ -1,4 +1,5 @@
 import { Navigate, useLocation } from "react-router-dom";
+import { useAuth } from "../store/auth";
 
 export default function ProtectedRoute({
   children,
@@ -6,9 +7,15 @@ export default function ProtectedRoute({
   children: JSX.Element;
 }) {
   const location = useLocation();
-  const token = localStorage.getItem("access_token");
+  const user = useAuth((s) => s.user);
+  const isInitialized = useAuth((s) => s.isInitialized);
 
-  if (!token) {
+  // ⏳ Ждём, пока loadFromStorage() отработает
+  if (!isInitialized) {
+    return null; // или loader
+  }
+
+  if (!user) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
 

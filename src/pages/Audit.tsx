@@ -1,8 +1,9 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { Input } from "../components/ui/input";
 import ActionMenuAudit from "../components/ActionMenuAudit";
 import PolicyPieChart from "../components/charts/PolicyPieChart";
 import { apiGet } from "../api/client";
+import { useSearchParams } from "react-router-dom";
 
 /* =====================================================
    Backend model (v1.0.0-backend-mvp)
@@ -103,7 +104,7 @@ function exportSingleAuditJson(record: AuditRecord) {
 }
 
 /* =====================================================
-   Detail panel
+   Detail panel (FIXED: component is defined)
 ===================================================== */
 function AuditDetailPanel({
   open,
@@ -121,13 +122,24 @@ function AuditDetailPanel({
       <div className="w-[420px] bg-[#121A33] h-full p-6 text-white overflow-y-auto">
         <h2 className="text-xl font-bold mb-4">Детали события</h2>
 
-        <pre className="text-xs bg-[#0E1A3A] p-3 rounded">
+        <div className="space-y-2 text-sm">
+          <div><b>Время:</b> {record.time}</div>
+          <div><b>Пользователь:</b> {record.user}</div>
+          <div><b>Категория:</b> {record.category}</div>
+          <div><b>Действие:</b> {record.action}</div>
+          <div><b>IP:</b> {record.ip}</div>
+        </div>
+
+        <div className="mt-4 bg-[#0E1A3A] p-3 rounded border border-white/10">
+          <div className="text-xs font-bold mb-1">Details (SIEM-ready)</div>
+          <pre className="text-xs whitespace-pre-wrap">
 {JSON.stringify(record.details, null, 2)}
-        </pre>
+          </pre>
+        </div>
 
         <button
           onClick={onClose}
-          className="mt-4 w-full bg-blue-600 py-2 rounded text-white"
+          className="mt-6 w-full bg-blue-600 hover:bg-blue-700 py-2 rounded text-white"
         >
           Закрыть
         </button>
@@ -146,8 +158,13 @@ export default function Audit() {
   const [categoryFilter, setCategoryFilter] = useState("all");
 
   const [detailOpen, setDetailOpen] = useState(false);
-  const [selectedRecord, setSelectedRecord] = useState<AuditRecord | null>(null);
+  const [selectedRecord, setSelectedRecord] =
+    useState<AuditRecord | null>(null);
 
+  const [searchParams] = useSearchParams();
+  const appliedFromUrl = useRef(false);
+
+  /* ===== LOAD AUDIT ===== */
   useEffect(() => {
     apiGet("/audit/logs")
       .then((data: BackendAuditLog[]) => {
@@ -156,6 +173,20 @@ export default function Audit() {
       .catch(console.error);
   }, []);
 
+  /* ===== URL PATCH (safe, no duplication) ===== */
+  useEffect(() => {
+    if (appliedFromUrl.current) return;
+
+    const category = searchParams.get("category");
+    const roleId = searchParams.get("role_id");
+
+    if (category) setCategoryFilter(category);
+    if (roleId) setSearch(roleId);
+
+    if (category || roleId) appliedFromUrl.current = true;
+  }, [searchParams]);
+
+  /* ===== FILTERING ===== */
   const filtered = useMemo(() => {
     return records.filter((r) => {
       const text =
@@ -172,8 +203,12 @@ export default function Audit() {
     });
   }, [records, search, statusFilter, categoryFilter]);
 
-  const successCount = records.filter((r) => r.status === "success").length;
-  const failedCount = records.filter((r) => r.status === "failed").length;
+  const successCount = records.filter(
+    (r) => r.status === "success"
+  ).length;
+  const failedCount = records.filter(
+    (r) => r.status === "failed"
+  ).length;
 
   return (
     <div className="p-8 w-full bg-white text-gray-900 space-y-6">
@@ -181,7 +216,7 @@ export default function Audit() {
 
       <PolicyPieChart active={successCount} disabled={failedCount} />
 
-      {/* FILTERS — ВОТ ЗДЕСЬ ИЗМЕНЕНИЯ */}
+      {/* FILTERS */}
       <div className="flex items-center gap-3 bg-white border p-4 rounded-xl">
         <Input
           className="w-80"
@@ -246,7 +281,10 @@ export default function Audit() {
 
           <tbody>
             {filtered.map((record) => (
-              <tr key={record.id} className="border-t border-[#1E2A45]">
+              <tr
+                key={record.id}
+                className="border-t border-[#1E2A45]"
+              >
                 <td className="p-3">{record.time}</td>
                 <td className="p-3">{record.user}</td>
                 <td className="p-3">{record.category}</td>
@@ -259,7 +297,9 @@ export default function Audit() {
                       setSelectedRecord(record);
                       setDetailOpen(true);
                     }}
-                    onExportJson={() => exportSingleAuditJson(record)}
+                    onExportJson={() =>
+                      exportSingleAuditJson(record)
+                    }
                   />
                 </td>
               </tr>

@@ -3,7 +3,7 @@ import { Input } from "../components/ui/input";
 import ActionMenuAudit from "../components/ActionMenuAudit";
 import PolicyPieChart from "../components/charts/PolicyPieChart";
 import { apiGet } from "../api/client";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
 
 /* =====================================================
    Backend model (v1.0.0-backend-mvp)
@@ -104,7 +104,7 @@ function exportSingleAuditJson(record: AuditRecord) {
 }
 
 /* =====================================================
-   Detail panel (FIXED: component is defined)
+   Detail panel (WITH CORRELATION)
 ===================================================== */
 function AuditDetailPanel({
   open,
@@ -115,6 +115,7 @@ function AuditDetailPanel({
   onClose: () => void;
   record: AuditRecord | null;
 }) {
+  const navigate = useNavigate();
   if (!open || !record) return null;
 
   return (
@@ -135,6 +136,31 @@ function AuditDetailPanel({
           <pre className="text-xs whitespace-pre-wrap">
 {JSON.stringify(record.details, null, 2)}
           </pre>
+        </div>
+
+        {/* === CORRELATION BUTTONS === */}
+        <div className="mt-4 space-y-2">
+          {record.details?.role_id && (
+            <button
+              onClick={() =>
+                navigate(`/roles?highlight=${record.details.role_id}`)
+              }
+              className="w-full px-4 py-2 bg-[#1A243F] hover:bg-[#0E1A3A] rounded text-white transition"
+            >
+              Открыть роль
+            </button>
+          )}
+
+          {record.details?.session_id && (
+            <button
+              onClick={() =>
+                navigate(`/sessions?session_id=${record.details.session_id}`)
+              }
+              className="w-full px-4 py-2 bg-[#1A243F] hover:bg-[#0E1A3A] rounded text-white transition"
+            >
+              Открыть сессию
+            </button>
+          )}
         </div>
 
         <button
@@ -173,7 +199,7 @@ export default function Audit() {
       .catch(console.error);
   }, []);
 
-  /* ===== URL PATCH (safe, no duplication) ===== */
+  /* ===== URL PATCH (Roles → Audit) ===== */
   useEffect(() => {
     if (appliedFromUrl.current) return;
 

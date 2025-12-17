@@ -4,9 +4,11 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from "./ui/dropdown-menu";
+import { useNavigate } from "react-router-dom";
 
 interface ActionMenuRoleProps {
   role?: {
+    id: number;
     name: string;
   };
   onAssign: () => void;
@@ -22,16 +24,19 @@ export default function ActionMenuRole({
   onEdit,
   onDelete,
 }: ActionMenuRoleProps) {
+  const navigate = useNavigate();
   const isSuperadmin = role?.name === "superadmin";
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
-          className="flex items-center gap-2 px-3 py-1.5
-                     bg-[#1A243F] hover:bg-[#0E1A3A]
-                     text-gray-200 border border-[#1E2A45]
-                     rounded-md transition cursor-pointer select-none"
+          className="
+            flex items-center gap-2 px-3 py-1.5
+            bg-[#1A243F] hover:bg-[#0E1A3A]
+            text-gray-200 border border-[#1E2A45]
+            rounded-md transition cursor-pointer select-none
+          "
         >
           Управление
           <span className="text-gray-400 text-sm">▼</span>
@@ -48,6 +53,17 @@ export default function ActionMenuRole({
 
         <DropdownMenuItem onClick={onPermissions}>
           Права роли
+        </DropdownMenuItem>
+
+        {/* ===== История изменений ===== */}
+        <DropdownMenuItem
+          onClick={() => {
+            if (role?.id) {
+              navigate(`/audit?category=role&role_id=${role.id}`);
+            }
+          }}
+        >
+          История изменений
         </DropdownMenuItem>
 
         {/* ===== Edit ===== */}

@@ -3,13 +3,16 @@ import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
 import AssignPoliciesModal from "../components/modals/AssignPoliciesModal";
 import AssignPermissionsModal from "../components/modals/AssignPermissionsModal";
+import DeleteRoleConfirmModal from "../components/modals/DeleteRoleConfirmModal";
+import EditRoleModal from "../components/modals/EditRoleModal";
+import CreateRoleModal from "../components/modals/CreateRoleModal";
 import ActionMenuRole from "../components/ActionMenuRole";
 import { toast } from "sonner";
 import { api } from "../services/api";
 
-// ======================
-// Types
-// ======================
+/* =======================
+   Types
+======================= */
 
 interface Policy {
   id: number;
@@ -30,29 +33,53 @@ interface Role {
   permissions: Permission[];
 }
 
-// ======================
-// Component
-// ======================
+/* =======================
+   Component
+======================= */
 
 export default function Roles() {
+  const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+
   const [roles, setRoles] = useState<Role[]>([]);
   const [search, setSearch] = useState("");
 
-  // Assign policies
-  const [assignOpen, setAssignOpen] = useState(false);
+  /* ----- Policies ----- */
+  const [assignPoliciesOpen, setAssignPoliciesOpen] = useState(false);
   const [selectedRoleId, setSelectedRoleId] = useState<number | null>(null);
 
-  // Assign permissions
+  /* ----- Permissions ----- */
   const [selectedRole, setSelectedRole] = useState<Role | null>(null);
 
-  // Pagination
+  /* ----- Delete role ----- */
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [roleToDelete, setRoleToDelete] = useState<Role | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
+  /* ----- Edit role ----- */
+  const [editOpen, setEditOpen] = useState(false);
+  const [roleToEdit, setRoleToEdit] = useState<Role | null>(null);
+
+  /* ----- Create role ----- */
+  const [createOpen, setCreateOpen] = useState(false);
+  const [newRoleName, setNewRoleName] = useState("");
+  const [createLoading, setCreateLoading] = useState(false);
+
+  /* ----- Pagination ----- */
   const [currentPage, setCurrentPage] = useState(1);
   const rowsPerPage = 10;
   const [totalPages, setTotalPages] = useState(1);
 
-  // ======================
-  // Load roles
-  // ======================
+  /* =======================
+     API helpers
+  ======================= */
+
+  const authHeaders = () => {
+    const token = localStorage.getItem("access_token");
+    return {
+      "Content-Type": "application/json",
+      Authorization: token ? `Bearer ${token}` : "",
+    };
+  };
 
   const loadRoles = async () => {
     try {
@@ -60,14 +87,12 @@ export default function Roles() {
         `/roles/?page=${currentPage}&limit=${rowsPerPage}`
       );
 
-      // Формат 1: массив
       if (Array.isArray(data)) {
         setRoles(data);
         setTotalPages(1);
         return;
       }
 
-      // Формат 2: пагинация
       if (Array.isArray(data.items)) {
         setRoles(data.items);
         setTotalPages(
@@ -76,25 +101,84 @@ export default function Roles() {
         return;
       }
 
-      console.error("Неверный формат API:", data);
-      toast.error("Ошибка данных от сервера");
+      toast.error("Неверный формат данных от сервера");
       setRoles([]);
-      setTotalPages(1);
-    } catch (err) {
-      console.error("Ошибка загрузки ролей:", err);
+    } catch (e) {
+      console.error(e);
       toast.error("Ошибка загрузки ролей");
       setRoles([]);
-      setTotalPages(1);
     }
   };
 
   useEffect(() => {
     loadRoles();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPage]);
 
-  // ======================
-  // Search
-  // ======================
+  /* =======================
+     CRUD actions
+  ======================= */
+
+  const createRole = async () => {
+    if (!newRoleName.trim()) return;
+
+    setCreateLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/roles`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ name: newRoleName.trim() }),
+      });
+
+      if (!res.ok) throw new Error("Create failed");
+
+      toast.success("Роль создана");
+      setCreateOpen(false);
+      setNewRoleName("");
+      loadRoles();
+    } catch {
+      toast.error("Не удалось создать роль");
+    } finally {
+      setCreateLoading(false);
+    }
+  };
+
+  const updateRole = async (roleId: number, name: string) => {
+    const res = await fetch(`${API_URL}/roles/${roleId}`, {
+      method: "PATCH",
+      headers: authHeaders(),
+      body: JSON.stringify({ name }),
+    });
+
+    if (!res.ok) throw new Error("Update failed");
+  };
+
+  const deleteRole = async () => {
+    if (!roleToDelete) return;
+
+    setDeleteLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/roles/${roleToDelete.id}`, {
+        method: "DELETE",
+        headers: authHeaders(),
+      });
+
+      if (!res.ok) throw new Error();
+
+      toast.success("Роль удалена");
+      setDeleteOpen(false);
+      setRoleToDelete(null);
+      loadRoles();
+    } catch {
+      toast.error("Не удалось удалить роль");
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  /* =======================
+     UI helpers
+  ======================= */
 
   const filtered = useMemo(() => {
     return roles.filter((r) =>
@@ -102,14 +186,9 @@ export default function Roles() {
     );
   }, [roles, search]);
 
-  const openAssignPolicies = (roleId: number) => {
-    setSelectedRoleId(roleId);
-    setAssignOpen(true);
-  };
-
-  // ======================
-  // UI
-  // ======================
+  /* =======================
+     Render
+  ======================= */
 
   return (
     <div className="p-6 w-full bg-gray-100 text-gray-900">
@@ -127,115 +206,96 @@ export default function Roles() {
           }}
         />
 
-        <Button onClick={() => toast.info("Создание роли будет добавлено позже")}>
+        <Button onClick={() => setCreateOpen(true)}>
           + Создать роль
         </Button>
       </div>
 
       {/* TABLE */}
-      <div className="overflow-y-auto max-h-[550px] bg-[#121A33] border border-[#1E2A45] rounded-xl shadow-xl">
+      <div className="overflow-y-auto max-h-[550px] bg-[#121A33] border border-[#1E2A45] rounded-xl">
         <table className="w-full text-sm text-white">
-          <thead className="bg-[#1A243F] text-gray-300 sticky top-0 z-10">
+          <thead className="bg-[#1A243F] text-gray-300">
             <tr>
               <th className="p-3 text-left">Название</th>
-              <th className="p-3 text-left">Привязанные политики</th>
+              <th className="p-3 text-left">Политики</th>
               <th className="p-3 text-left">Действия</th>
             </tr>
           </thead>
 
           <tbody>
             {filtered.map((role) => (
-              <tr
-                key={role.id}
-                className="border-t border-[#1E2A45] hover:bg-[#0E1A3A] transition"
-              >
+              <tr key={role.id} className="border-t border-[#1E2A45]">
                 <td className="p-3">{role.name}</td>
 
                 <td className="p-3">
-                  {!role.policies || role.policies.length === 0 ? (
-                    <span className="text-gray-400">Нет политик</span>
+                  {!role.policies?.length ? (
+                    <span className="text-gray-400">Нет</span>
                   ) : (
-                    <div className="flex gap-2 flex-wrap">
-                      {role.policies.map((p) => (
-                        <span
-                          key={p.id}
-                          className="px-3 py-1 bg-blue-700 rounded-full text-xs font-bold"
-                        >
-                          {p.name}
-                        </span>
-                      ))}
-                    </div>
+                    role.policies.map((p) => (
+                      <span
+                        key={p.id}
+                        className="mr-2 px-2 py-1 bg-blue-700 rounded-full text-xs"
+                      >
+                        {p.name}
+                      </span>
+                    ))
                   )}
                 </td>
 
                 <td className="p-3">
                   <ActionMenuRole
-                    onAssign={() => openAssignPolicies(role.id)}
-                    onEdit={() => toast.info("Редактирование роли")}
-                    onDelete={() => toast.info("Удаление роли")}
+                    onAssign={() => {
+                      setSelectedRoleId(role.id);
+                      setAssignPoliciesOpen(true);
+                    }}
+                    onEdit={() => {
+                      setRoleToEdit(role);
+                      setEditOpen(true);
+                    }}
+                    onDelete={() => {
+                      setRoleToDelete(role);
+                      setDeleteOpen(true);
+                    }}
                     onPermissions={() => setSelectedRole(role)}
                   />
                 </td>
               </tr>
             ))}
-
-            {filtered.length === 0 && (
-              <tr>
-                <td colSpan={3} className="p-6 text-center text-gray-400">
-                  Роли не найдены
-                </td>
-              </tr>
-            )}
           </tbody>
         </table>
       </div>
 
-      {/* PAGINATION */}
-      <div className="flex justify-between items-center p-4 text-gray-900 mt-3">
-        <div className="flex items-center gap-2">
-          <button
-            disabled={currentPage === 1}
-            onClick={() => setCurrentPage(1)}
-          >
-            {"<<"}
-          </button>
-
-          <button
-            disabled={currentPage === 1}
-            onClick={() => setCurrentPage((p) => p - 1)}
-          >
-            {"<"}
-          </button>
-
-          <span>
-            {currentPage} / {totalPages}
-          </span>
-
-          <button
-            disabled={currentPage === totalPages}
-            onClick={() => setCurrentPage((p) => p + 1)}
-          >
-            {">"}
-          </button>
-
-          <button
-            disabled={currentPage === totalPages}
-            onClick={() => setCurrentPage(totalPages)}
-          >
-            {">>"}
-          </button>
-        </div>
+      {/* Pagination */}
+      <div className="flex justify-center gap-3 mt-4">
+        <button disabled={currentPage === 1} onClick={() => setCurrentPage(1)}>
+          {"<<"}
+        </button>
+        <button
+          disabled={currentPage === 1}
+          onClick={() => setCurrentPage((p) => p - 1)}
+        >
+          {"<"}
+        </button>
+        <span>
+          {currentPage} / {totalPages}
+        </span>
+        <button
+          disabled={currentPage === totalPages}
+          onClick={() => setCurrentPage((p) => p + 1)}
+        >
+          {">"}
+        </button>
       </div>
 
-      {/* Assign Policies Modal */}
+      {/* ===== Modals ===== */}
+
       <AssignPoliciesModal
-        open={assignOpen}
-        onClose={() => setAssignOpen(false)}
+        open={assignPoliciesOpen}
+        onClose={() => setAssignPoliciesOpen(false)}
         roleId={selectedRoleId}
         onAssigned={loadRoles}
       />
 
-      {/* Assign Permissions Modal */}
       {selectedRole && (
         <AssignPermissionsModal
           roleId={selectedRole.id}
@@ -247,6 +307,47 @@ export default function Roles() {
           }}
         />
       )}
+
+      <DeleteRoleConfirmModal
+        isOpen={deleteOpen}
+        roleName={roleToDelete?.name || ""}
+        onClose={() => {
+          if (deleteLoading) return;
+          setDeleteOpen(false);
+          setRoleToDelete(null);
+        }}
+        onConfirm={deleteRole}
+      />
+      <CreateRoleModal
+  isOpen={createOpen}
+  loading={createLoading}
+  onClose={() => setCreateOpen(false)}
+  onCreate={async (name) => {
+    setNewRoleName(name);
+    await createRole();
+  }}
+/>
+   
+      <EditRoleModal
+        isOpen={editOpen}
+        roleName={roleToEdit?.name || ""}
+        onClose={() => {
+          setEditOpen(false);
+          setRoleToEdit(null);
+        }}
+        onSave={async (newName) => {
+          if (!roleToEdit) return;
+          try {
+            await updateRole(roleToEdit.id, newName);
+            toast.success("Роль обновлена");
+            setEditOpen(false);
+            setRoleToEdit(null);
+            loadRoles();
+          } catch {
+            toast.error("Не удалось обновить роль");
+          }
+        }}
+      />
     </div>
   );
 }

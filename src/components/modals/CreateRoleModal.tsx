@@ -1,60 +1,56 @@
 import { useState } from "react";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "../ui/dialog";
-import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import { Button } from "../ui/button";
 
-interface Props {
-  open: boolean;
+interface CreateRoleModalProps {
+  isOpen: boolean;
   onClose: () => void;
   onCreate: (name: string) => void;
+  loading?: boolean;
 }
 
-export default function CreateRoleModal({ open, onClose, onCreate }: Props) {
+export default function CreateRoleModal({
+  isOpen,
+  onClose,
+  onCreate,
+  loading,
+}: CreateRoleModalProps) {
   const [name, setName] = useState("");
 
+  if (!isOpen) return null;
+
   return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="bg-[#121A33] text-white rounded-xl p-6 shadow-2xl w-[400px]">
-        <DialogHeader>
-          <DialogTitle className="text-xl font-bold">Создать роль</DialogTitle>
-        </DialogHeader>
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[9999]">
+      <div className="bg-[#0A0F24] w-[420px] p-6 rounded-xl border border-white/10">
 
-        <div className="mt-4 space-y-4">
-          <Input
-            placeholder="Название роли"
-            className="bg-white text-gray-900"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-        </div>
+        <h2 className="text-2xl font-bold mb-4 text-white">
+          Создать роль
+        </h2>
 
-        <div className="flex justify-end gap-3 mt-6">
+        <Input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Название роли"
+          className="mb-6 bg-[#121A33] border border-[#1E2A45] text-white placeholder:text-gray-400"
+        />
+
+        <div className="flex justify-end gap-3">
           <Button
-            variant="outline"
-            className="border-gray-500 text-gray-300"
             onClick={onClose}
+            className="bg-[#1E2A45] text-white hover:bg-[#2A3A5F]"
           >
             Отмена
           </Button>
 
           <Button
-            className="bg-blue-600 hover:bg-blue-700"
-            onClick={() => {
-              if (!name.trim()) return;
-              onCreate(name);
-              setName("");
-              onClose();
-            }}
+            disabled={!name.trim() || loading}
+            onClick={() => onCreate(name.trim())}
+            className="bg-[#0052FF] text-white hover:bg-[#1A6BFF]"
           >
             Создать
           </Button>
         </div>
-      </DialogContent>
-    </Dialog>
+      </div>
+    </div>
   );
 }

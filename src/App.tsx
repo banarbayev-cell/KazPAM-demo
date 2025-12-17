@@ -12,7 +12,7 @@ import Vault from "./pages/Vault";
 import Policies from "./pages/Policies";
 import Roles from "./pages/Roles";
 import { useEffect } from "react";
-import { useAuth } from "@/store/auth"
+import { useAuth } from "./store/auth";
 import ProtectedRoute from "./components/ProtectedRoute";
 import { Toaster } from "sonner";
 import Permissions from "./pages/Permissions";

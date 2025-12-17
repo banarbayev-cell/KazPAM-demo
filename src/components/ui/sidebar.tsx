@@ -53,7 +53,22 @@ export default function Sidebar() {
             Роли
           </NavLink>
         </Access>
-
+                 {/* Управление доступом — только при permission manage_permissions */}
+        <Access permission="manage_permissions">
+          <NavLink
+            to="/permissions"
+            className={({ isActive }) =>
+              `block px-4 py-2 rounded-md transition text-gray-300 ${
+                isActive
+                  ? "bg-[#0052FF] text-white font-semibold"
+                  : "hover:bg-[#1A2141] hover:text-[#3BE3FD]"
+              }`
+            }
+          >
+            Управление доступом
+          </NavLink>
+        </Access>
+  
         {/* Сессии */}
         <NavLink
           to="/sessions"

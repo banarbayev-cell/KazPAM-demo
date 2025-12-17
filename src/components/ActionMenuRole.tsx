@@ -2,15 +2,28 @@ import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
-  DropdownMenuItem
+  DropdownMenuItem,
 } from "./ui/dropdown-menu";
 
+interface ActionMenuRoleProps {
+  role?: {
+    name: string;
+  };
+  onAssign: () => void;
+  onPermissions: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}
+
 export default function ActionMenuRole({
+  role,
   onAssign,
   onPermissions,
   onEdit,
   onDelete,
-}: any) {
+}: ActionMenuRoleProps) {
+  const isSuperadmin = role?.name === "superadmin";
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -27,7 +40,7 @@ export default function ActionMenuRole({
 
       <DropdownMenuContent
         align="end"
-        className="bg-[#121A33] text-gray-200 border border-[#1E2A45]"
+        className="bg-[#121A33] text-gray-200 border border-[#1E2A45] w-64"
       >
         <DropdownMenuItem onClick={onAssign}>
           Привязать политики
@@ -37,16 +50,35 @@ export default function ActionMenuRole({
           Права роли
         </DropdownMenuItem>
 
-        <DropdownMenuItem onClick={onEdit}>
+        {/* ===== Edit ===== */}
+        <DropdownMenuItem
+          onClick={!isSuperadmin ? onEdit : undefined}
+          disabled={isSuperadmin}
+          className={isSuperadmin ? "opacity-50 cursor-not-allowed" : ""}
+        >
           Редактировать
         </DropdownMenuItem>
 
+        {/* ===== Delete ===== */}
         <DropdownMenuItem
-          onClick={onDelete}
-          className="text-red-500"
+          onClick={!isSuperadmin ? onDelete : undefined}
+          disabled={isSuperadmin}
+          className={
+            isSuperadmin
+              ? "opacity-50 cursor-not-allowed"
+              : "text-red-500"
+          }
         >
           Удалить
         </DropdownMenuItem>
+
+        {/* ===== INFO MESSAGE (ТОЛЬКО ДЛЯ superadmin) ===== */}
+        {isSuperadmin && (
+          <div className="px-3 py-2 mt-1 text-xs text-gray-400 border-t border-[#1E2A45]">
+            Роль <span className="text-gray-300">superadmin</span> нельзя
+            редактировать или удалять
+          </div>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

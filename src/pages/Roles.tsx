@@ -61,7 +61,6 @@ export default function Roles() {
 
   /* ----- Create role ----- */
   const [createOpen, setCreateOpen] = useState(false);
-  const [newRoleName, setNewRoleName] = useState("");
   const [createLoading, setCreateLoading] = useState(false);
 
   /* ----- Pagination ----- */
@@ -103,8 +102,7 @@ export default function Roles() {
 
       toast.error("Неверный формат данных от сервера");
       setRoles([]);
-    } catch (e) {
-      console.error(e);
+    } catch {
       toast.error("Ошибка загрузки ролей");
       setRoles([]);
     }
@@ -119,25 +117,25 @@ export default function Roles() {
      CRUD actions
   ======================= */
 
-  const createRole = async () => {
-    if (!newRoleName.trim()) return;
-
+  const createRole = async (name: string) => {
     setCreateLoading(true);
     try {
       const res = await fetch(`${API_URL}/roles`, {
         method: "POST",
         headers: authHeaders(),
-        body: JSON.stringify({ name: newRoleName.trim() }),
+        body: JSON.stringify({ name }),
       });
 
-      if (!res.ok) throw new Error("Create failed");
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.detail || "Create failed");
+      }
 
       toast.success("Роль создана");
       setCreateOpen(false);
-      setNewRoleName("");
       loadRoles();
-    } catch {
-      toast.error("Не удалось создать роль");
+    } catch (e: any) {
+      toast.error(e.message || "Не удалось создать роль");
     } finally {
       setCreateLoading(false);
     }
@@ -150,7 +148,12 @@ export default function Roles() {
       body: JSON.stringify({ name }),
     });
 
-    if (!res.ok) throw new Error("Update failed");
+    if (!res.ok) {
+      const data = await res.json();
+      const error: any = new Error(data.detail || "Update failed");
+      error.status = res.status;
+      throw error;
+    }
   };
 
   const deleteRole = async () => {
@@ -163,14 +166,19 @@ export default function Roles() {
         headers: authHeaders(),
       });
 
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        const data = await res.json();
+        const error: any = new Error(data.detail || "Delete failed");
+        error.status = res.status;
+        throw error;
+      }
 
       toast.success("Роль удалена");
       setDeleteOpen(false);
       setRoleToDelete(null);
       loadRoles();
-    } catch {
-      toast.error("Не удалось удалить роль");
+    } catch (e: any) {
+      toast.error(e.message || "Не удалось удалить роль");
     } finally {
       setDeleteLoading(false);
     }
@@ -244,6 +252,7 @@ export default function Roles() {
 
                 <td className="p-3">
                   <ActionMenuRole
+                    role={role}
                     onAssign={() => {
                       setSelectedRoleId(role.id);
                       setAssignPoliciesOpen(true);
@@ -265,29 +274,7 @@ export default function Roles() {
         </table>
       </div>
 
-      {/* Pagination */}
-      <div className="flex justify-center gap-3 mt-4">
-        <button disabled={currentPage === 1} onClick={() => setCurrentPage(1)}>
-          {"<<"}
-        </button>
-        <button
-          disabled={currentPage === 1}
-          onClick={() => setCurrentPage((p) => p - 1)}
-        >
-          {"<"}
-        </button>
-        <span>
-          {currentPage} / {totalPages}
-        </span>
-        <button
-          disabled={currentPage === totalPages}
-          onClick={() => setCurrentPage((p) => p + 1)}
-        >
-          {">"}
-        </button>
-      </div>
-
-      {/* ===== Modals ===== */}
+      {/* Modals */}
 
       <AssignPoliciesModal
         open={assignPoliciesOpen}
@@ -318,16 +305,14 @@ export default function Roles() {
         }}
         onConfirm={deleteRole}
       />
+
       <CreateRoleModal
-  isOpen={createOpen}
-  loading={createLoading}
-  onClose={() => setCreateOpen(false)}
-  onCreate={async (name) => {
-    setNewRoleName(name);
-    await createRole();
-  }}
-/>
-   
+        isOpen={createOpen}
+        loading={createLoading}
+        onClose={() => setCreateOpen(false)}
+        onCreate={createRole}
+      />
+
       <EditRoleModal
         isOpen={editOpen}
         roleName={roleToEdit?.name || ""}
@@ -343,8 +328,8 @@ export default function Roles() {
             setEditOpen(false);
             setRoleToEdit(null);
             loadRoles();
-          } catch {
-            toast.error("Не удалось обновить роль");
+          } catch (e: any) {
+            toast.error(e.message || "Не удалось обновить роль");
           }
         }}
       />

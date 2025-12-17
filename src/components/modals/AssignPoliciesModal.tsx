@@ -8,7 +8,7 @@ import {
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
 import { toast } from "sonner";
-import { api } from "@/services/api"; // ✅ ВАЖНО
+import { api } from "../../services/api"; // ✅ ВАЖНО
 
 interface Policy {
   id: number;

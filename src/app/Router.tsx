@@ -2,20 +2,18 @@
 import React from "react";
 import { createBrowserRouter, RouterProvider, Navigate } from "react-router-dom";
 
-import AuthGuard from "@/app/AuthGuard";
-import AppLayout from "@/layout/AppLayout";
+import AuthGuard from "./AuthGuard";
+import AppLayout from "../layout/AppLayout";
 
-// Pages (создай заглушки, если страниц пока нет)
-import Login from "@/pages/Login";
-import Dashboard from "@/pages/Dashboard";
-import Sessions from "@/pages/Sessions";
-import Audit from "@/pages/Audit";
+import Login from "../pages/Login";
+import Dashboard from "../pages/Dashboard";
+import Sessions from "../pages/Sessions";
+import Audit from "../pages/Audit";
+import Permissions from "../pages/Permissions";
 
 const router = createBrowserRouter([
-  // Публичная зона
   { path: "/login", element: <Login /> },
 
-  // Приватная зона
   {
     element: <AuthGuard />,
     children: [
@@ -26,12 +24,12 @@ const router = createBrowserRouter([
           { path: "/dashboard", element: <Dashboard /> },
           { path: "/sessions", element: <Sessions /> },
           { path: "/audit", element: <Audit /> },
+          { path: "/permissions", element: <Permissions /> },
         ],
       },
     ],
   },
 
-  // Фолбек
   { path: "*", element: <Navigate to="/" replace /> },
 ]);
 

@@ -1,14 +1,11 @@
-// src/app/AuthGuard.tsx
-import React from "react";
-import { Navigate, Outlet, useLocation } from "react-router-dom";
-import { isAuthenticated } from "@/auth/token";
+import { Navigate, Outlet } from "react-router-dom";
+import { useAuth } from "../store/auth"; // <-- без алиаса
 
 export default function AuthGuard() {
-  const location = useLocation();
+  const user = useAuth((s) => s.user);
 
-  // Без токена — на логин, сохраняя откуда пришёл
-  if (!isAuthenticated()) {
-    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  if (!user) {
+    return <Navigate to="/login" replace />;
   }
 
   return <Outlet />;

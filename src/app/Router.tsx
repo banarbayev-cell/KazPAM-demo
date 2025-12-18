@@ -6,10 +6,11 @@ import AuthGuard from "./AuthGuard";
 import AppLayout from "../layout/AppLayout";
 
 import Login from "../pages/Login";
-import Dashboard from "../pages/Dashboard";
+import Home from "../pages/Home";
 import Sessions from "../pages/Sessions";
 import Audit from "../pages/Audit";
 import Permissions from "../pages/Permissions";
+import SocDashboard from "../pages/SocDashboard";
 
 const router = createBrowserRouter([
   { path: "/login", element: <Login /> },
@@ -21,7 +22,8 @@ const router = createBrowserRouter([
         element: <AppLayout />,
         children: [
           { path: "/", element: <Navigate to="/dashboard" replace /> },
-          { path: "/dashboard", element: <Dashboard /> },
+          { path: "/dashboard", element: <Home /> },
+          { path: "/soc", element: <SocDashboard /> },
           { path: "/sessions", element: <Sessions /> },
           { path: "/audit", element: <Audit /> },
           { path: "/permissions", element: <Permissions /> },

@@ -3,11 +3,13 @@ import { useState, useRef, useEffect } from "react";
 interface ActionMenuAuditProps {
   onView: () => void;
   onExportJson?: () => void;
+  onExportCsv?: () => void;
 }
 
 export default function ActionMenuAudit({
   onView,
   onExportJson,
+  onExportCsv,
 }: ActionMenuAuditProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -80,21 +82,42 @@ export default function ActionMenuAudit({
           </button>
 
           {/* Export JSON */}
-          <button
-            onClick={() => {
-              onExportJson?.();
-              setOpen(false);
-            }}
-            className="
-              block w-full text-left
-              px-4 py-2
-              text-sm text-cyan-400
-              hover:bg-[#0E1A3A]
-              transition
-            "
-          >
-            Экспорт JSON
-          </button>
+          {onExportJson && (
+            <button
+              onClick={() => {
+                onExportJson();
+                setOpen(false);
+              }}
+              className="
+                block w-full text-left
+                px-4 py-2
+                text-sm text-cyan-400
+                hover:bg-[#0E1A3A]
+                transition
+              "
+            >
+              Экспорт JSON
+            </button>
+          )}
+
+          {/* Export CSV */}
+          {onExportCsv && (
+            <button
+              onClick={() => {
+                onExportCsv();
+                setOpen(false);
+              }}
+              className="
+                block w-full text-left
+                px-4 py-2
+                text-sm text-green-400
+                hover:bg-[#0E1A3A]
+                transition
+              "
+            >
+              Экспорт CSV
+            </button>
+          )}
         </div>
       )}
     </div>

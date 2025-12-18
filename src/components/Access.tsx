@@ -15,7 +15,6 @@ export default function Access({ permission, children }: AccessProps) {
     ? user.permissions
     : [];
 
-  // Точное совпадение permission
   if (userPermissions.includes(permission)) {
     return <>{children}</>;
   }

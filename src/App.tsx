@@ -1,9 +1,12 @@
+import React, { useEffect } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
-import React from "react";
+import { Toaster } from "sonner";
 
 import Login from "./pages/Login";
 import DashboardLayout from "./layouts/dashboard-layout";
-import Dashboard from "./pages/Dashboard";
+
+import Home from "./pages/Home";
+import SocDashboard from "./pages/SocDashboard";
 import Users from "./pages/Users";
 import Sessions from "./pages/Sessions";
 import Audit from "./pages/Audit";
@@ -11,19 +14,17 @@ import Settings from "./pages/Settings";
 import Vault from "./pages/Vault";
 import Policies from "./pages/Policies";
 import Roles from "./pages/Roles";
-import { useEffect } from "react";
-import { useAuth } from "./store/auth";
-import ProtectedRoute from "./components/ProtectedRoute";
-import { Toaster } from "sonner";
 import Permissions from "./pages/Permissions";
 
+import { useAuth } from "./store/auth";
+import ProtectedRoute from "./components/ProtectedRoute";
 
 export default function App() {
   const loadFromStorage = useAuth((s) => s.loadFromStorage);
 
   useEffect(() => {
     loadFromStorage();
-  }, []);
+  }, [loadFromStorage]);
 
   return (
     <>
@@ -41,7 +42,10 @@ export default function App() {
           }
         >
           <Route index element={<Navigate to="/dashboard" replace />} />
-          <Route path="dashboard" element={<Dashboard />} />
+
+          <Route path="dashboard" element={<Home />} />
+          <Route path="soc" element={<SocDashboard />} />
+
           <Route path="users" element={<Users />} />
           <Route path="sessions" element={<Sessions />} />
           <Route path="vault" element={<Vault />} />

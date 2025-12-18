@@ -1,144 +1,90 @@
 import { NavLink } from "react-router-dom";
-import Access from "../Access"; // проверь путь — обычно "../components/Access"
+import Access from "../Access";
 
 export default function Sidebar() {
   return (
-    <div className="w-64 h-screen bg-[#0A0F24] text-white flex flex-col p-6 border-r border-white/10">
-      <h1 className="text-3xl font-bold mb-10">
+    <aside className="w-64 h-screen bg-[#0A0F24] text-white flex flex-col p-6 border-r border-white/10">
+      {/* LOGO */}
+      <h1 className="text-3xl font-bold mb-8 select-none">
         Kaz<span className="text-[#0052FF]">PAM</span>
       </h1>
 
-      <nav className="space-y-2">
-
-        {/* Главная */}
-        <NavLink
-          to="/dashboard"
-          className={({ isActive }) =>
-            `block px-4 py-2 rounded-md transition text-gray-300 ${
-              isActive
-                ? "bg-[#0052FF] text-white font-semibold"
-                : "hover:bg-[#1A2141] hover:text-[#3BE3FD]"
-            }`
-          }
-        >
+      {/* NAV */}
+      <nav className="flex-1 flex flex-col space-y-1">
+        {/* Основное */}
+        <NavLink to="/dashboard" className={navClass}>
           Главная
         </NavLink>
 
-        {/* Пользователи */}
-        <NavLink
-          to="/users"
-          className={({ isActive }) =>
-            `block px-4 py-2 rounded-md transition text-gray-300 ${
-              isActive
-                ? "bg-[#0052FF] text-white font-semibold"
-                : "hover:bg-[#1A2141] hover:text-[#3BE3FD]"
-            }`
-          }
-        >
+        <Access permission="view_soc">
+          <NavLink to="/soc" className={navClass}>
+            SOC
+          </NavLink>
+        </Access>
+
+        <div className="my-3 border-t border-white/10" />
+
+        {/* Управление */}
+        <NavLink to="/users" className={navClass}>
           Пользователи
         </NavLink>
 
-        {/* Роли — доступ только при permission manage_roles */}
         <Access permission="manage_roles">
-          <NavLink
-            to="/roles"
-            className={({ isActive }) =>
-              `block px-4 py-2 rounded-md transition text-gray-300 ${
-                isActive
-                  ? "bg-[#0052FF] text-white font-semibold"
-                  : "hover:bg-[#1A2141] hover:text-[#3BE3FD]"
-              }`
-            }
-          >
+          <NavLink to="/roles" className={navClass}>
             Роли
           </NavLink>
         </Access>
-                 {/* Управление доступом — только при permission manage_permissions */}
+
         <Access permission="manage_permissions">
-          <NavLink
-            to="/permissions"
-            className={({ isActive }) =>
-              `block px-4 py-2 rounded-md transition text-gray-300 ${
-                isActive
-                  ? "bg-[#0052FF] text-white font-semibold"
-                  : "hover:bg-[#1A2141] hover:text-[#3BE3FD]"
-              }`
-            }
-          >
+          <NavLink to="/permissions" className={navClass}>
             Управление доступом
           </NavLink>
         </Access>
-  
-        {/* Сессии */}
-        <NavLink
-          to="/sessions"
-          className={({ isActive }) =>
-            `block px-4 py-2 rounded-md transition text-gray-300 ${
-              isActive
-                ? "bg-[#0052FF] text-white font-semibold"
-                : "hover:bg-[#1A2141] hover:text-[#3BE3FD]"
-            }`
-          }
-        >
+
+        <div className="my-3 border-t border-white/10" />
+
+        {/* Безопасность */}
+        <NavLink to="/sessions" className={navClass}>
           Сессии
         </NavLink>
 
-        {/* Хранилище */}
-        <NavLink
-          to="/vault"
-          className={({ isActive }) =>
-            `block px-4 py-2 rounded-md transition text-gray-300 ${
-              isActive
-                ? "bg-[#0052FF] text-white font-semibold"
-                : "hover:bg-[#1A2141] hover:text-[#3BE3FD]"
-            }`
-          }
-        >
-          Хранилище
-        </NavLink>
+        <Access permission="view_vault">
+          <NavLink to="/vault" className={navClass}>
+            Хранилище
+          </NavLink>
+        </Access>
 
-        {/* Политики */}
-        <NavLink
-          to="/policies"
-          className={({ isActive }) =>
-            `block px-4 py-2 rounded-md transition text-gray-300 ${
-              isActive
-                ? "bg-[#0052FF] text-white font-semibold"
-                : "hover:bg-[#1A2141] hover:text-[#3BE3FD]"
-            }`
-          }
-        >
-          Политики безопасности
-        </NavLink>
+        <Access permission="manage_policies">
+          <NavLink to="/policies" className={navClass}>
+            Политики безопасности
+          </NavLink>
+        </Access>
 
-        {/* Аудит */}
-        <NavLink
-          to="/audit"
-          className={({ isActive }) =>
-            `block px-4 py-2 rounded-md transition text-gray-300 ${
-              isActive
-                ? "bg-[#0052FF] text-white font-semibold"
-                : "hover:bg-[#1A2141] hover:text-[#3BE3FD]"
-            }`
-          }
-        >
-          Аудит
-        </NavLink>
+        <Access permission="view_audit">
+          <NavLink to="/audit" className={navClass}>
+            Аудит
+          </NavLink>
+        </Access>
 
-        {/* Настройки */}
-        <NavLink
-          to="/settings"
-          className={({ isActive }) =>
-            `block px-4 py-2 rounded-md transition text-gray-300 ${
-              isActive
-                ? "bg-[#0052FF] text-white font-semibold"
-                : "hover:bg-[#1A2141] hover:text-[#3BE3FD]"
-            }`
-          }
-        >
+        <div className="my-3 border-t border-white/10" />
+
+        {/* Системное */}
+        <NavLink to="/settings" className={navClass}>
           Настройки
         </NavLink>
       </nav>
-    </div>
+
+      {/* FOOTER */}
+      <div className="text-xs text-gray-400 pt-4 border-t border-white/10">
+        KazPAM · v1.0.0 MVP
+      </div>
+    </aside>
   );
 }
+
+const navClass = ({ isActive }: { isActive: boolean }) =>
+  `px-4 py-2 rounded-md transition cursor-pointer select-none ${
+    isActive
+      ? "bg-[#0052FF] text-white font-semibold"
+      : "text-gray-300 hover:bg-[#1A2141] hover:text-[#3BE3FD]"
+  }`;

@@ -1,11 +1,14 @@
 import { useState } from "react";
 import ThreatCard from "../components/ThreatCard";
+import InvestigationModal from "../components/modals/InvestigationModal";
 
 export default function SocDashboard() {
-  const [openInvestigation, setOpenInvestigation] = useState(false);
+  const [investigationOpen, setInvestigationOpen] = useState(false);
 
   return (
     <div className="p-8 space-y-8">
+
+      {/* SOC ALERT CARD */}
       <ThreatCard
         level="high"
         incidents={[
@@ -14,14 +17,37 @@ export default function SocDashboard() {
           "security — доступ к запрещённому разделу",
           "root — 14 подозрительных команд",
         ]}
-        onInvestigate={() => setOpenInvestigation(true)}
+        onInvestigate={() => setInvestigationOpen(true)}
       />
 
-      {openInvestigation && (
-        <div className="bg-[#121A33] border border-[#1E2A45] rounded-xl p-5 text-gray-300">
-          🔍 Расследование будет здесь (InvestigationModal — следующий шаг)
-        </div>
-      )}
+      {/* INVESTIGATION MODAL */}
+      <InvestigationModal
+        isOpen={investigationOpen}
+        onClose={() => setInvestigationOpen(false)}
+        record={{
+          user: "root",
+          ip: "185.xxx.xxx.xxx",
+          location: "Unknown",
+          device: "Linux Server",
+          events: [
+            "Вход с неизвестного IP",
+            "14 подозрительных команд",
+            "Попытка обхода политики доступа",
+            "Аномальный рост активности команд",
+          ],
+        }}
+        onBlock={() => {
+          console.log("🚫 BLOCK USER root");
+          setInvestigationOpen(false);
+        }}
+        onIsolate={() => {
+          console.log("⚡ ISOLATE SESSION");
+        }}
+        onExport={() => {
+          console.log("📤 EXPORT INCIDENT");
+        }}
+      />
+
     </div>
   );
 }

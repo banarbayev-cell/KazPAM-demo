@@ -91,10 +91,10 @@ export default function InvestigationModal({
           </div>
         </div>
 
-        {/* INCIDENT */}
+        {/* INCIDENT STATUS */}
         {incident && (
           <div className="mb-5 bg-[#0E1A3A] border border-[var(--border)] rounded-lg p-3">
-            <div className="flex justify-between text-sm">
+            <div className="flex justify-between items-center text-sm">
               <div className="text-gray-300">
                 Incident ID:
                 <span className="ml-2 font-semibold text-white">
@@ -102,8 +102,25 @@ export default function InvestigationModal({
                 </span>
               </div>
 
-              <div className="font-semibold text-blue-400">
-                {incident.status}
+              {/* STATUS + ACTION BADGES */}
+              <div className="flex gap-2 items-center">
+                <span className="px-2 py-1 rounded bg-gray-700 text-gray-200 font-semibold">
+                  {incident.status}
+                </span>
+
+                {incident.lastAction && (
+                  <span
+                    className={`px-2 py-1 rounded font-semibold ${
+                      incident.lastAction === "USER_BLOCKED"
+                        ? "bg-red-600 text-white"
+                        : incident.lastAction === "SESSION_ISOLATED"
+                        ? "bg-blue-600 text-white"
+                        : "bg-green-600 text-white"
+                    }`}
+                  >
+                    {incident.lastAction}
+                  </span>
+                )}
               </div>
             </div>
 

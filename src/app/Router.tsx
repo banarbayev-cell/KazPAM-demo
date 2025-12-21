@@ -11,6 +11,8 @@ import Sessions from "../pages/Sessions";
 import Audit from "../pages/Audit";
 import Permissions from "../pages/Permissions";
 import SocDashboard from "../pages/SocDashboard";
+import SettingsPage from "../pages/Settings";
+import Access from "../components/Access";
 
 const router = createBrowserRouter([
   { path: "/login", element: <Login /> },
@@ -27,6 +29,16 @@ const router = createBrowserRouter([
           { path: "/sessions", element: <Sessions /> },
           { path: "/audit", element: <Audit /> },
           { path: "/permissions", element: <Permissions /> },
+
+          // ✅ SETTINGS С RBAC
+          {
+            path: "/settings",
+            element: (
+              <Access permission="view_settings">
+                <SettingsPage />
+              </Access>
+            ),
+          },
         ],
       },
     ],

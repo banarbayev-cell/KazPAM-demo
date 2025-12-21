@@ -2,7 +2,9 @@ import { useState, useMemo, useEffect } from "react";
 import { Input } from "../components/ui/input";
 import ActionMenuSession from "../components/ActionMenuSession";
 import SessionDetailPanel from "../components/SessionDetailPanel";
-import { getSessions } from "../api/sessions";
+import { getSessions, terminateSession } from "../api/sessions";
+import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 
 /* ===============================
    UI MODEL (НЕ МЕНЯЕМ)
@@ -37,6 +39,26 @@ interface BackendSession {
 }
 
 /* ===============================
+   FALLBACK MOCK (ТОЛЬКО ЕСЛИ [] )
+================================ */
+const MOCK_SESSIONS: Session[] = [
+  {
+    id: 1,
+    user: "admin",
+    system: "Linux-Server-01",
+    os: "Linux",
+    conn: "SSH",
+    ip: "192.168.1.10",
+    app: "PostgreSQL Admin",
+    risk: "Low",
+    last_command: "sudo su",
+    duration: "14 мин",
+    status: "active",
+    date: "28.11.2025",
+  },
+];
+
+/* ===============================
    MAPPER: backend → UI
 ================================ */
 function mapBackendSession(s: BackendSession): Session {
@@ -48,8 +70,8 @@ function mapBackendSession(s: BackendSession): Session {
     conn: s.app ?? "SSH",
     ip: s.ip,
     app: s.app ?? "SSH",
-    risk: "Low",           // пока mock
-    last_command: "—",     // появится позже (session events)
+    risk: "Low",
+    last_command: "—",
     duration: "—",
     status: s.status,
     date: s.start_time ?? "",
@@ -57,57 +79,99 @@ function mapBackendSession(s: BackendSession): Session {
 }
 
 export default function Sessions() {
-  /* ===============================
-     MOCK (FALLBACK)
-  ================================ */
-  const [sessions, setSessions] = useState<Session[]>([
-    {
-      id: 1,
-      user: "admin",
-      system: "Linux-Server-01",
-      os: "Linux",
-      conn: "SSH",
-      ip: "192.168.1.10",
-      app: "PostgreSQL Admin",
-      risk: "Low",
-      last_command: "sudo su",
-      duration: "14 мин",
-      status: "active",
-      date: "28.11.2025",
-    },
-  ]);
+  const navigate = useNavigate();
 
   /* ===============================
-     LOAD FROM BACKEND (READ ONLY)
+     STATE
   ================================ */
-  useEffect(() => {
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [selectedSession, setSelectedSession] = useState<Session | null>(null);
+
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+
+  /* ===============================
+     LOAD SESSIONS
+  ================================ */
+  const loadSessions = () => {
     getSessions()
       .then((data: BackendSession[]) => {
         if (Array.isArray(data) && data.length > 0) {
           setSessions(data.map(mapBackendSession));
+        } else {
+          // fallback для demo / pilot
+          setSessions(MOCK_SESSIONS);
         }
       })
-      .catch((err) => {
-        console.error("Sessions backend unavailable, using mock", err);
+      .catch(() => {
+        setSessions(MOCK_SESSIONS);
+        toast.error("Не удалось загрузить сессии, показаны тестовые данные");
       });
+  };
+
+  useEffect(() => {
+    loadSessions();
   }, []);
 
   /* ===============================
-     UI STATE
+     OPEN DETAILS
   ================================ */
-  const [detailOpen, setDetailOpen] = useState(false);
-  const [selectedSession, setSelectedSession] = useState<Session | null>(null);
-
   const openDetails = (session: Session) => {
     setSelectedSession(session);
     setDetailOpen(true);
   };
 
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
+  /* ===============================
+     ACTIONS
+  ================================ */
+  const handleTerminate = async (session: Session) => {
+    if (session.status !== "active") {
+      toast.info("Сессия уже завершена");
+      return;
+    }
 
-  const [currentPage, setCurrentPage] = useState(1);
-  const [rowsPerPage, setRowsPerPage] = useState(10);
+    try {
+      await terminateSession(session.id);
+
+      setSessions((prev) =>
+        prev.map((s) =>
+          s.id === session.id ? { ...s, status: "closed" } : s
+        )
+      );
+
+      setSelectedSession((prev) =>
+        prev && prev.id === session.id
+          ? { ...prev, status: "closed" }
+          : prev
+      );
+
+      toast.success("Сессия завершена");
+    } catch {
+      toast.error("Не удалось завершить сессию");
+    }
+  };
+
+  const handleAudit = (session: Session) => {
+    navigate(`/audit?session_id=${session.id}`);
+  };
+
+  /* ===== handlers для панели ===== */
+  const handlePanelTerminate = async () => {
+    if (!selectedSession) return;
+    await handleTerminate(selectedSession);
+  };
+
+  const handlePanelAudit = () => {
+    if (!selectedSession) return;
+    handleAudit(selectedSession);
+  };
+
+  const handlePanelDownloadLogs = () => {
+    toast.info("Экспорт логов будет добавлен позже");
+  };
 
   /* ===============================
      STATS
@@ -146,7 +210,7 @@ export default function Sessions() {
         Мониторинг активных и завершённых сессий
       </p>
 
-      {/* ===== STATS ===== */}
+      {/* STATS */}
       <div className="grid grid-cols-4 gap-4 mb-8">
         <Stat title="Всего" value={total} />
         <Stat title="Активные" value={activeCount} color="text-green-400" />
@@ -154,7 +218,7 @@ export default function Sessions() {
         <Stat title="Ошибочные" value={failedCount} color="text-red-400" />
       </div>
 
-      {/* ===== FILTERS ===== */}
+      {/* FILTERS */}
       <div className="flex gap-3 items-center mb-6">
         <Input
           placeholder="Поиск по пользователю, системе или IP..."
@@ -166,7 +230,10 @@ export default function Sessions() {
         <select
           className="bg-white border rounded-lg p-2"
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
+          onChange={(e) => {
+            setStatusFilter(e.target.value);
+            setCurrentPage(1);
+          }}
         >
           <option value="all">Все статусы</option>
           <option value="active">Активные</option>
@@ -175,7 +242,7 @@ export default function Sessions() {
         </select>
       </div>
 
-      {/* ===== TABLE ===== */}
+      {/* TABLE */}
       <div className="overflow-y-auto max-h-[500px] rounded-xl border bg-[#121A33]">
         <table className="w-full text-sm text-white">
           <thead className="bg-[#1A243F] text-gray-300 sticky top-0">
@@ -222,11 +289,9 @@ export default function Sessions() {
 
                 <td className="p-3">
                   <ActionMenuSession
-                    status={session.status}
-                    onDetails={() => openDetails(session)}
-                    onTerminate={() => {}}
-                    onRetry={() => {}}
-                    onDelete={() => {}}
+                    onView={() => openDetails(session)}
+                    onTerminate={() => handleTerminate(session)}
+                    onAudit={() => handleAudit(session)}
                   />
                 </td>
               </tr>
@@ -235,14 +300,17 @@ export default function Sessions() {
         </table>
       </div>
 
-      {/* ===== DETAIL PANEL ===== */}
+      {/* DETAIL PANEL */}
       <SessionDetailPanel
         open={detailOpen}
         onClose={() => setDetailOpen(false)}
         session={selectedSession}
+        onTerminate={handlePanelTerminate}
+        onAudit={handlePanelAudit}
+        onDownloadLogs={handlePanelDownloadLogs}
       />
 
-      {/* ===== PAGINATION ===== */}
+      {/* PAGINATION */}
       <div className="flex justify-between items-center p-4">
         <div className="flex items-center gap-2">
           <span>Показать:</span>
@@ -269,7 +337,7 @@ export default function Sessions() {
 }
 
 /* ===============================
-   SMALL STAT COMPONENT
+   STAT
 ================================ */
 function Stat({
   title,

@@ -8,7 +8,7 @@ import AssignRolesModal from "../components/modals/AssignRolesModal";
 import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
 import { toast } from "sonner";
-import { api } from "@/services/api";
+import { api } from "../services/api";
 
 interface Role {
   id: number;

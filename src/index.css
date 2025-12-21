@@ -62,8 +62,8 @@ body {
 .alert-pulse {
   animation: pulse-alert 1.8s infinite ease-in-out;
 }
-canvas {
-  pointer-events: none !important;
+.no-pointer {
+  pointer-events: none;
 }
 /* MAKE RIGHT PANEL WIDER */
 .vault-side-panel {

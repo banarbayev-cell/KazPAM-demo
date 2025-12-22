@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ChevronDown, User, Users, LogOut, Bell } from "lucide-react";
 import ProfileModal from "./modals/ProfileModal";
+import { logout } from "../utils/auth";
 
 export default function Header() {
   const [open, setOpen] = useState(false);
@@ -10,7 +11,7 @@ export default function Header() {
   const [currentUser, setCurrentUser] = useState("admin");
   const [avatar, setAvatar] = useState("A");
 
-  const logout = () => alert("Вы вышли из системы");
+
 
   return (
     <header className="w-full h-16 bg-[var(--bg-card)] border-b border-[var(--border)] flex items-center justify-between px-6 relative">

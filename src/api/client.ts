@@ -1,7 +1,9 @@
 export async function apiGet(path: string) {
   const token = localStorage.getItem("access_token"); // <-- ЧИТАЕМ ТОКЕН
 
-  const res = await fetch(`http://127.0.0.1:8000${path}`, {
+  const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+
+  const res = await fetch(`${API_URL}${path}`, {
     method: "GET",
     headers: {
       "Content-Type": "application/json",
@@ -18,7 +20,9 @@ export async function apiGet(path: string) {
 export async function apiPost(path: string, body?: any) {
   const token = localStorage.getItem("access_token");
 
-  const res = await fetch(`http://127.0.0.1:8000${path}`, {
+  const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+
+  const res = await fetch(`${API_URL}${path}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

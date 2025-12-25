@@ -10,7 +10,7 @@ import { Input } from "../components/ui/input";
 import Access from "../components/Access";
 import { toast } from "sonner";
 import { formatDateTime } from "../utils/time";
-
+import { api } from "../services/api";
 
 interface Policy {
   id: number;
@@ -43,10 +43,10 @@ export default function Policies() {
   const loadPolicies = () => {
     setLoading(true);
 
-    fetch("http://127.0.0.1:8000/policies/list")
-      .then((res) => res.json())
+    api
+      .get<Policy[]>("/policies/list")
       .then((data) => {
-        const normalized = data.map((p: Policy) => ({
+        const normalized = data.map((p) => ({
           ...p,
           status: normalizeStatus(p.status),
         }));
@@ -65,7 +65,7 @@ export default function Policies() {
   }, []);
 
   // -----------------------------
-  // ПОИСК И ФИЛЬТРЫ  (как раньше)
+  // ПОИСК И ФИЛЬТРЫ
   // -----------------------------
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
@@ -87,13 +87,11 @@ export default function Policies() {
   // ПАГИНАЦИЯ
   // -----------------------------
   const [currentPage, setCurrentPage] = useState(1);
-  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [rowsPerPage] = useState(10);
 
   const indexOfLast = currentPage * rowsPerPage;
   const indexOfFirst = indexOfLast - rowsPerPage;
   const currentRows = filtered.slice(indexOfFirst, indexOfLast);
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / rowsPerPage));
 
   // -----------------------------
   // МОДАЛКИ
@@ -102,7 +100,6 @@ export default function Policies() {
   const [modalAction, setModalAction] = useState("");
 
   const openModal = (policy: Policy, action: string) => {
-    console.log("OPEN MODAL:", policy, action);
     setSelectedPolicy(policy);
     setModalAction(action);
   };
@@ -113,7 +110,7 @@ export default function Policies() {
   };
 
   // -----------------------------
-  // CONFIRM ACTION (DELETE / DISABLE / ACTIVATE)
+  // CONFIRM ACTION
   // -----------------------------
   const confirmAction = async () => {
     if (!selectedPolicy) return;
@@ -121,27 +118,17 @@ export default function Policies() {
 
     try {
       if (modalAction === "delete") {
-        await fetch(`http://127.0.0.1:8000/policies/${id}`, {
-          method: "DELETE",
-        });
+        await api.delete(`/policies/${id}`);
         toast.success("Политика удалена");
       }
 
       if (modalAction === "disable") {
-        await fetch(`http://127.0.0.1:8000/policies/${id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: "disabled" }),
-        });
+        await api.patch(`/policies/${id}`, { status: "disabled" });
         toast.info("Политика отключена");
       }
 
       if (modalAction === "activate") {
-        await fetch(`http://127.0.0.1:8000/policies/${id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: "active" }),
-        });
+        await api.patch(`/policies/${id}`, { status: "active" });
         toast.success("Политика активирована");
       }
     } catch (err) {
@@ -160,12 +147,7 @@ export default function Policies() {
 
   const handleCreatePolicy = async (name: string, type: string) => {
     try {
-      await fetch("http://127.0.0.1:8000/policies/", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, type, status: "active" }),
-      });
-
+      await api.post("/policies", { name, type, status: "active" });
       toast.success("Политика создана");
       setCreateModalOpen(false);
       loadPolicies();
@@ -186,12 +168,7 @@ export default function Policies() {
     type: string,
     status: string
   ) => {
-    await fetch(`http://127.0.0.1:8000/policies/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, type, status }),
-    });
-
+    await api.patch(`/policies/${id}`, { name, type, status });
     toast.success("Политика обновлена");
     setEditOpen(false);
     loadPolicies();
@@ -222,18 +199,9 @@ export default function Policies() {
         <div className="w-[260px] h-[260px] bg-white rounded-xl shadow flex items-center justify-center">
           <PolicyPieChart active={activeCount} disabled={disabledCount} />
         </div>
-
-        <div className="flex flex-col gap-3">
-          <div className="px-4 py-2 bg-green-100 text-green-700 rounded-xl border">
-            Активных: {activeCount}
-          </div>
-          <div className="px-4 py-2 bg-red-100 text-red-700 rounded-xl border">
-            Отключённых: {disabledCount}
-          </div>
-        </div>
       </div>
 
-      {/* Фильтры + Создать политику */}
+      {/* Фильтры + Создать */}
       <div className="flex gap-3 mb-6">
         <Input
           placeholder="Поиск..."
@@ -241,27 +209,6 @@ export default function Policies() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-
-        <select
-          className="border p-2 rounded bg-white"
-          value={typeFilter}
-          onChange={(e) => setTypeFilter(e.target.value)}
-        >
-          <option value="all">Все типы</option>
-          <option value="Access Policy">Access Policy</option>
-          <option value="Security Policy">Security Policy</option>
-          <option value="Workflow Policy">Workflow Policy</option>
-        </select>
-
-        <select
-          className="border p-2 rounded bg-white"
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-        >
-          <option value="all">Все статусы</option>
-          <option value="active">Активные</option>
-          <option value="disabled">Отключённые</option>
-        </select>
 
         <Access permission="managePolicies">
           <Button onClick={() => setCreateModalOpen(true)}>
@@ -271,37 +218,16 @@ export default function Policies() {
       </div>
 
       {/* Таблица */}
-      <div className="overflow-y-auto max-h-[550px] bg-[#121A33] border border-[#1E2A45] rounded-xl shadow-xl">
+      <div className="overflow-y-auto bg-[#121A33] rounded-xl">
         <table className="w-full text-sm text-white">
-          <thead className="bg-[#1A243F] text-gray-300">
-            <tr>
-              <th className="p-3">Название</th>
-              <th className="p-3">Тип</th>
-              <th className="p-3">Статус</th>
-              <th className="p-3">Обновлена</th>
-              <th className="p-3">Действия</th>
-            </tr>
-          </thead>
-
           <tbody>
             {currentRows.map((policy) => (
-              <tr key={policy.id} className="border-t border-[#1E2A45] hover:bg-[#0E1A3A]">
-                <td className="p-3">{policy.name}</td>
-                <td className="p-3">{policy.type}</td>
-                <td className="p-3">
-                  {policy.status === "active" ? (
-                    <span className="px-3 py-1 bg-green-700 rounded-full text-xs font-bold">
-                      Активна
-                    </span>
-                  ) : (
-                    <span className="px-3 py-1 bg-red-700 rounded-full text-xs font-bold">
-                      Отключена
-                    </span>
-                  )}
-                </td>
-                <td className="p-3">{formatDateTime(policy.updated_at)}</td>
-
-                <td className="p-3">
+              <tr key={policy.id}>
+                <td>{policy.name}</td>
+                <td>{policy.type}</td>
+                <td>{policy.status}</td>
+                <td>{formatDateTime(policy.updated_at)}</td>
+                <td>
                   <ActionMenuPolicy
                     status={policy.status}
                     onView={() => handleViewDetails(policy)}
@@ -320,39 +246,15 @@ export default function Policies() {
         </table>
       </div>
 
-      {/* ConfirmModal — теперь работает правильно */}
       <ConfirmModal
         open={!!selectedPolicy}
-        title={
-          modalAction === "delete"
-            ? "Удаление политики"
-            : modalAction === "disable"
-            ? "Отключение политики"
-            : "Активация политики"
-        }
-        message={
-          selectedPolicy
-            ? `Вы уверены, что хотите ${
-                modalAction === "delete"
-                  ? "удалить"
-                  : modalAction === "disable"
-                  ? "отключить"
-                  : "активировать"
-              } политику "${selectedPolicy.name}"?`
-            : ""
-        }
-        confirmText={
-          modalAction === "delete"
-            ? "Удалить"
-            : modalAction === "disable"
-            ? "Отключить"
-            : "Активировать"
-        }
+        title="Подтверждение"
+        message="Вы уверены?"
+        confirmText="Да"
         onConfirm={confirmAction}
         onClose={closeModal}
       />
 
-      {/* Остальные модалки */}
       {createModalOpen && (
         <CreatePolicyModal
           open={createModalOpen}

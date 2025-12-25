@@ -1,6 +1,7 @@
 import { useState } from "react";
 import Header from "../components/Header";
-import { Sidebar } from "../components/ui/sidebar";
+import Sidebar from "../components/ui/sidebar";
+
 
 export default function Recordings() {
   const [search, setSearch] = useState("");

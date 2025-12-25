@@ -38,7 +38,7 @@ interface Role {
 ======================= */
 
 export default function Roles() {
-  const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+
 
   const [roles, setRoles] = useState<Role[]>([]);
   const [search, setSearch] = useState("");
@@ -120,16 +120,7 @@ export default function Roles() {
   const createRole = async (name: string) => {
     setCreateLoading(true);
     try {
-      const res = await fetch(`${API_URL}/roles`, {
-        method: "POST",
-        headers: authHeaders(),
-        body: JSON.stringify({ name }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.detail || "Create failed");
-      }
+      await api.post("/roles", { name });
 
       toast.success("Роль создана");
       setCreateOpen(false);
@@ -142,18 +133,8 @@ export default function Roles() {
   };
 
   const updateRole = async (roleId: number, name: string) => {
-    const res = await fetch(`${API_URL}/roles/${roleId}`, {
-      method: "PATCH",
-      headers: authHeaders(),
-      body: JSON.stringify({ name }),
-    });
+    await api.patch(`/roles/${roleId}`, { name });
 
-    if (!res.ok) {
-      const data = await res.json();
-      const error: any = new Error(data.detail || "Update failed");
-      error.status = res.status;
-      throw error;
-    }
   };
 
   const deleteRole = async () => {
@@ -161,17 +142,8 @@ export default function Roles() {
 
     setDeleteLoading(true);
     try {
-      const res = await fetch(`${API_URL}/roles/${roleToDelete.id}`, {
-        method: "DELETE",
-        headers: authHeaders(),
-      });
+      await api.delete(`/roles/${roleToDelete.id}`);
 
-      if (!res.ok) {
-        const data = await res.json();
-        const error: any = new Error(data.detail || "Delete failed");
-        error.status = res.status;
-        throw error;
-      }
 
       toast.success("Роль удалена");
       setDeleteOpen(false);

@@ -3,13 +3,16 @@ import {
   Dialog,
   DialogContent,
   DialogHeader,
-  DialogTitle
+  DialogTitle,
 } from "../ui/dialog";
-
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
 import { toast } from "sonner";
+import { api } from "../../services/api";
 
+/* =======================
+   Types
+======================= */
 interface Permission {
   id: number;
   code: string;
@@ -23,27 +26,38 @@ interface Props {
   onUpdated: () => void;
 }
 
+/* =======================
+   Component
+======================= */
 export default function ManagePermissionsModal({
   open,
   onClose,
   roleId,
   existingPermissions,
-  onUpdated
+  onUpdated,
 }: Props) {
   const [allPermissions, setAllPermissions] = useState<Permission[]>([]);
   const [selected, setSelected] = useState<number[]>([]);
 
-  // загрузка всех permissions
+  /* =======================
+     Load permissions
+  ======================= */
   useEffect(() => {
     if (!open) return;
 
-    fetch("http://127.0.0.1:8000/permissions/")
-      .then((res) => res.json())
-      .then((data) => setAllPermissions(data));
+    const loadPermissions = async () => {
+      try {
+        const data: Permission[] = await api.get("/permissions/");
+        setAllPermissions(data);
+        setSelected(existingPermissions.map((p) => p.id));
+      } catch {
+        toast.error("Ошибка загрузки прав");
+        setAllPermissions([]);
+      }
+    };
 
-    // отметить уже существующие
-    setSelected(existingPermissions.map((p) => p.id));
-  }, [open]);
+    loadPermissions();
+  }, [open, existingPermissions]);
 
   const toggle = (id: number) => {
     setSelected((prev) =>
@@ -51,6 +65,9 @@ export default function ManagePermissionsModal({
     );
   };
 
+  /* =======================
+     Save permissions
+  ======================= */
   const save = async () => {
     if (!roleId) return;
 
@@ -59,26 +76,26 @@ export default function ManagePermissionsModal({
     const toAdd = selected.filter((id) => !currentIds.includes(id));
     const toRemove = currentIds.filter((id) => !selected.includes(id));
 
-    // добавляем
-    for (const permId of toAdd) {
-      await fetch(`http://127.0.0.1:8000/permissions/${roleId}/add/${permId}`, {
-        method: "POST"
-      });
-    }
+    try {
+      for (const permId of toAdd) {
+        await api.post(`/permissions/${roleId}/add/${permId}`);
+      }
 
-    // удаляем
-    for (const permId of toRemove) {
-      await fetch(
-        `http://127.0.0.1:8000/permissions/${roleId}/remove/${permId}`,
-        { method: "DELETE" }
-      );
-    }
+      for (const permId of toRemove) {
+        await api.post(`/permissions/${roleId}/remove/${permId}`);
+      }
 
-    toast.success("Права обновлены");
-    onUpdated();
-    onClose();
+      toast.success("Права обновлены");
+      onUpdated();
+      onClose();
+    } catch {
+      toast.error("Ошибка обновления прав");
+    }
   };
 
+  /* =======================
+     Render
+  ======================= */
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="bg-[#0A0F24] text-white border border-[#1E2A45]">

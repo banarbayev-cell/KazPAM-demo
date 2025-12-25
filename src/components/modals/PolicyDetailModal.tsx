@@ -1,6 +1,7 @@
 import { X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { formatToAlmaty } from "../../utils/time";
+import { api } from "../../services/api";
 
 export default function PolicyDetailModal({ open, policy, onClose }: any) {
   const [history, setHistory] = useState<any[]>([]);
@@ -14,30 +15,26 @@ export default function PolicyDetailModal({ open, policy, onClose }: any) {
     }
   }, [open]);
 
-  // Подгружаем историю корректно
+  // Подгружаем историю
   useEffect(() => {
-    if (open && policy?.id) {
-      fetch(`http://127.0.0.1:8000/policies/${policy.id}/history`)
-        .then((res) => res.json())
-        .then((data) => {
-          if (Array.isArray(data)) {
-            setHistory(data);
-          } else {
-            console.error("History is not array:", data);
-            setHistory([]);
-          }
-        })
-        .catch((err) => {
-          console.error("Ошибка загрузки истории:", err);
-          setHistory([]);
-        });
-    }
+    if (!open || !policy?.id) return;
+
+    api
+      .get(`/policies/${policy.id}/history`)
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setHistory(data);
+        }
+      })
+      .catch((err) => {
+        console.error("Policy history load error:", err);
+      });
   }, [open, policy]);
 
   if (!open || !policy) return null;
 
-  // UI данные
-  const roles = ["Admin", "DevOps", "Security Team"]; // временно
+  // UI данные (временно)
+  const roles = ["Admin", "DevOps", "Security Team"];
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-[99999]">
@@ -75,93 +72,76 @@ export default function PolicyDetailModal({ open, policy, onClose }: any) {
 
         {/* TABS */}
         <div className="flex gap-4 mb-6 border-b border-white/10 pb-2">
-          <button
-            className={`pb-2 text-lg ${
-              activeTab === "params"
-                ? "text-[#3BE3FD] border-b-2 border-[#3BE3FD]"
-                : "text-gray-400"
-            }`}
-            onClick={() => setActiveTab("params")}
-          >
-            Параметры
-          </button>
-
-          <button
-            className={`pb-2 text-lg ${
-              activeTab === "roles"
-                ? "text-[#3BE3FD] border-b-2 border-[#3BE3FD]"
-                : "text-gray-400"
-            }`}
-            onClick={() => setActiveTab("roles")}
-          >
-            Роли и группы
-          </button>
-
-          <button
-            className={`pb-2 text-lg ${
-              activeTab === "history"
-                ? "text-[#3BE3FD] border-b-2 border-[#3BE3FD]"
-                : "text-gray-400"
-            }`}
-            onClick={() => setActiveTab("history")}
-          >
-            История изменений
-          </button>
+          {["params", "roles", "history"].map((tab) => (
+            <button
+              key={tab}
+              className={`pb-2 text-lg ${
+                activeTab === tab
+                  ? "text-[#3BE3FD] border-b-2 border-[#3BE3FD]"
+                  : "text-gray-400"
+              }`}
+              onClick={() => setActiveTab(tab as any)}
+            >
+              {tab === "params"
+                ? "Параметры"
+                : tab === "roles"
+                ? "Роли и группы"
+                : "История изменений"}
+            </button>
+          ))}
         </div>
-
-        {/* TAB CONTENT */}
 
         {/* ПАРАМЕТРЫ */}
         {activeTab === "params" && (
-  <div>
-    <h3 className="text-xl font-bold mb-4">Параметры политики</h3>
+          <div>
+            <h3 className="text-xl font-bold mb-4">Параметры политики</h3>
 
-    <div className="bg-[#1E293B] p-4 rounded-lg border border-white/10 grid grid-cols-2 gap-6">
+            <div className="bg-[#1E293B] p-4 rounded-lg border border-white/10 grid grid-cols-2 gap-6">
+              <div>
+                <div className="text-gray-400 text-sm">MFA требуется</div>
+                <div className="mt-1 font-semibold">
+                  {policy.mfa_required ? (
+                    <span className="px-3 py-1 bg-green-700/50 text-green-300 rounded-full text-xs">
+                      Да
+                    </span>
+                  ) : (
+                    <span className="px-3 py-1 bg-red-700/50 text-red-300 rounded-full text-xs">
+                      Нет
+                    </span>
+                  )}
+                </div>
+              </div>
 
-      {/* MFA */}
-      <div>
-        <div className="text-gray-400 text-sm">MFA требуется</div>
-        <div className="mt-1 font-semibold">
-          {policy.mfa_required ? (
-            <span className="px-3 py-1 bg-green-700/50 text-green-300 rounded-full text-xs">
-              Да
-            </span>
-          ) : (
-            <span className="px-3 py-1 bg-red-700/50 text-red-300 rounded-full text-xs">
-              Нет
-            </span>
-          )}
-        </div>
-      </div>
+              <div>
+                <div className="text-gray-400 text-sm">Окно доступа</div>
+                <div className="mt-1 font-semibold">
+                  {policy.time_start} — {policy.time_end}
+                </div>
+              </div>
 
-      {/* Окно доступа */}
-      <div>
-        <div className="text-gray-400 text-sm">Окно доступа</div>
-        <div className="mt-1 font-semibold">
-          {policy.time_start} — {policy.time_end}
-        </div>
-      </div>
+              <div>
+                <div className="text-gray-400 text-sm">
+                  Разрешённый диапазон IP
+                </div>
+                <div className="mt-1 font-semibold">{policy.ip_range}</div>
+              </div>
 
-      {/* IP диапазон */}
-      <div>
-        <div className="text-gray-400 text-sm">Разрешённый диапазон IP</div>
-        <div className="mt-1 font-semibold">{policy.ip_range}</div>
-      </div>
-
-      {/* Лимит сессии */}
-      <div>
-        <div className="text-gray-400 text-sm">Лимит сессии</div>
-        <div className="mt-1 font-semibold">{policy.session_limit} минут</div>
-      </div>
-
-    </div>
-  </div>
-)}
+              <div>
+                <div className="text-gray-400 text-sm">Лимит сессии</div>
+                <div className="mt-1 font-semibold">
+                  {policy.session_limit} минут
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* РОЛИ */}
         {activeTab === "roles" && (
           <div>
-            <h3 className="text-xl font-bold mb-3">Связанные роли и группы</h3>
+            <h3 className="text-xl font-bold mb-3">
+              Связанные роли и группы
+            </h3>
             <div className="flex flex-wrap gap-2">
               {roles.map((r) => (
                 <span
@@ -189,7 +169,6 @@ export default function PolicyDetailModal({ open, policy, onClose }: any) {
                     <th className="p-3 text-left">Пользователь</th>
                   </tr>
                 </thead>
-
                 <tbody>
                   {history.length === 0 ? (
                     <tr>
@@ -203,7 +182,9 @@ export default function PolicyDetailModal({ open, policy, onClose }: any) {
                         key={h.id}
                         className="border-b border-white/5 hover:bg-[#0E1A3A]"
                       >
-                        <td className="p-3">{formatToAlmaty(h.timestamp)}</td>
+                        <td className="p-3">
+                          {formatToAlmaty(h.timestamp)}
+                        </td>
                         <td className="p-3">{h.details}</td>
                         <td className="p-3">{h.user}</td>
                       </tr>
@@ -214,7 +195,6 @@ export default function PolicyDetailModal({ open, policy, onClose }: any) {
             </div>
           </div>
         )}
-
       </div>
     </div>
   );

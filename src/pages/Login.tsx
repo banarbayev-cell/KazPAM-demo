@@ -1,6 +1,7 @@
 import { FormEvent, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../store/auth";
+import { API_URL } from "../api/config";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -19,16 +20,13 @@ export default function Login() {
       formData.append("username", email);
       formData.append("password", password);
 
-      const response = await fetch(
-        "http://127.0.0.1:8000/auth/login",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/x-www-form-urlencoded",
-          },
-          body: formData.toString(),
-        }
-      );
+      const response = await fetch(`${API_URL}/auth/login`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: formData.toString(),
+      });
 
       if (!response.ok) {
         throw new Error("Неверный логин или пароль");
@@ -40,14 +38,11 @@ export default function Login() {
         throw new Error("Токен не получен от сервера");
       }
 
-      // ✅ 1. СОХРАНЯЕМ JWT
-      localStorage.setItem("access_token", data.access_token);
-
-      // ✅ 2. КЛАДЁМ В ZUSTAND
+      // ✅ ЕДИНСТВЕННЫЙ источник JWT
       login(data.access_token);
 
-      // ✅ 3. ПЕРЕХОД (ВАЖНО!)
-      navigate("/", { replace: true });
+      // ✅ Явный переход в dashboard
+      navigate("/dashboard", { replace: true });
     } catch (err: any) {
       alert(err.message || "Ошибка авторизации");
     } finally {

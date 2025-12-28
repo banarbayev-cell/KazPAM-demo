@@ -1,9 +1,12 @@
 import { useState } from "react";
 import { ChevronDown, User, Users, LogOut, Bell } from "lucide-react";
 import ProfileModal from "./modals/ProfileModal";
-import { logout } from "../utils/auth";
+import { useAuth } from "../store/auth";
+
 
 export default function Header() {
+  const logout = useAuth((s) => s.logout);
+
   const [open, setOpen] = useState(false);
   const [switchOpen, setSwitchOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);

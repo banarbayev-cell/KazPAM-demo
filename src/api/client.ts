@@ -1,7 +1,9 @@
+
+import { API_URL } from "./config";
+
 export async function apiGet(path: string) {
   const token = localStorage.getItem("access_token"); // <-- ЧИТАЕМ ТОКЕН
 
-  const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
   const res = await fetch(`${API_URL}${path}`, {
     method: "GET",
@@ -20,7 +22,6 @@ export async function apiGet(path: string) {
 export async function apiPost(path: string, body?: any) {
   const token = localStorage.getItem("access_token");
 
-  const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
   const res = await fetch(`${API_URL}${path}`, {
     method: "POST",

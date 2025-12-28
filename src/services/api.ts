@@ -1,6 +1,7 @@
 // src/services/api.ts
+import { API_URL } from "../api/config";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+const API_BASE_URL = API_URL;
 
 /**
  * Получение access token
@@ -34,10 +35,10 @@ async function apiFetch<T>(
 
   // === AUTH ERRORS ===
   if (response.status === 401) {
-    localStorage.removeItem("access_token");
-    window.location.href = "/login";
-    throw new Error("Unauthorized");
-  }
+  console.error("❌ API 401 Unauthorized", path);
+  throw new Error("Unauthorized");
+}
+
 
   if (response.status === 403) {
     throw new Error("Forbidden");

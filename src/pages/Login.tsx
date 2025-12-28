@@ -4,6 +4,7 @@ import { useAuth } from "../store/auth";
 import { API_URL } from "../api/config";
 
 export default function Login() {
+  console.log("API_URL =", API_URL);
   const navigate = useNavigate();
   const login = useAuth((state) => state.login);
 

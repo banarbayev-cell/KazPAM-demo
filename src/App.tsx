@@ -39,8 +39,9 @@ export default function App() {
             <ProtectedRoute>
               <DashboardLayout />
             </ProtectedRoute>
-          }
-        >
+  }
+>
+
           <Route index element={<Navigate to="/dashboard" replace />} />
 
           <Route path="dashboard" element={<Home />} />

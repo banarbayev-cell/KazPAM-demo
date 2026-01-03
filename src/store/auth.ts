@@ -77,7 +77,7 @@ export const useAuth = create<AuthState>((set) => ({
         isInitialized: true,
       });
     } catch {
-      localStorage.removeItem("access_token");
+      localStorage.removeItem("token");
       set({ token: null, user: null, isInitialized: true });
     }
   },

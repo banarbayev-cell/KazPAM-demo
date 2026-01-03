@@ -1,29 +1,35 @@
 import { X } from "lucide-react";
 import { useState } from "react";
 
+interface CreateUserData {
+  email: string;
+  password: string;
+}
+
 interface Props {
   open: boolean;
   onClose: () => void;
-  onCreate: (user: any) => void;
+  onCreate: (data: CreateUserData) => void;
 }
 
 export default function CreateUserModal({ open, onClose, onCreate }: Props) {
-  const [name, setName] = useState("");
-  const [role, setRole] = useState("Оператор");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
   if (!open) return null;
 
   const handleSubmit = () => {
-    if (!name.trim() || !password.trim()) return;
-    onCreate({ name, role, status: "active" });
-    onClose();
+    if (!email.trim() || !password.trim()) return;
+
+    onCreate({
+      email: email.trim(),
+      password: password.trim(),
+    });
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[999] animate-fadeIn">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[999]">
       <div className="bg-white rounded-xl shadow-2xl w-[420px] p-6 relative text-black">
-
         <button className="absolute top-3 right-3" onClick={onClose}>
           <X className="text-gray-600 hover:text-black" />
         </button>
@@ -32,23 +38,12 @@ export default function CreateUserModal({ open, onClose, onCreate }: Props) {
 
         <div className="flex flex-col gap-3">
           <input
-            type="text"
-            placeholder="Имя пользователя"
+            type="email"
+            placeholder="Email пользователя"
             className="border border-gray-400 rounded-lg px-3 py-2 focus:outline-none"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
           />
-
-          <select
-            className="border border-gray-400 rounded-lg px-3 py-2 focus:outline-none"
-            value={role}
-            onChange={(e) => setRole(e.target.value)}
-          >
-            <option>Администратор</option>
-            <option>Офицер безопасности</option>
-            <option>Оператор</option>
-            <option>Суперпользователь</option>
-          </select>
 
           <input
             type="password"
@@ -71,7 +66,6 @@ export default function CreateUserModal({ open, onClose, onCreate }: Props) {
             Создать
           </button>
         </div>
-
       </div>
     </div>
   );

@@ -77,12 +77,12 @@ export default function Home() {
           cpuRes,
           failedAlertRes,
         ] = await Promise.all([
-          fetch(`${API}/stats/privileged-accounts`, { headers }).then((r) =>
+          fetch(`${API}/stats/stats/privileged-accounts`, { headers }).then((r) =>
             r.json()
           ),
-          fetch(`${API}/stats/users`, { headers }).then((r) => r.json()),
-          fetch(`${API}/stats/sessions`, { headers }).then((r) => r.json()),
-          fetch(`${API}/stats/cpu`, { headers }).then((r) => r.json()),
+          fetch(`${API}/stats/stats/users`, { headers }).then((r) => r.json()),
+          fetch(`${API}/stats/stats/sessions`, { headers }).then((r) => r.json()),
+          fetch(`${API}/stats/stats/cpu`, { headers }).then((r) => r.json()),
           fetch(`${API}/sessions/alerts/failed`, { headers }).then((r) =>
             r.json()
           ),

@@ -7,6 +7,7 @@ interface ConfirmModalProps {
   confirmText: string;
   onConfirm: () => void;
   onClose: () => void;
+  loading?: boolean;
 }
 
 export default function ConfirmModal({
@@ -16,6 +17,7 @@ export default function ConfirmModal({
   confirmText,
   onConfirm,
   onClose,
+  loading = false,
 }: ConfirmModalProps) {
   if (!open) return null;
 
@@ -29,25 +31,17 @@ export default function ConfirmModal({
         <div className="flex justify-end gap-3">
 
           <Button
-            className="
-              bg-gray-700 
-              hover:bg-gray-600 
-              text-white 
-              border border-gray-600
-            "
+            className="bg-gray-700 hover:bg-gray-600 text-white border border-gray-600"
             onClick={onClose}
+            disabled={loading}
           >
             Отмена
           </Button>
 
           <Button
-            className="
-              bg-red-600 
-              hover:bg-red-700 
-              text-white 
-              border border-red-700
-            "
+            className="bg-red-600 hover:bg-red-700 text-white border border-red-700"
             onClick={onConfirm}
+            disabled={loading}
           >
             {confirmText}
           </Button>

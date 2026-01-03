@@ -4,6 +4,7 @@ import { User2 } from "lucide-react";
 import ActionMenuUser from "../components/ActionMenuUser";
 import CreateUserModal from "../components/modals/CreateUserModal";
 import AssignRolesModal from "../components/modals/AssignRolesModal";
+import ConfirmModal from "../components/modals/ConfirmModal";
 
 import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
@@ -28,6 +29,10 @@ export default function Users() {
 
   const [assignRolesOpen, setAssignRolesOpen] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
+  const selectedUser = users.find((u) => u.id === selectedUserId) || null;
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<User | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -93,8 +98,69 @@ export default function Users() {
   const goToPage = (page: number) => setCurrentPage(page);
 
   // ------------------------------
-  // UI
+  // CREATE USER
   // ------------------------------
+  const handleCreateUser = async (data: { email: string; password: string }) => {
+    try {
+      await api.post("/users/", data);
+      toast.success("Пользователь успешно создан");
+      setOpenModal(false);
+      fetchUsers();
+    } catch (err: any) {
+      const message = String(err?.message || "");
+
+      if (message.includes("User already exists")) {
+        toast.error("Пользователь с таким email уже существует");
+        return;
+      }
+
+      if (message.includes("Forbidden")) {
+        toast.error("Недостаточно прав для создания пользователя");
+        return;
+      }
+
+      if (message.includes("Unauthorized")) {
+        toast.error("Сессия истекла. Войдите заново");
+        return;
+      }
+
+      toast.error("Ошибка создания пользователя");
+      console.error("Create user error:", err);
+    }
+  };
+
+  // ------------------------------
+  // DELETE USER
+  // ------------------------------
+  const handleDeleteUser = async () => {
+    if (!userToDelete) return;
+
+    setDeleteLoading(true);
+    try {
+      await api.delete<void>(`/users/${userToDelete.id}`);
+      toast.success("Пользователь удалён");
+      fetchUsers();
+      setConfirmOpen(false);
+      setUserToDelete(null);
+    } catch (err: any) {
+      const msg = String(err?.message || "");
+
+      if (msg === "Forbidden") {
+        toast.error("Недостаточно прав");
+        return;
+      }
+
+      if (msg === "Unauthorized") {
+        toast.error("Сессия истекла. Войдите заново");
+        return;
+      }
+
+      toast.error(msg || "Ошибка удаления пользователя");
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
   return (
     <div className="p-6 w-full bg-gray-100 text-gray-900">
       <h1 className="text-3xl font-bold mb-6">Пользователи</h1>
@@ -175,7 +241,6 @@ export default function Users() {
                   )}
                 </td>
 
-                {/* ACTION MENU */}
                 <td className="p-3 text-sm">
                   <ActionMenuUser
                     onView={() =>
@@ -188,16 +253,9 @@ export default function Users() {
                     onResetPassword={() =>
                       toast.info("Функция смены пароля будет добавлена")
                     }
-                    onDelete={async () => {
-                      toast.info("Удаление пользователя...");
-
-                      try {
-                        await api.delete(`/users/${user.id}`);
-                        toast.success("Пользователь удалён");
-                        fetchUsers();
-                      } catch {
-                        toast.error("Ошибка при удалении пользователя");
-                      }
+                    onDelete={() => {
+                      setUserToDelete(user);
+                      setConfirmOpen(true);
                     }}
                   />
                 </td>
@@ -264,27 +322,38 @@ export default function Users() {
         </div>
       </div>
 
-      {/* Create User Modal */}
+      {/* Modals */}
       <CreateUserModal
         open={openModal}
         onClose={() => setOpenModal(false)}
-        onCreate={() => {
-          fetchUsers();
-          setOpenModal(false);
-          toast.success("Пользователь успешно создан");
-        }}
+        onCreate={handleCreateUser}
       />
 
-      {/* Assign Roles Modal */}
       <AssignRolesModal
-        open={assignRolesOpen}
-        onClose={() => setAssignRolesOpen(false)}
-        userId={selectedUserId}
-        onAssigned={() => {
-          fetchUsers();
-          setAssignRolesOpen(false);
-          toast.success("Роли успешно обновлены");
+  open={assignRolesOpen}
+  onClose={() => setAssignRolesOpen(false)}
+  userId={selectedUserId}
+  userRoles={selectedUser?.roles ?? []}
+  onAssigned={() => {
+    fetchUsers();
+    setAssignRolesOpen(false);
+    toast.success("Роли успешно обновлены");
+  }}
+/>
+
+
+
+      <ConfirmModal
+        open={confirmOpen}
+        title="Удалить пользователя"
+        message={`Вы уверены, что хотите удалить пользователя ${userToDelete?.email}?`}
+        confirmText="Удалить"
+        onConfirm={handleDeleteUser}
+        onClose={() => {
+          setConfirmOpen(false);
+          setUserToDelete(null);
         }}
+        loading={deleteLoading}
       />
     </div>
   );

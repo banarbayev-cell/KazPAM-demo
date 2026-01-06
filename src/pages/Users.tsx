@@ -20,6 +20,7 @@ interface User {
   id: number;
   email: string;
   roles: Role[];
+   is_active: boolean;
 }
 
 export default function Users() {
@@ -64,8 +65,8 @@ export default function Users() {
   // STATS
   // ------------------------------
   const total = users.length;
-  const activeCount = users.length;
-  const disabledCount = 0;
+  const activeCount = users.filter((u) => u.is_active).length;
+  const disabledCount = users.filter((u) => !u.is_active).length;
   const adminsCount = users.filter((u) =>
     u.roles.some((r) => r.name.toLowerCase().includes("admin"))
   ).length;
@@ -128,6 +129,52 @@ export default function Users() {
       console.error("Create user error:", err);
     }
   };
+  
+  const handleActivateUser = async (userId: number) => {
+  try {
+    await api.post(`/users/users/${userId}/activate`);
+    toast.success("Пользователь активирован");
+    fetchUsers();
+  } catch {
+    toast.error("Ошибка активации пользователя");
+  }
+};
+  
+  const handleDeactivateUser = async (userId: number) => {
+  try {
+    await api.post(`/users/users/${userId}/deactivate`);
+    toast.success("Пользователь отключён");
+    fetchUsers();
+  } catch {
+    toast.error("Ошибка отключения пользователя");
+  }
+};
+
+
+  const handleResetPassword = async (
+  userId: number,
+  userEmail?: string
+) => {
+  const email = userEmail ?? "неизвестный пользователь";
+  const newPassword = crypto.randomUUID().slice(0, 12);
+
+  try {
+    await api.post(`/users/${userId}/reset-password`, {
+      new_password: newPassword,
+    });
+
+    toast.success(`Пароль пользователя ${email} сброшен`);
+    toast.info(
+      `Новый пароль для ${email}: ${newPassword}`,
+      { duration: 12000 }
+    );
+  } catch {
+    toast.error(`Ошибка сброса пароля для ${email}`);
+  }
+};
+
+
+
 
   // ------------------------------
   // DELETE USER
@@ -208,6 +255,7 @@ export default function Users() {
           <thead className="bg-[#1A243F] text-gray-300 sticky top-0 z-10">
             <tr>
               <th className="p-3 text-left">Email</th>
+              <th className="p-3 text-left">Статус</th>
               <th className="p-3 text-left">Роли</th>
               <th className="p-3 text-left">Действия</th>
             </tr>
@@ -223,6 +271,20 @@ export default function Users() {
                   <User2 className="w-4 h-4 text-[#3BE3FD]" />
                   {user.email}
                 </td>
+              
+                <td className="p-3">
+  {user.is_active ? (
+    <span className="px-3 py-1 rounded-full text-xs font-semibold
+                     bg-green-500/20 text-green-400 border border-green-500/30">
+      Активен
+    </span>
+  ) : (
+    <span className="px-3 py-1 rounded-full text-xs font-semibold
+                     bg-red-500/20 text-red-400 border border-red-500/30">
+      Отключён
+    </span>
+  )}
+</td>
 
                 <td className="p-3">
                   {user.roles.length === 0 ? (
@@ -243,21 +305,19 @@ export default function Users() {
 
                 <td className="p-3 text-sm">
                   <ActionMenuUser
-                    onView={() =>
-                      toast.info("Открыт профиль пользователя")
-                    }
-                    onAssignRoles={() => {
-                      setSelectedUserId(user.id);
-                      setAssignRolesOpen(true);
-                    }}
-                    onResetPassword={() =>
-                      toast.info("Функция смены пароля будет добавлена")
-                    }
-                    onDelete={() => {
-                      setUserToDelete(user);
-                      setConfirmOpen(true);
-                    }}
-                  />
+  status={user.is_active ? "active" : "disabled"}
+  onAssignRoles={() => {
+    setSelectedUserId(user.id);
+    setAssignRolesOpen(true);
+  }}
+  onDisable={() => handleDeactivateUser(user.id)}
+  onActivate={() => handleActivateUser(user.id)}
+  onResetPassword={() => handleResetPassword(user.id, user.email)}
+  onDelete={() => {
+    setUserToDelete(user);
+    setConfirmOpen(true);
+  }}
+/>
                 </td>
               </tr>
             ))}

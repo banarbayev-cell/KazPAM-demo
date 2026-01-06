@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ChevronDown, User, Users, LogOut, Bell } from "lucide-react";
+import NotificationsDropdown from "./Notifications/NotificationsDropdown";
 import ProfileModal from "./modals/ProfileModal";
 import { useAuth } from "../store/auth";
 
@@ -27,11 +28,8 @@ export default function Header() {
       {/* RIGHT SIDE */}
       <div className="flex items-center gap-6">
 
-        {/* Bell */}
-        <button className="relative hover:opacity-80 transition">
-          <Bell size={22} className="text-[var(--text-primary)]" />
-          <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full"></span>
-        </button>
+        {/* Notifications */}
+<NotificationsDropdown />
 
         {/* PROFILE */}
         <div className="relative">

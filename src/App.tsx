@@ -18,6 +18,8 @@ import Permissions from "./pages/Permissions";
 
 import { useAuth } from "./store/auth";
 import ProtectedRoute from "./components/ProtectedRoute";
+import ForgotPassword from "@/pages/ForgotPassword";
+import ResetPassword from "@/pages/ResetPassword";
 
 export default function App() {
   const loadFromStorage = useAuth((s) => s.loadFromStorage);
@@ -55,6 +57,8 @@ export default function App() {
           <Route path="settings" element={<Settings />} />
           <Route path="roles" element={<Roles />} />
           <Route path="permissions" element={<Permissions />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/dashboard" replace />} />

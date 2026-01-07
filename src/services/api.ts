@@ -4,23 +4,46 @@ import { API_URL } from "../api/config";
 const API_BASE_URL = API_URL;
 
 /**
- * Получение access token
+ * =====================================================
+ * TOKEN HELPERS
+ * =====================================================
  */
 function getToken(): string | null {
   return localStorage.getItem("access_token");
 }
 
 /**
- * Базовый API fetch
+ * =====================================================
+ * apiFetch — OVERLOADS (ALL EXPORTED)
+ * =====================================================
  */
-async function apiFetch<T>(
+
+// Generic overload (используется api.get<T>, api.post<T> и т.д.)
+export async function apiFetch<T>(
+  path: string,
+  options?: RequestInit
+): Promise<T>;
+
+// Non-generic overload (используется Forgot / Reset)
+export async function apiFetch(
+  path: string,
+  options?: RequestInit
+): Promise<any>;
+
+/**
+ * =====================================================
+ * SINGLE IMPLEMENTATION
+ * =====================================================
+ */
+export async function apiFetch(
   path: string,
   options: RequestInit = {}
-): Promise<T> {
-  const token = getToken();
+): Promise<any> {
+  const token =
+    localStorage.getItem("access_token") ??
+    localStorage.getItem("token");
 
   const headers: HeadersInit = {
-    "Content-Type": "application/json",
     ...(options.headers || {}),
   };
 
@@ -43,46 +66,45 @@ async function apiFetch<T>(
     throw new Error("Forbidden");
   }
 
-  // === OTHER ERRORS ===
   if (!response.ok) {
     const text = await response.text();
     throw new Error(text || `HTTP error ${response.status}`);
   }
 
-  // === SAFE BODY PARSING (CRITICAL FIX) ===
+  // === SAFE BODY PARSING ===
   const text = await response.text();
-
-  if (!text) {
-    return undefined as T;
-  }
+  if (!text) return undefined;
 
   try {
-    return JSON.parse(text) as T;
-  } catch (e) {
-    console.warn("⚠️ Failed to parse JSON response:", text);
-    return undefined as T;
+    return JSON.parse(text);
+  } catch {
+    return undefined;
   }
 }
 
-
+/**
+ * =====================================================
+ * PUBLIC API OBJECT (НЕ ЛОМАЕМ КОНТРАКТ)
+ * =====================================================
+ */
 export const api = {
-  get: <T>(path: string) => apiFetch<T>(path),
+  get: <T>(path: string) =>
+    apiFetch<T>(path),
 
   post: <T>(path: string, body?: unknown) =>
     apiFetch<T>(path, {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: body ? JSON.stringify(body) : undefined,
     }),
 
   patch: <T>(path: string, body?: unknown) =>
     apiFetch<T>(path, {
       method: "PATCH",
+      headers: { "Content-Type": "application/json" },
       body: body ? JSON.stringify(body) : undefined,
     }),
 
   delete: <T = void>(path: string) =>
-    apiFetch<T>(path, {
-      method: "DELETE",
-    }),
+    apiFetch<T>(path, { method: "DELETE" }),
 };
-

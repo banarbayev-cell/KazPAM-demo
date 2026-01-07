@@ -53,7 +53,7 @@ export default function NotificationsDropdown() {
                 onClick={markAllAsRead}
                 className="text-xs text-[#3BE3FD] hover:underline"
               >
-                Прочитать все
+                
               </button>
             )}
           </div>

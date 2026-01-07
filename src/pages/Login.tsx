@@ -3,15 +3,17 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../store/auth";
 import { API_URL } from "../api/config";
 
+
 export default function Login() {
-  console.log("API_URL =", API_URL);
+  
   const navigate = useNavigate();
   const login = useAuth((state) => state.login);
-
+  const token = useAuth((state) => state.token);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-
+  
+  
   const handleLogin = async (e: FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -21,7 +23,7 @@ export default function Login() {
       formData.append("username", email);
       formData.append("password", password);
 
-      const response = await fetch(`${API_URL}/auth/login`, {
+      const response = await fetch(`${API_URL}/auth/auth/login`, {
         method: "POST",
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
@@ -50,6 +52,19 @@ export default function Login() {
       setLoading(false);
     }
   };
+ 
+  const handlePasswordReset = async () => {
+  try {
+    await fetch(`${API_URL}/auth/password-reset/request`, {
+      method: "POST",
+    });
+
+    alert("Инструкция для восстановления доступа отправлена на почту администратора");
+  } catch {
+    alert("Ошибка при отправке инструкции");
+  }
+};
+
 
   return (
     <div className="relative h-screen w-full bg-[#0A0F24] flex items-center justify-center overflow-hidden">
@@ -91,6 +106,14 @@ export default function Login() {
         >
           {loading ? "Вход..." : "Войти"}
         </button>
+
+        <button
+  type="button"
+  className="forgot-text"
+  onClick={handlePasswordReset}
+>
+  Забыли пароль?
+</button>
 
         <p className="text-center text-[#C9D1E7] text-xs mt-6">
           Made in <span className="text-[#3BE3FD] font-bold">Kazakhstan</span>

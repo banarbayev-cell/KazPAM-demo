@@ -6,11 +6,12 @@ import { api } from "../services/api";
  * =====================================================
  * JWT TOKEN
  * =====================================================
+ * ⚠️ ОСТАВЛЯЕМ permissions и role — для backward compatibility
  */
 interface DecodedToken {
   sub: string;
   role?: string;
-  permissions: any;
+  permissions?: any;
   exp: number;
 }
 
@@ -29,6 +30,12 @@ interface UserProfile {
     id: number;
     name: string;
   }>;
+
+  /**
+   * ⬇️ НЕОБЯЗАТЕЛЬНО
+   * backend может начать отдавать permissions позже
+   */
+  permissions?: string[];
 }
 
 /**
@@ -74,12 +81,23 @@ export const useAuth = create<AuthState>((set, get) => ({
   login: async (token: string) => {
     localStorage.setItem("access_token", token);
 
-    const decoded = jwtDecode<DecodedToken>(token);
+    let decoded: DecodedToken;
+    try {
+      decoded = jwtDecode<DecodedToken>(token);
+    } catch {
+      console.error("❌ Invalid JWT");
+      get().logout();
+      return;
+    }
+
     const safePermissions = Array.isArray(decoded.permissions)
       ? decoded.permissions
       : [];
 
-    // 1️⃣ Сразу кладём минимального user (из JWT)
+    /**
+     * 1️⃣ Кладём минимального user (JWT fallback)
+     *    — это сохраняет текущую логику Access(permission)
+     */
     set({
       token,
       user: {
@@ -89,7 +107,9 @@ export const useAuth = create<AuthState>((set, get) => ({
       isInitialized: true,
     });
 
-    // 2️⃣ ДОгружаем полный профиль
+    /**
+     * 2️⃣ ДОгружаем профиль
+     */
     await get().fetchMe();
   },
 
@@ -107,24 +127,29 @@ export const useAuth = create<AuthState>((set, get) => ({
    * =====================================================
    * FETCH PROFILE (/users/me)
    * =====================================================
+   * ⚠️ НИЧЕГО НЕ ЛОМАЕМ:
+   * - если permissions пришли — используем их
+   * - если нет — оставляем JWT permissions
    */
   fetchMe: async () => {
     try {
       const me = await api.get<UserProfile>("/users/me");
 
-      set((state) => ({
-        user: state.user
-          ? {
-              ...me,
-              permissions: state.user.permissions, // ⚠️ permissions остаются из JWT
-            }
-          : {
-              ...me,
-              permissions: [],
-            },
-      }));
+      set((state) => {
+        const fallbackPermissions = state.user?.permissions ?? [];
+
+        return {
+          user: {
+            ...me,
+            permissions: Array.isArray(me.permissions)
+              ? me.permissions
+              : fallbackPermissions,
+          },
+        };
+      });
     } catch (e) {
       console.error("❌ fetchMe failed", e);
+      // ⚠️ logout НЕ делаем — мягкая деградация
     }
   },
 
@@ -143,11 +168,21 @@ export const useAuth = create<AuthState>((set, get) => ({
 
     try {
       const decoded = jwtDecode<DecodedToken>(token);
+
+      /**
+       * ⛔ Проверка exp (УСИЛЕНИЕ)
+       */
+      if (decoded.exp * 1000 < Date.now()) {
+        throw new Error("Token expired");
+      }
+
       const safePermissions = Array.isArray(decoded.permissions)
         ? decoded.permissions
         : [];
 
-      // 1️⃣ Восстанавливаем JWT-состояние
+      /**
+       * 1️⃣ Восстанавливаем JWT-состояние
+       */
       set({
         token,
         user: {
@@ -157,7 +192,9 @@ export const useAuth = create<AuthState>((set, get) => ({
         isInitialized: true,
       });
 
-      // 2️⃣ ДОгружаем профиль
+      /**
+       * 2️⃣ ДОгружаем профиль
+       */
       await get().fetchMe();
     } catch {
       localStorage.removeItem("access_token");

@@ -257,14 +257,16 @@ export default function Roles() {
 
       {selectedRole && (
         <AssignPermissionsModal
-          roleId={selectedRole.id}
-          assignedPermissions={selectedRole.permissions}
-          onClose={() => setSelectedRole(null)}
-          onUpdated={() => {
-            setSelectedRole(null);
-            loadRoles();
-          }}
-        />
+  roleId={selectedRole.id}
+  roleName={selectedRole.name}   // ← ВОТ ЭТА СТРОКА
+  assignedPermissions={selectedRole.permissions}
+  onClose={() => setSelectedRole(null)}
+  onUpdated={() => {
+    setSelectedRole(null);
+    loadRoles();
+  }}
+/>
+
       )}
 
       <DeleteRoleConfirmModal

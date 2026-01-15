@@ -2,6 +2,11 @@
 import { createPortal } from "react-dom";
 import { useAuth } from "../../store/auth";
 
+/**
+ * =====================================================
+ * HELPERS
+ * =====================================================
+ */
 function formatDate(value?: string) {
   if (!value) return "—";
   const d = new Date(value);
@@ -16,16 +21,90 @@ function formatDate(value?: string) {
   });
 }
 
-export default function ProfileModal({ open, onClose, user }: any) {
+const PERMISSION_LABELS: Record<
+  string,
+  { ru: string; en: string }
+> = {
+  manage_users: {
+    ru: "Управление пользователями (создание, удаление, блокировка)",
+    en: "Manage users (create, delete, block)",
+  },
+  view_users: {
+    ru: "Просмотр списка пользователей",
+    en: "View users list",
+  },
+  manage_roles: {
+    ru: "Управление ролями доступа",
+    en: "Manage access roles",
+  },
+  view_audit: {
+    ru: "Просмотр журналов аудита",
+    en: "View audit logs",
+  },
+  export_audit: {
+    ru: "Экспорт журналов аудита",
+    en: "Export audit logs",
+  },
+  view_sessions: {
+    ru: "Просмотр активных и завершённых сессий",
+    en: "View active and finished sessions",
+  },
+  soc_actions: {
+    ru: "SOC-действия (изоляция сессий, блокировка пользователей)",
+    en: "SOC actions (isolate sessions, block users)",
+  },
+  manage_settings: {
+    ru: "Изменение системных настроек",
+    en: "Manage system settings",
+  },
+  view_settings: {
+    ru: "Просмотр системных настроек",
+    en: "View system settings",
+  },
+};
+
+/**
+ * =====================================================
+ * COMPONENT
+ * =====================================================
+ * ⚠️ BACKWARD COMPATIBLE:
+ * - если user передан через props → используем его
+ * - если нет → берём user из useAuth
+ */
+export default function ProfileModal({
+  open,
+  onClose,
+  user: userFromProps,
+}: any) {
   const logout = useAuth((s) => s.logout);
+  const authUser = useAuth((s) => s.user);
 
   if (!open) return null;
 
+  /**
+   * 🔐 ЕДИНЫЙ ИСТОЧНИК USER
+   * props → store → null
+   */
+  const user = userFromProps ?? authUser;
+
+  if (!user) return null;
+
+  /**
+   * =====================================================
+   * DISPLAY DATA (SAFE)
+   * =====================================================
+   */
   const displayName =
-    user?.email || user?.username || "user";
+    user.email || user.username || "user";
 
   const avatar =
     displayName?.[0]?.toUpperCase() || "U";
+
+  const primaryRole =
+    user?.roles?.[0]?.name || "—";
+
+  
+
 
   return createPortal(
     <div className="fixed inset-0 z-[9999] flex items-center justify-center">
@@ -41,6 +120,7 @@ export default function ProfileModal({ open, onClose, user }: any) {
           Профиль пользователя
         </h2>
 
+        {/* Header */}
         <div className="flex items-center gap-4 mb-6">
           <div className="w-14 h-14 bg-gray-700 rounded-full flex items-center justify-center text-2xl font-bold text-white">
             {avatar}
@@ -56,36 +136,58 @@ export default function ProfileModal({ open, onClose, user }: any) {
           </div>
         </div>
 
+        {/* Info */}
         <div className="space-y-3 text-[var(--text-secondary)] mb-6">
           <p>
             <span className="font-semibold text-[var(--text-primary)]">
               Роль:
             </span>{" "}
-            {user?.roles?.[0]?.name || "—"}
+            {primaryRole}
           </p>
 
           <p>
             <span className="font-semibold text-[var(--text-primary)]">
               Статус:
             </span>{" "}
-            {user?.is_active ? "Активен" : "Отключён"}
+            {user.is_active ? "Активен" : "Отключён"}
           </p>
 
           <p>
             <span className="font-semibold text-[var(--text-primary)]">
               Последний вход:
             </span>{" "}
-            {formatDate(user?.last_login)}
+            {formatDate(user.last_login)}
           </p>
 
           <p>
             <span className="font-semibold text-[var(--text-primary)]">
               MFA:
             </span>{" "}
-            {user?.mfa_enabled ? "Включено" : "Выключено"}
+            {user.mfa_enabled ? "Включено" : "Выключено"}
           </p>
+
+          {/* 🔒 Усиление: permissions (read-only, безопасно) */}
+          {Array.isArray(user.permissions) && (
+            <div>
+              <span className="font-semibold text-[var(--text-primary)]">
+                Permissions:
+              </span>
+              <div className="mt-1 max-h-24 overflow-y-auto rounded-md bg-[#0E1A3A] p-2 text-xs text-gray-300">
+                {user.permissions.length > 0 ? (
+                  <ul className="space-y-1">
+                    {user.permissions.map((p: string) => (
+                      <li key={p}>{p}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <span className="text-gray-500">—</span>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
+        {/* Actions */}
         <div className="space-y-2">
           <button
             onClick={onClose}

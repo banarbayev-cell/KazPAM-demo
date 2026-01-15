@@ -249,11 +249,13 @@ export default function Roles() {
       {/* Modals */}
 
       <AssignPoliciesModal
-        open={assignPoliciesOpen}
-        onClose={() => setAssignPoliciesOpen(false)}
-        roleId={selectedRoleId}
-        onAssigned={loadRoles}
-      />
+  open={assignPoliciesOpen}
+  onClose={() => setAssignPoliciesOpen(false)}
+  roleId={selectedRoleId}
+  roleName={roles.find(r => r.id === selectedRoleId)?.name || ""}
+  assignedPolicies={roles.find(r => r.id === selectedRoleId)?.policies || []}
+  onAssigned={loadRoles}
+/>
 
       {selectedRole && (
         <AssignPermissionsModal

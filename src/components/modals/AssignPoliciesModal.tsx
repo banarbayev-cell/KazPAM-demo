@@ -1,14 +1,15 @@
+// src/components/modals/AssignPoliciesModal.tsx
 import { useEffect, useState } from "react";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
-  DialogTitle
+  DialogTitle,
 } from "../ui/dialog";
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
 import { toast } from "sonner";
-import { api } from "../../services/api"; // ✅ ВАЖНО
+import { api } from "../../services/api";
 
 interface Policy {
   id: number;
@@ -17,19 +18,28 @@ interface Policy {
   status: string;
 }
 
+interface Props {
+  open: boolean;
+  onClose: () => void;
+  roleId: number | null;
+  roleName: string;
+  assignedPolicies: Policy[]; // ✅ ВАЖНО
+  onAssigned: () => void;
+}
+
 export default function AssignPoliciesModal({
   open,
   onClose,
   roleId,
-  onAssigned
-}: {
-  open: boolean;
-  onClose: () => void;
-  roleId: number | null;
-  onAssigned: () => void;
-}) {
+  roleName,
+  assignedPolicies,
+  onAssigned,
+}: Props) {
   const [policies, setPolicies] = useState<Policy[]>([]);
-  const [selected, setSelected] = useState<number[]>([]);
+  const [processingId, setProcessingId] = useState<number | null>(null);
+
+  // 🔒 уже привязанные политики
+  const assignedIds = new Set(assignedPolicies.map((p) => p.id));
 
   // -----------------------------
   // Загрузить список политик
@@ -38,43 +48,50 @@ export default function AssignPoliciesModal({
     try {
       const data = await api.get<Policy[]>("/policies/");
       setPolicies(Array.isArray(data) ? data : []);
-    } catch (err) {
-      console.error(err);
+    } catch {
       toast.error("Ошибка загрузки политик");
-      setPolicies([]); // защита
+      setPolicies([]);
     }
   };
 
   useEffect(() => {
     if (open) {
       loadPolicies();
-      setSelected([]);
     }
   }, [open]);
 
-  const togglePolicy = (id: number) => {
-    setSelected((prev) =>
-      prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]
-    );
-  };
-
   // -----------------------------
-  // Отправка назначения
+  // Toggle policy
   // -----------------------------
-  const assign = async () => {
+  const togglePolicy = async (policy: Policy) => {
     if (!roleId) return;
 
     try {
-      for (const pid of selected) {
-        await api.post(`/roles/${roleId}/add_policy/${pid}`);
+      setProcessingId(policy.id);
+
+      if (assignedIds.has(policy.id)) {
+        await api.delete(
+          `/roles/${roleId}/remove_policy/${policy.id}`
+        );
+        toast.success(
+          `Политика отвязана: ${policy.name} → роль «${roleName}»`
+        );
+      } else {
+        await api.post(
+          `/roles/${roleId}/add_policy/${policy.id}`
+        );
+        toast.success(
+          `Политика привязана: ${policy.name} → роль «${roleName}»`
+        );
       }
 
-      toast.success("Политики успешно привязаны!");
       onAssigned();
-      onClose();
-    } catch (err) {
-      console.error(err);
-      toast.error("Ошибка назначения политик");
+    } catch {
+      toast.error(
+        `Ошибка изменения политики: ${policy.name} → роль «${roleName}»`
+      );
+    } finally {
+      setProcessingId(null);
     }
   };
 
@@ -82,34 +99,54 @@ export default function AssignPoliciesModal({
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Привязать политики</DialogTitle>
+          <DialogTitle>
+            Назначение политик для роли «{roleName}»
+          </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4 max-h-80 overflow-y-auto pr-2">
+        <div className="space-y-2 max-h-80 overflow-y-auto pr-2">
           {policies.length === 0 ? (
-            <p className="text-sm text-gray-400">Политики не найдены</p>
+            <p className="text-sm text-gray-400">
+              Политики не найдены
+            </p>
           ) : (
-            policies.map((p) => (
-              <div
-                key={p.id}
-                className="flex items-center gap-3 p-2 border rounded-md"
-              >
-                <Checkbox
-                  checked={selected.includes(p.id)}
-                  onCheckedChange={() => togglePolicy(p.id)}
-                />
-                <span className="font-medium">{p.name}</span>
-              </div>
-            ))
+            policies.map((p) => {
+              const active = assignedIds.has(p.id);
+              const isProcessing = processingId === p.id;
+
+              return (
+                <div
+                  key={p.id}
+                  className="flex items-center justify-between p-2 border rounded-md"
+                >
+                  <div className="flex items-center gap-3">
+                    <Checkbox checked={active} disabled />
+                    <span className="font-medium">
+                      {p.name}
+                    </span>
+                  </div>
+
+                  <Button
+                    size="sm"
+                    disabled={isProcessing}
+                    onClick={() => togglePolicy(p)}
+                    className={
+                      active
+                        ? "bg-red-600 hover:bg-red-700"
+                        : "bg-green-600 hover:bg-green-700"
+                    }
+                  >
+                    {active ? "Отвязать" : "Привязать"}
+                  </Button>
+                </div>
+              );
+            })
           )}
         </div>
 
         <div className="flex justify-end gap-3 mt-4">
           <Button variant="outline" onClick={onClose}>
-            Отмена
-          </Button>
-          <Button onClick={assign} className="bg-blue-600 hover:bg-blue-700">
-            Привязать
+            Закрыть
           </Button>
         </div>
       </DialogContent>

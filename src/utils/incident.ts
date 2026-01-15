@@ -1,27 +1,48 @@
 export type IncidentStatus =
   | "OPEN"
   | "INVESTIGATING"
-  | "CLOSED";
+  | "CLOSED"
+  | "RESOLVED"; // backend-compatible
 
-// SOC actions — НЕ статус инцидента
-export type IncidentAction =
-  | "USER_BLOCKED"
-  | "SESSION_ISOLATED"
-  | "EXPORTED"
-  | null;
+export interface IncidentAction {
+  type:
+    | "SOC_ISOLATE_SESSION"
+    | "SOC_BLOCK_USER"
+    | "SOC_EXPORT";
+  actor: string;
+  timestamp: string;
+  result: "SUCCESS" | "FAILED";
+}
+
+export interface IncidentComment {
+  author: string;        // "soc", "system", etc
+  message: string;
+  timestamp: string;
+}
 
 export interface Incident {
-  id: string;
+  id: string;               // frontend UUID
+  backendId?: number;       // ID из БД (optional)
   status: IncidentStatus;
-  lastAction?: IncidentAction;
+
   createdAt: string;
+  closedAt?: string;        // <-- ДОБАВИЛИ
+
+  // SOC details
+  actions?: IncidentAction[];
+  comments?: IncidentComment[];
+
+  // UI helper (не источник истины)
+  lastAction?: string | null;
 }
 
 export function createIncident(): Incident {
   return {
     id: crypto.randomUUID(),
     status: "OPEN",
-    lastAction: null,
     createdAt: new Date().toISOString(),
+    actions: [],
+    comments: [],
+    lastAction: null,
   };
 }

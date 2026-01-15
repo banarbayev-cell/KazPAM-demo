@@ -1,8 +1,31 @@
+// src/components/modals/ProfileModal.tsx
 import { createPortal } from "react-dom";
-import { logout } from "../../utils/auth";
+import { useAuth } from "../../store/auth";
+
+function formatDate(value?: string) {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return "—";
+
+  return d.toLocaleString("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
 export default function ProfileModal({ open, onClose, user }: any) {
+  const logout = useAuth((s) => s.logout);
+
   if (!open) return null;
+
+  const displayName =
+    user?.email || user?.username || "user";
+
+  const avatar =
+    displayName?.[0]?.toUpperCase() || "U";
 
   return createPortal(
     <div className="fixed inset-0 z-[9999] flex items-center justify-center">
@@ -20,12 +43,12 @@ export default function ProfileModal({ open, onClose, user }: any) {
 
         <div className="flex items-center gap-4 mb-6">
           <div className="w-14 h-14 bg-gray-700 rounded-full flex items-center justify-center text-2xl font-bold text-white">
-            {user?.[0]?.toUpperCase()}
+            {avatar}
           </div>
 
           <div>
             <p className="text-lg text-[var(--text-primary)] font-semibold">
-              {user}
+              {displayName}
             </p>
             <p className="text-[var(--text-secondary)] text-sm">
               Привилегированный доступ
@@ -34,10 +57,33 @@ export default function ProfileModal({ open, onClose, user }: any) {
         </div>
 
         <div className="space-y-3 text-[var(--text-secondary)] mb-6">
-          <p><span className="font-semibold text-[var(--text-primary)]">Роль:</span> Администратор</p>
-          <p><span className="font-semibold text-[var(--text-primary)]">Статус:</span> Активен</p>
-          <p><span className="font-semibold text-[var(--text-primary)]">Последний вход:</span> 03.12.2025 19:22</p>
-          <p><span className="font-semibold text-[var(--text-primary)]">MFA:</span> Включено</p>
+          <p>
+            <span className="font-semibold text-[var(--text-primary)]">
+              Роль:
+            </span>{" "}
+            {user?.roles?.[0]?.name || "—"}
+          </p>
+
+          <p>
+            <span className="font-semibold text-[var(--text-primary)]">
+              Статус:
+            </span>{" "}
+            {user?.is_active ? "Активен" : "Отключён"}
+          </p>
+
+          <p>
+            <span className="font-semibold text-[var(--text-primary)]">
+              Последний вход:
+            </span>{" "}
+            {formatDate(user?.last_login)}
+          </p>
+
+          <p>
+            <span className="font-semibold text-[var(--text-primary)]">
+              MFA:
+            </span>{" "}
+            {user?.mfa_enabled ? "Включено" : "Выключено"}
+          </p>
         </div>
 
         <div className="space-y-2">

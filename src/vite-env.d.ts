@@ -8,3 +8,10 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+
+/// <reference types="vite/client" />
+
+declare module "*.ttf?base64" {
+  const content: string;
+  export default content;
+}

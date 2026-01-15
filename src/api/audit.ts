@@ -8,6 +8,7 @@ export interface AuditLog {
   user: string;
   action: string;
   category: string;
+  timestamp: string; // ← ВОТ ОНО
   details: any;
 }
 

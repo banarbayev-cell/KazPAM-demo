@@ -5,6 +5,7 @@ import ActionMenuUser from "../components/ActionMenuUser";
 import CreateUserModal from "../components/modals/CreateUserModal";
 import AssignRolesModal from "../components/modals/AssignRolesModal";
 import ConfirmModal from "../components/modals/ConfirmModal";
+import EffectivePermissionsModal from "../components/modals/EffectivePermissionsModal";
 
 import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
@@ -20,7 +21,7 @@ interface User {
   id: number;
   email: string;
   roles: Role[];
-   is_active: boolean;
+  is_active: boolean;
 }
 
 export default function Users() {
@@ -34,6 +35,13 @@ export default function Users() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+
+  const [isEffectivePermsOpen, setIsEffectivePermsOpen] = useState(false);
+  const [effectivePermsUser, setEffectivePermsUser] = useState<any | null>(null);
+
+  // NEW: роли пользователя с policies+permissions (lazy-load только по клику)
+  const [effectiveRoles, setEffectiveRoles] = useState<any[]>([]);
+  const [effectiveLoading, setEffectiveLoading] = useState(false);
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -76,9 +84,7 @@ export default function Users() {
   // ------------------------------
   const filtered = useMemo(() => {
     return users.filter((user) => {
-      const matchEmail = user.email
-        .toLowerCase()
-        .includes(search.toLowerCase());
+      const matchEmail = user.email.toLowerCase().includes(search.toLowerCase());
 
       const matchRole = user.roles.some((r) =>
         r.name.toLowerCase().includes(search.toLowerCase())
@@ -129,52 +135,42 @@ export default function Users() {
       console.error("Create user error:", err);
     }
   };
-  
+
   const handleActivateUser = async (userId: number) => {
-  try {
-    await api.post(`/users/users/${userId}/activate`);
-    toast.success("Пользователь активирован");
-    fetchUsers();
-  } catch {
-    toast.error("Ошибка активации пользователя");
-  }
-};
-  
+    try {
+      await api.post(`/users/users/${userId}/activate`);
+      toast.success("Пользователь активирован");
+      fetchUsers();
+    } catch {
+      toast.error("Ошибка активации пользователя");
+    }
+  };
+
   const handleDeactivateUser = async (userId: number) => {
-  try {
-    await api.post(`/users/users/${userId}/deactivate`);
-    toast.success("Пользователь отключён");
-    fetchUsers();
-  } catch {
-    toast.error("Ошибка отключения пользователя");
-  }
-};
+    try {
+      await api.post(`/users/users/${userId}/deactivate`);
+      toast.success("Пользователь отключён");
+      fetchUsers();
+    } catch {
+      toast.error("Ошибка отключения пользователя");
+    }
+  };
 
+  const handleResetPassword = async (userId: number, userEmail?: string) => {
+    const email = userEmail ?? "неизвестный пользователь";
+    const newPassword = crypto.randomUUID().slice(0, 12);
 
-  const handleResetPassword = async (
-  userId: number,
-  userEmail?: string
-) => {
-  const email = userEmail ?? "неизвестный пользователь";
-  const newPassword = crypto.randomUUID().slice(0, 12);
+    try {
+      await api.post(`/users/${userId}/reset-password`, {
+        new_password: newPassword,
+      });
 
-  try {
-    await api.post(`/users/${userId}/reset-password`, {
-      new_password: newPassword,
-    });
-
-    toast.success(`Пароль пользователя ${email} сброшен`);
-    toast.info(
-      `Новый пароль для ${email}: ${newPassword}`,
-      { duration: 12000 }
-    );
-  } catch {
-    toast.error(`Ошибка сброса пароля для ${email}`);
-  }
-};
-
-
-
+      toast.success(`Пароль пользователя ${email} сброшен`);
+      toast.info(`Новый пароль для ${email}: ${newPassword}`, { duration: 12000 });
+    } catch {
+      toast.error(`Ошибка сброса пароля для ${email}`);
+    }
+  };
 
   // ------------------------------
   // DELETE USER
@@ -207,6 +203,41 @@ export default function Users() {
       setDeleteLoading(false);
     }
   };
+
+  // ------------------------------
+  // NEW: Effective permissions (lazy-load roles with policies+permissions)
+  // ------------------------------
+  const fetchEffectiveRoles = async (userId: number) => {
+    setEffectiveLoading(true);
+    try {
+      /**
+       * ВАЖНО:
+       * Этот endpoint должен вернуть роли пользователя в "расширенном" виде:
+       * roles[] -> policies[] -> permissions[]
+       *
+       * Рекомендованный вариант:
+       *   GET /roles/?user_id=123
+       *
+       * Если у тебя другой endpoint - меняешь только ЭТУ строку,
+       * остальная архитектура и UI останутся неизменны.
+       */
+      const data = await api.get<any[]>(`/roles/?user_id=${userId}`);
+      setEffectiveRoles(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Ошибка загрузки effective roles:", err);
+      toast.error("Не удалось загрузить права пользователя");
+      setEffectiveRoles([]);
+    } finally {
+      setEffectiveLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isEffectivePermsOpen && effectivePermsUser?.id) {
+      fetchEffectiveRoles(effectivePermsUser.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEffectivePermsOpen, effectivePermsUser]);
 
   return (
     <div className="p-6 w-full bg-gray-100 text-gray-900">
@@ -244,9 +275,7 @@ export default function Users() {
           onChange={(e) => setSearch(e.target.value)}
         />
 
-        <Button onClick={() => setOpenModal(true)}>
-          + Создать пользователя
-        </Button>
+        <Button onClick={() => setOpenModal(true)}>+ Создать пользователя</Button>
       </div>
 
       {/* TABLE */}
@@ -271,20 +300,24 @@ export default function Users() {
                   <User2 className="w-4 h-4 text-[#3BE3FD]" />
                   {user.email}
                 </td>
-              
+
                 <td className="p-3">
-  {user.is_active ? (
-    <span className="px-3 py-1 rounded-full text-xs font-semibold
-                     bg-green-500/20 text-green-400 border border-green-500/30">
-      Активен
-    </span>
-  ) : (
-    <span className="px-3 py-1 rounded-full text-xs font-semibold
-                     bg-red-500/20 text-red-400 border border-red-500/30">
-      Отключён
-    </span>
-  )}
-</td>
+                  {user.is_active ? (
+                    <span
+                      className="px-3 py-1 rounded-full text-xs font-semibold
+                     bg-green-500/20 text-green-400 border border-green-500/30"
+                    >
+                      Активен
+                    </span>
+                  ) : (
+                    <span
+                      className="px-3 py-1 rounded-full text-xs font-semibold
+                     bg-red-500/20 text-red-400 border border-red-500/30"
+                    >
+                      Отключён
+                    </span>
+                  )}
+                </td>
 
                 <td className="p-3">
                   {user.roles.length === 0 ? (
@@ -304,20 +337,33 @@ export default function Users() {
                 </td>
 
                 <td className="p-3 text-sm">
-                  <ActionMenuUser
-  status={user.is_active ? "active" : "disabled"}
-  onAssignRoles={() => {
-    setSelectedUserId(user.id);
-    setAssignRolesOpen(true);
-  }}
-  onDisable={() => handleDeactivateUser(user.id)}
-  onActivate={() => handleActivateUser(user.id)}
-  onResetPassword={() => handleResetPassword(user.id, user.email)}
-  onDelete={() => {
-    setUserToDelete(user);
-    setConfirmOpen(true);
-  }}
-/>
+                  <div className="flex items-center gap-2">
+                    <ActionMenuUser
+                      status={user.is_active ? "active" : "disabled"}
+                      onAssignRoles={() => {
+                        setSelectedUserId(user.id);
+                        setAssignRolesOpen(true);
+                      }}
+                      onDisable={() => handleDeactivateUser(user.id)}
+                      onActivate={() => handleActivateUser(user.id)}
+                      onResetPassword={() => handleResetPassword(user.id, user.email)}
+                      onDelete={() => {
+                        setUserToDelete(user);
+                        setConfirmOpen(true);
+                      }}
+                    />
+
+                    {/* NEW: Safe extra button, does not touch ActionMenuUser */}
+                    <button
+                      onClick={() => {
+                        setEffectivePermsUser(user);
+                        setIsEffectivePermsOpen(true);
+                      }}
+                      className="rounded-xl border border-[#1E2A45] bg-[#0E1A3A] px-3 py-2 text-xs text-gray-200 hover:bg-[#121F49]"
+                    >
+                      Права
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -390,18 +436,16 @@ export default function Users() {
       />
 
       <AssignRolesModal
-  open={assignRolesOpen}
-  onClose={() => setAssignRolesOpen(false)}
-  userId={selectedUserId}
-  userRoles={selectedUser?.roles ?? []}
-  onAssigned={() => {
-    fetchUsers();
-    setAssignRolesOpen(false);
-    toast.success("Роли успешно обновлены");
-  }}
-/>
-
-
+        open={assignRolesOpen}
+        onClose={() => setAssignRolesOpen(false)}
+        userId={selectedUserId}
+        userRoles={selectedUser?.roles ?? []}
+        onAssigned={() => {
+          fetchUsers();
+          setAssignRolesOpen(false);
+          toast.success("Роли успешно обновлены");
+        }}
+      />
 
       <ConfirmModal
         open={confirmOpen}
@@ -414,6 +458,22 @@ export default function Users() {
           setUserToDelete(null);
         }}
         loading={deleteLoading}
+      />
+
+      {/* NEW: Effective permissions modal (read-only, safe) */}
+      <EffectivePermissionsModal
+        isOpen={isEffectivePermsOpen}
+        loading={effectiveLoading}
+        onClose={() => {
+          setIsEffectivePermsOpen(false);
+          setEffectivePermsUser(null);
+          setEffectiveRoles([]);
+        }}
+        user={
+          effectivePermsUser
+            ? { ...effectivePermsUser, roles: effectiveRoles }
+            : null
+        }
       />
     </div>
   );

@@ -2,7 +2,7 @@ import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
-  DropdownMenuItem
+  DropdownMenuItem,
 } from "./ui/dropdown-menu";
 
 interface ActionMenuUserProps {
@@ -36,7 +36,13 @@ export default function ActionMenuUser({
         </button>
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent align="end">
+      {/* ВАЖНО: DropdownMenuContent рендерится через Portal */}
+      <DropdownMenuContent
+        align="end"
+        sideOffset={6}
+        collisionPadding={8}
+        className="z-[9999]"
+      >
         <DropdownMenuItem onClick={onAssignRoles}>
           Назначить роли
         </DropdownMenuItem>

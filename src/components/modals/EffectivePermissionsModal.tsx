@@ -69,6 +69,42 @@ function explainGranted(p: EffectivePermission): string {
   return "Предоставлено системой управления доступами.";
 }
 
+/**
+ * Compliance explainability:
+ * почему permission имеет статус Denied
+ *
+ * Важно: Denied возможен только если мы реально показываем справочник allPermissions.
+ * Иначе - корректно объясняем, что данных недостаточно.
+ */
+function explainDenied(
+  p: EffectivePermission,
+  opts: { userRoles: string[]; showDenied: boolean; hasAllPermissions: boolean }
+): string {
+  if (p.granted) {
+    return "Право предоставлено пользователю.";
+  }
+
+  const { userRoles, showDenied, hasAllPermissions } = opts;
+
+  // если Denied-режим не включён — это не ошибка, просто режим выключен
+  if (!showDenied) {
+    return "Denied скрыт. Включите «Показывать Denied», чтобы видеть отсутствующие права.";
+  }
+
+  // если справочник не передали — Denied объяснить нельзя
+  if (!hasAllPermissions) {
+    return "Denied недоступен: справочник permissions (allPermissions) не загружен.";
+  }
+
+  // пользователь без ролей
+  if (!userRoles || userRoles.length === 0) {
+    return "Право отсутствует, так как пользователю не назначены роли.";
+  }
+
+  // нормальное объяснение
+  return `Право отсутствует во всех ролях пользователя (${userRoles.join(", ")}).`;
+}
+
 export default function EffectivePermissionsModal({
   isOpen,
   onClose,
@@ -99,6 +135,12 @@ export default function EffectivePermissionsModal({
   }, [isOpen, onClose]);
 
   const roles = user?.roles || [];
+  const userRoleNames = useMemo(
+    () => (roles || []).map((r) => (r?.name || "").trim()).filter(Boolean),
+    [roles]
+  );
+
+  const hasAllPermissions = Boolean(allPermissions && allPermissions.length > 0);
 
   const effective: EffectivePermission[] = useMemo(() => {
     return buildEffectivePermissions({
@@ -150,6 +192,7 @@ export default function EffectivePermissionsModal({
     );
   }, [filtered]);
 
+  // ВАЖНО: early-return ПОСЛЕ всех hooks (иначе ломается порядок хуков)
   if (!isOpen || !mounted) return null;
 
   const titleUser = user?.email || user?.full_name || "Пользователь";
@@ -164,13 +207,14 @@ export default function EffectivePermissionsModal({
 
       <div className="absolute inset-0 flex items-center justify-center p-4">
         <div
-          className="w-full max-w-5xl rounded-2xl border border-[#1E2A45] bg-[#121A33] shadow-2xl"
+          // ✅ усиление: фиксируем высоту и скролл внутри модалки, чтобы не превращалась в “страницу”
+          className="w-full max-w-5xl max-h-[85vh] overflow-hidden rounded-2xl border border-[#1E2A45] bg-[#121A33] shadow-2xl flex flex-col"
           onMouseDown={(e) => e.stopPropagation()}
           role="dialog"
           aria-modal="true"
         >
           {/* Header */}
-          <div className="flex items-start justify-between gap-4 border-b border-[#1E2A45] px-6 py-5">
+          <div className="flex items-start justify-between gap-4 border-b border-[#1E2A45] px-6 py-5 shrink-0">
             <div>
               <div className="text-lg font-semibold text-white">
                 Эффективные права
@@ -183,14 +227,14 @@ export default function EffectivePermissionsModal({
 
             <button
               onClick={onClose}
-              className="rounded-xl border border-[#1E2A45] bg-[#0E1A3A] px-3 py-2 text-sm text-gray-200 hover:bg-[#121F49]"
+              className="rounded-xl border border-[#1E2A45] bg-[#0E1A3A] px-3 py-2 text-sm text-gray-200 hover:bg-[#121F49] shrink-0"
             >
               Закрыть
             </button>
           </div>
 
           {/* Controls */}
-          <div className="flex flex-col gap-3 px-6 py-4 md:flex-row md:justify-between">
+          <div className="flex flex-col gap-3 px-6 py-4 md:flex-row md:justify-between shrink-0">
             <div className="flex flex-col gap-2 md:flex-row md:items-center">
               <input
                 value={query}
@@ -233,7 +277,7 @@ export default function EffectivePermissionsModal({
           </div>
 
           {/* Table */}
-          <div className="px-6 pb-6">
+          <div className="px-6 pb-6 overflow-auto">
             <div className="overflow-hidden rounded-2xl border border-[#1E2A45]">
               <div className="max-h-[65vh] overflow-auto">
                 <table className="w-full text-sm">
@@ -247,54 +291,68 @@ export default function EffectivePermissionsModal({
                   </thead>
 
                   <tbody className="divide-y divide-[#1E2A45]">
-                    {groupByRole
-                      ? groupedByRole.map(([role, perms]) => (
-                          <React.Fragment key={role}>
-                            <tr className="bg-[#0E1A3A]">
-                              <td colSpan={4} className="px-4 py-3 text-white">
-                                {role}{" "}
-                                <span className="text-xs text-gray-400">
-                                  ({perms.length})
-                                </span>
-                              </td>
-                            </tr>
-
-                            {perms.map((p) => (
-                              <tr key={`${role}:${p.code}`}>
-                                <td className="px-4 py-3 font-mono text-white">
-                                  {p.code}
-                                </td>
-                                <td className="px-4 py-3">
-                                  <span className="text-emerald-300">
-                                    Granted
-                                  </span>
-                                </td>
-                                <td className="px-4 py-3 text-xs text-gray-300">
-                                  Role
-                                </td>
-                                <td className="px-4 py-3 text-xs text-gray-400">
-                                  {explainGranted(p)}
-                                </td>
-                              </tr>
-                            ))}
-                          </React.Fragment>
-                        ))
-                      : filtered.map((p) => (
-                          <tr key={p.code}>
-                            <td className="px-4 py-3 font-mono text-white">
-                              {p.code}
-                            </td>
-                            <td className="px-4 py-3">
-                              {p.granted ? "Granted" : "Denied"}
-                            </td>
-                            <td className="px-4 py-3 text-xs text-gray-300">
-                              {p.roles.join(", ") || "—"}
-                            </td>
-                            <td className="px-4 py-3 text-xs text-gray-400">
-                              {explainGranted(p)}
+                    {loading ? (
+                      <tr>
+                        <td className="px-4 py-6 text-sm text-gray-300" colSpan={4}>
+                          Загрузка прав пользователя…
+                        </td>
+                      </tr>
+                    ) : groupByRole ? (
+                      groupedByRole.map(([role, perms]) => (
+                        <React.Fragment key={role}>
+                          <tr className="bg-[#0E1A3A]">
+                            <td colSpan={4} className="px-4 py-3 text-white">
+                              {role}{" "}
+                              <span className="text-xs text-gray-400">
+                                ({perms.length})
+                              </span>
                             </td>
                           </tr>
-                        ))}
+
+                          {perms.map((p) => (
+                            <tr key={`${role}:${p.code}`}>
+                              <td className="px-4 py-3 font-mono text-white">
+                                {p.code}
+                              </td>
+                              <td className="px-4 py-3">
+                                <span className="text-emerald-300">
+                                  Granted
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-xs text-gray-300">
+                                Role
+                              </td>
+                              <td className="px-4 py-3 text-xs text-gray-400">
+                                {explainGranted(p)}
+                              </td>
+                            </tr>
+                          ))}
+                        </React.Fragment>
+                      ))
+                    ) : (
+                      filtered.map((p) => (
+                        <tr key={p.code}>
+                          <td className="px-4 py-3 font-mono text-white">
+                            {p.code}
+                          </td>
+                          <td className="px-4 py-3">
+                            {p.granted ? "Granted" : "Denied"}
+                          </td>
+                          <td className="px-4 py-3 text-xs text-gray-300">
+                            {p.roles.join(", ") || "—"}
+                          </td>
+                          <td className="px-4 py-3 text-xs text-gray-400">
+                            {p.granted
+                              ? explainGranted(p)
+                              : explainDenied(p, {
+                                  userRoles: userRoleNames,
+                                  showDenied,
+                                  hasAllPermissions,
+                                })}
+                          </td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -302,7 +360,7 @@ export default function EffectivePermissionsModal({
 
             <div className="mt-3 text-xs text-gray-400">
               Примечание: Denied отображается только при наличии полного
-              справочника permissions.
+              справочника permissions (allPermissions).
             </div>
           </div>
         </div>

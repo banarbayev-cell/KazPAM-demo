@@ -144,11 +144,14 @@ export default function Policies() {
     <div className="p-6 w-full bg-gray-100 text-gray-900">
       <h1 className="text-3xl font-bold mb-4">Политики доступа</h1>
 
-      <div className="flex gap-6 mb-6">
-        <div className="w-[260px] h-[260px] bg-white rounded-xl shadow flex items-center justify-center">
-          <PolicyPieChart active={activeCount} disabled={disabledCount} />
-        </div>
-      </div>
+        <div className="mb-6">
+  <PolicyPieChart
+    active={activeCount}
+    disabled={disabledCount}
+    title="Статистика"
+  />
+</div>
+
 
       <div className="flex gap-3 mb-6">
         <Input

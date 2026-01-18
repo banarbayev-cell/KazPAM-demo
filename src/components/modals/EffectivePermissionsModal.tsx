@@ -6,6 +6,9 @@ import {
   buildEffectivePermissions,
   EffectivePermission,
 } from "../../utils/effectivePermissions";
+import StatusChip from "../ui/StatusChip";
+
+/* ================= TYPES ================= */
 
 type PermissionLike = { code: string; description?: string };
 
@@ -37,73 +40,43 @@ type Props = {
   loading?: boolean;
 };
 
-/**
- * Human-readable explainability:
- * почему permission имеет статус Granted
- */
-function explainGranted(p: EffectivePermission): string {
-  if (!p.granted) {
-    return "Право не предоставлено пользователю.";
-  }
+/* ================= EXPLAINABILITY ================= */
 
+function explainGranted(p: EffectivePermission): string {
   if (p.roles.length === 1 && p.policies.length === 0) {
     return `Предоставлено через роль «${p.roles[0]}».`;
   }
-
   if (p.roles.length === 1 && p.policies.length > 0) {
-    return `Предоставлено через роль «${p.roles[0]}», политика: ${p.policies.join(
-      ", "
-    )}.`;
+    return `Предоставлено через роль «${p.roles[0]}», политика: ${p.policies.join(", ")}.`;
   }
-
   if (p.roles.length > 1 && p.policies.length === 0) {
     return `Предоставлено через роли: ${p.roles.join(", ")}.`;
   }
-
   if (p.roles.length > 1 && p.policies.length > 0) {
-    return `Предоставлено через роли: ${p.roles.join(
-      ", "
-    )}, политики: ${p.policies.join(", ")}.`;
+    return `Предоставлено через роли: ${p.roles.join(", ")}, политики: ${p.policies.join(", ")}.`;
   }
-
   return "Предоставлено системой управления доступами.";
 }
 
-/**
- * Compliance explainability:
- * почему permission имеет статус Denied
- *
- * Важно: Denied возможен только если мы реально показываем справочник allPermissions.
- * Иначе - корректно объясняем, что данных недостаточно.
- */
 function explainDenied(
   p: EffectivePermission,
   opts: { userRoles: string[]; showDenied: boolean; hasAllPermissions: boolean }
 ): string {
-  if (p.granted) {
-    return "Право предоставлено пользователю.";
-  }
-
   const { userRoles, showDenied, hasAllPermissions } = opts;
 
-  // если Denied-режим не включён — это не ошибка, просто режим выключен
   if (!showDenied) {
-    return "Denied скрыт. Включите «Показывать Denied», чтобы видеть отсутствующие права.";
+    return "Denied скрыт. Включите «Показывать Denied».";
   }
-
-  // если справочник не передали — Denied объяснить нельзя
   if (!hasAllPermissions) {
     return "Denied недоступен: справочник permissions (allPermissions) не загружен.";
   }
-
-  // пользователь без ролей
-  if (!userRoles || userRoles.length === 0) {
+  if (userRoles.length === 0) {
     return "Право отсутствует, так как пользователю не назначены роли.";
   }
-
-  // нормальное объяснение
   return `Право отсутствует во всех ролях пользователя (${userRoles.join(", ")}).`;
 }
+
+/* ================= COMPONENT ================= */
 
 export default function EffectivePermissionsModal({
   isOpen,
@@ -115,8 +88,6 @@ export default function EffectivePermissionsModal({
   const [mounted, setMounted] = useState(false);
   const [query, setQuery] = useState("");
   const [showDenied, setShowDenied] = useState(false);
-
-  // усиление (по умолчанию выключено)
   const [groupByRole, setGroupByRole] = useState(false);
 
   useEffect(() => {
@@ -124,7 +95,6 @@ export default function EffectivePermissionsModal({
     return () => setMounted(false);
   }, []);
 
-  // Close on ESC
   useEffect(() => {
     if (!isOpen) return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -135,47 +105,50 @@ export default function EffectivePermissionsModal({
   }, [isOpen, onClose]);
 
   const roles = user?.roles || [];
+
   const userRoleNames = useMemo(
-    () => (roles || []).map((r) => (r?.name || "").trim()).filter(Boolean),
+    () => roles.map((r) => (r?.name || "").trim()).filter(Boolean),
     [roles]
   );
 
   const hasAllPermissions = Boolean(allPermissions && allPermissions.length > 0);
 
-  const effective: EffectivePermission[] = useMemo(() => {
-    return buildEffectivePermissions({
-      roles,
-      allPermissions: showDenied ? allPermissions : undefined,
-    });
-  }, [roles, allPermissions, showDenied]);
+  const effective = useMemo(
+    () =>
+      buildEffectivePermissions({
+        roles,
+        allPermissions: showDenied ? allPermissions : undefined,
+      }),
+    [roles, allPermissions, showDenied]
+  );
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return effective;
 
-    return effective.filter((p) => {
-      return (
+    return effective.filter(
+      (p) =>
         p.code.toLowerCase().includes(q) ||
         (p.description || "").toLowerCase().includes(q) ||
         p.roles.join(" ").toLowerCase().includes(q) ||
         p.policies.join(" ").toLowerCase().includes(q)
-      );
-    });
+    );
   }, [effective, query]);
 
-  // группировка по ролям (derived-state)
+  const stats = useMemo(() => {
+    const granted = effective.filter((p) => p.granted).length;
+    return {
+      granted,
+      denied: effective.length - granted,
+      roles: userRoleNames.length,
+    };
+  }, [effective, userRoleNames]);
+
   const groupedByRole = useMemo(() => {
     const map = new Map<string, EffectivePermission[]>();
 
     for (const perm of filtered) {
       if (!perm.granted) continue;
-
-      if (perm.roles.length === 0) {
-        const key = "Без роли";
-        if (!map.has(key)) map.set(key, []);
-        map.get(key)!.push(perm);
-        continue;
-      }
 
       for (const role of perm.roles) {
         if (!map.has(role)) map.set(role, []);
@@ -187,17 +160,14 @@ export default function EffectivePermissionsModal({
       perms.sort((a, b) => a.code.localeCompare(b.code));
     }
 
-    return Array.from(map.entries()).sort((a, b) =>
-      a[0].localeCompare(b[0])
-    );
+    return Array.from(map.entries());
   }, [filtered]);
 
-  // ВАЖНО: early-return ПОСЛЕ всех hooks (иначе ломается порядок хуков)
   if (!isOpen || !mounted) return null;
 
   const titleUser = user?.email || user?.full_name || "Пользователь";
 
-  const modal = (
+  return createPortal(
     <div className="fixed inset-0 z-[9999]">
       <div
         className="absolute inset-0 bg-black/60"
@@ -207,7 +177,6 @@ export default function EffectivePermissionsModal({
 
       <div className="absolute inset-0 flex items-center justify-center p-4">
         <div
-          // ✅ усиление: фиксируем высоту и скролл внутри модалки, чтобы не превращалась в “страницу”
           className="w-full max-w-5xl max-h-[85vh] overflow-hidden rounded-2xl border border-[#1E2A45] bg-[#121A33] shadow-2xl flex flex-col"
           onMouseDown={(e) => e.stopPropagation()}
           role="dialog"
@@ -227,7 +196,7 @@ export default function EffectivePermissionsModal({
 
             <button
               onClick={onClose}
-              className="rounded-xl border border-[#1E2A45] bg-[#0E1A3A] px-3 py-2 text-sm text-gray-200 hover:bg-[#121F49] shrink-0"
+              className="rounded-xl border border-[#1E2A45] bg-[#0E1A3A] px-3 py-2 text-sm text-gray-200 hover:bg-[#121F49]"
             >
               Закрыть
             </button>
@@ -268,11 +237,17 @@ export default function EffectivePermissionsModal({
               </label>
             </div>
 
-            <div className="text-sm text-gray-300">
-              Найдено:{" "}
-              <span className="text-white font-semibold">
-                {filtered.length}
-              </span>
+            <div className="text-sm text-gray-300 text-right">
+              <div>
+                Найдено:{" "}
+                <span className="text-white font-semibold">
+                  {filtered.length}
+                </span>
+              </div>
+              <div className="text-xs text-gray-400">
+                Granted: {stats.granted} · Denied: {stats.denied} · Roles:{" "}
+                {stats.roles}
+              </div>
             </div>
           </div>
 
@@ -293,7 +268,7 @@ export default function EffectivePermissionsModal({
                   <tbody className="divide-y divide-[#1E2A45]">
                     {loading ? (
                       <tr>
-                        <td className="px-4 py-6 text-sm text-gray-300" colSpan={4}>
+                        <td colSpan={4} className="px-4 py-6 text-gray-300">
                           Загрузка прав пользователя…
                         </td>
                       </tr>
@@ -315,9 +290,7 @@ export default function EffectivePermissionsModal({
                                 {p.code}
                               </td>
                               <td className="px-4 py-3">
-                                <span className="text-emerald-300">
-                                  Granted
-                                </span>
+                                <StatusChip status="Granted" />
                               </td>
                               <td className="px-4 py-3 text-xs text-gray-300">
                                 Role
@@ -329,6 +302,12 @@ export default function EffectivePermissionsModal({
                           ))}
                         </React.Fragment>
                       ))
+                    ) : filtered.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="px-4 py-8 text-gray-400">
+                          По заданному фильтру права не найдены.
+                        </td>
+                      </tr>
                     ) : (
                       filtered.map((p) => (
                         <tr key={p.code}>
@@ -336,7 +315,9 @@ export default function EffectivePermissionsModal({
                             {p.code}
                           </td>
                           <td className="px-4 py-3">
-                            {p.granted ? "Granted" : "Denied"}
+                            <StatusChip
+                              status={p.granted ? "Granted" : "Denied"}
+                            />
                           </td>
                           <td className="px-4 py-3 text-xs text-gray-300">
                             {p.roles.join(", ") || "—"}
@@ -365,8 +346,7 @@ export default function EffectivePermissionsModal({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
-
-  return createPortal(modal, document.body);
 }

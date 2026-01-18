@@ -7,6 +7,8 @@ import {
   EffectivePermission,
 } from "../../utils/effectivePermissions";
 import StatusChip from "../ui/StatusChip";
+import SourceTooltip from "../ui/SourceTooltip";
+
 
 /* ================= TYPES ================= */
 
@@ -292,8 +294,8 @@ export default function EffectivePermissionsModal({
                               <td className="px-4 py-3">
                                 <StatusChip status="Granted" />
                               </td>
-                              <td className="px-4 py-3 text-xs text-gray-300">
-                                Role
+                              <td className="px-4 py-3 text-xs">
+                                <SourceTooltip permission={p} />
                               </td>
                               <td className="px-4 py-3 text-xs text-gray-400">
                                 {explainGranted(p)}
@@ -319,9 +321,17 @@ export default function EffectivePermissionsModal({
                               status={p.granted ? "Granted" : "Denied"}
                             />
                           </td>
-                          <td className="px-4 py-3 text-xs text-gray-300">
-                            {p.roles.join(", ") || "—"}
-                          </td>
+                          <td className="px-4 py-3 text-xs">
+  <SourceTooltip
+    permission={p}
+    deniedReason={explainDenied(p, {
+      userRoles: userRoleNames,
+      showDenied,
+      hasAllPermissions,
+    })}
+  />
+</td>
+
                           <td className="px-4 py-3 text-xs text-gray-400">
                             {p.granted
                               ? explainGranted(p)

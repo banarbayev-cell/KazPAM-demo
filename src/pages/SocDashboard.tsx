@@ -8,8 +8,12 @@ import { calculateRiskScore } from "../utils/riskScore";
 import { Incident } from "../utils/incident";
 import { sanitizeText } from "../utils/sanitizeText";
 import { API_URL } from "../api/config";
+import SourceTooltip from "../components/ui/SourceTooltip";
+import { buildEffectivePermissions } from "../utils/effectivePermissions";
+import { useAuth } from "../store/auth";
+import { parseUserAgent } from "../utils/parseUserAgent";
 
-import { useAuth } from "../store/auth"; // ✅ усиление: каноничный источник токена
+
 
 import {
   blockUser,
@@ -67,7 +71,17 @@ type RbacError =
     }
   | null;
 
+const SOC_INCIDENT_STORAGE_KEY = "kazpam_soc_incident_id";
+
 export default function SocDashboard() {
+  // 🔐 Каноничный источник токена + ролей. ВАЖНО: один раз, в самом верху.
+  const auth = useAuth();
+
+const token = auth.token;
+const roles = auth.user?.roles ?? [];
+
+
+
   const [investigationOpen, setInvestigationOpen] = useState(false);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(false);
@@ -78,8 +92,11 @@ export default function SocDashboard() {
   // RBAC ERROR (STRUCTURED)
   const [rbacError, setRbacError] = useState<RbacError>(null);
 
-  // ✅ усиление: берём токен из каноничного auth store (Zustand)
-  const token = useAuth((s) => s.token);
+  // (опционально) токен-гейт без побочных эффектов
+  // раньше он у тебя был, но пустой — оставляем безопасно как no-op
+  useEffect(() => {
+    if (!token) return;
+  }, [token]);
 
   // ============================
   // LOAD AUDIT LOGS
@@ -92,6 +109,53 @@ export default function SocDashboard() {
       .catch((err) => console.error("Audit load error:", err))
       .finally(() => setLoading(false));
   }, []);
+
+  // ============================
+  // RESTORE INCIDENT AFTER RELOAD (NO REGRESSIONS)
+  // ============================
+  useEffect(() => {
+    // без токена не лезем в API (иначе 401)
+    if (!token) return;
+
+    // если уже есть инцидент в state — ничего не делаем
+    if (incident?.backendId || (incident as any)?.id) return;
+
+    const savedId = localStorage.getItem(SOC_INCIDENT_STORAGE_KEY);
+    if (!savedId) return;
+
+    const authHeaders: Record<string, string> = {
+      Authorization: `Bearer ${token}`,
+    };
+
+    (async () => {
+      try {
+        const r = await fetch(`${API_URL}/incidents/${savedId}`, {
+          headers: authHeaders,
+        });
+
+        if (!r.ok) {
+          // если инцидент недоступен/удалён — очищаем якорь
+          localStorage.removeItem(SOC_INCIDENT_STORAGE_KEY);
+          return;
+        }
+
+        const data = await r.json();
+
+        setIncident({
+          ...data,
+          backendId: data.id,
+        });
+
+        // открываем расследование автоматически — чтобы UX был “как было”
+        setInvestigationOpen(true);
+      } catch (e) {
+        // сеть/ошибка — не ломаем страницу, просто очищаем якорь
+        localStorage.removeItem(SOC_INCIDENT_STORAGE_KEY);
+      }
+    })();
+    // ВАЖНО: зависимость только token, как у тебя было
+    // incident намеренно НЕ добавляем, чтобы не было лишних запросов
+  }, [token]);
 
   // ============================
   // SOC FILTER (MVP)
@@ -110,7 +174,8 @@ export default function SocDashboard() {
   const record = useMemo(() => {
     const firstWithIp = suspiciousLogs.find((log) => {
       try {
-        const d = typeof log.details === "string" ? JSON.parse(log.details) : log.details;
+        const d =
+          typeof log.details === "string" ? JSON.parse(log.details) : log.details;
         return d?.source_ip;
       } catch {
         return false;
@@ -132,9 +197,9 @@ export default function SocDashboard() {
       user: first?.user || "unknown",
       ip: details?.source_ip || "unknown",
       location: details?.location || "Unknown",
-      device: details?.device || "Unknown",
+      device: parseUserAgent(details?.device),
 
-      // ВАЖНО: используем timestamp (как вы зафиксировали)
+      // ВАЖНО: используем timestamp (как вы фиксировали)
       events: suspiciousLogs.map((e) =>
         sanitizeText(`${safeTime(e.timestamp) || e.timestamp} — ${e.action}`)
       ),
@@ -147,14 +212,42 @@ export default function SocDashboard() {
   const risk = useMemo(() => calculateRiskScore(suspiciousLogs), [suspiciousLogs]);
 
   // ============================
+  // SOC EFFECTIVE PERMISSIONS (for tooltips / explainability)
+  // ============================
+  const socEffectivePermissions = useMemo(() => {
+    if (!roles.length) return [];
+    return buildEffectivePermissions({ roles });
+  }, [roles]);
+
+  const deniedSocPermission = useMemo(() => {
+    if (!rbacError?.requiredPermission) return null;
+
+    return (
+      socEffectivePermissions.find((p) => p.code === rbacError.requiredPermission) || {
+        code: rbacError.requiredPermission,
+        granted: false,
+        roles: [],
+        policies: [],
+      }
+    );
+  }, [rbacError, socEffectivePermissions]);
+
+  // ============================
   // OPEN INVESTIGATION
   // ============================
   const handleInvestigate = async () => {
     setRbacError(null);
 
-    // ✅ усиление: если токена нет — не пытаемся ходить в API (иначе 401)
+    // если токена нет — не пытаемся ходить в API (иначе 401)
     if (!token) {
       console.error("SOC investigate: missing token (login required)");
+      return;
+    }
+
+    // если уже есть сохранённый инцидент — не создаём новый
+    const savedId = localStorage.getItem(SOC_INCIDENT_STORAGE_KEY);
+    if (savedId) {
+      setInvestigationOpen(true);
       return;
     }
 
@@ -181,6 +274,8 @@ export default function SocDashboard() {
           ...existing,
           backendId: existing.id,
         });
+        // ✅ сохраняем якорь дела
+        localStorage.setItem(SOC_INCIDENT_STORAGE_KEY, String(existing.id));
       } else {
         // 3️⃣ нет активного — создаём в backend
         const createRes = await fetch(`${API_URL}/incidents/`, {
@@ -209,6 +304,9 @@ export default function SocDashboard() {
           ...created,
           backendId: created.id,
         });
+
+        // ✅ сохраняем якорь дела (created доступен только здесь)
+        localStorage.setItem(SOC_INCIDENT_STORAGE_KEY, String(created.id));
       }
 
       setInvestigationOpen(true);
@@ -393,7 +491,9 @@ export default function SocDashboard() {
               Действие
             </div>
             <div className="px-4 py-3 col-span-2 border-t border-[#1E2A45] text-white">
-              {rbacError.action === "ISOLATE_SESSION" ? "Изоляция сессии" : "Блокировка пользователя"}
+              {rbacError.action === "ISOLATE_SESSION"
+                ? "Изоляция сессии"
+                : "Блокировка пользователя"}
             </div>
 
             <div className="px-4 py-3 text-gray-400 border-t border-[#1E2A45]">
@@ -407,7 +507,8 @@ export default function SocDashboard() {
               Что это значит
             </div>
             <div className="px-4 py-3 col-span-2 border-t border-[#1E2A45] text-gray-300">
-              У вашей текущей роли отсутствует необходимое разрешение для выполнения данного действия
+              У вашей текущей роли отсутствует необходимое разрешение для выполнения
+              данного действия
             </div>
 
             <div className="px-4 py-3 text-gray-400 border-t border-[#1E2A45]">
@@ -415,10 +516,19 @@ export default function SocDashboard() {
             </div>
             <div className="px-4 py-3 col-span-2 border-t border-[#1E2A45] text-gray-300 leading-relaxed">
               Обратитесь к администратору безопасности
-              <span className="ml-1 text-white font-semibold">(роль: Super Admin или SOC Admin)</span>
+              <span className="ml-1 text-white font-semibold">
+                (роль: Super Admin или SOC Admin)
+              </span>
               <br />
-              и запросите назначение разрешения
-              <span className="ml-1 text-blue-400 font-mono">{rbacError.requiredPermission}</span>
+              и запросите назначение разрешения{" "}
+              <span className="ml-1">
+                {deniedSocPermission && (
+                  <SourceTooltip
+                    permission={deniedSocPermission}
+                    deniedReason={`Permission «${rbacError.requiredPermission}» отсутствует во всех ролях текущего пользователя.`}
+                  />
+                )}
+              </span>
             </div>
           </div>
         </div>

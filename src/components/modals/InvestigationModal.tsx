@@ -1,6 +1,10 @@
 import { useMemo, useState } from "react";
 import { X, Ban, ShieldAlert, FileSpreadsheet, PlugZap } from "lucide-react";
 
+import SourceTooltip from "../ui/SourceTooltip";
+import { buildEffectivePermissions } from "../../utils/effectivePermissions";
+import { useAuth } from "../../store/auth";
+
 import CommandActivityChart from "../charts/CommandActivityChart";
 import { RiskLevel } from "../../utils/riskScore";
 import { Incident } from "../../utils/incident";
@@ -57,12 +61,9 @@ export default function InvestigationModal({
 
   /**
    * === PLAYBOOK DETECTION (UI-ONLY, SAFE) ===
-   * Используем ТОЛЬКО тот таймлайн, который видит аналитик (record.events)
-   * Никаких backend-зависимостей, никаких side-effects
    */
   const timelineForPlaybook = useMemo(() => {
     return (record?.events ?? []).map((line) => {
-      // ожидаемый формат: "DD.MM.YYYY HH:MM — ACTION"
       const dash = line.split("—").map((s) => s.trim());
       if (dash.length >= 2) {
         return { timestamp: dash[0], action: dash[1] };
@@ -73,7 +74,6 @@ export default function InvestigationModal({
         return { timestamp: hyphen[0], action: hyphen[1] };
       }
 
-      // fallback — если формат неизвестен
       return { action: line };
     });
   }, [record?.events]);
@@ -82,7 +82,33 @@ export default function InvestigationModal({
     return detectPlaybookFromTimeline(timelineForPlaybook);
   }, [timelineForPlaybook]);
 
-  // React-safe: хуки всегда вызываются
+  /**
+   * === EFFECTIVE PERMISSIONS (READ-ONLY, SAFE) ===
+   */
+  const auth = useAuth();
+  const roles = auth.user?.roles ?? [];
+
+
+  const effectivePermissions = useMemo(
+    () =>
+      buildEffectivePermissions({
+        roles,
+      }),
+    [roles]
+  );
+
+  function getPermission(code: string) {
+    return (
+      effectivePermissions.find((p) => p.code === code) || {
+        code,
+        granted: false,
+        roles: [],
+        policies: [],
+      }
+    );
+  }
+
+  // React-safe
   if (!isOpen) return null;
 
   return (
@@ -163,21 +189,10 @@ export default function InvestigationModal({
 
           {/* TARGET */}
           <div className="space-y-1 text-sm text-gray-300 mb-4">
-            <p>
-              <strong className="text-white">Пользователь:</strong>{" "}
-              {record.user}
-            </p>
-            <p>
-              <strong className="text-white">IP:</strong> {record.ip}
-            </p>
-            <p>
-              <strong className="text-white">Локация:</strong>{" "}
-              {record.location}
-            </p>
-            <p>
-              <strong className="text-white">Устройство:</strong>{" "}
-              {record.device}
-            </p>
+            <p><strong className="text-white">Пользователь:</strong> {record.user}</p>
+            <p><strong className="text-white">IP:</strong> {record.ip}</p>
+            <p><strong className="text-white">Локация:</strong> {record.location}</p>
+            <p><strong className="text-white">Устройство:</strong> {record.device}</p>
           </div>
 
           {/* EVENTS */}
@@ -187,9 +202,7 @@ export default function InvestigationModal({
             </h3>
             <ul className="space-y-1 text-sm">
               {record.events.map((e, i) => (
-                <li key={i} className="text-gray-400">
-                  • {e}
-                </li>
+                <li key={i} className="text-gray-400">• {e}</li>
               ))}
             </ul>
           </div>
@@ -216,37 +229,45 @@ export default function InvestigationModal({
             />
           </div>
 
-          {/* ACTIONS */}
+          {/* ACTIONS — ВАЖНО: flex-wrap сохранён */}
           <div className="flex flex-wrap gap-3">
-            <button
-              disabled={actionLoading === "isolate" || hasIsolatedSession}
-              onClick={async () => {
-                try {
-                  setActionLoading("isolate");
-                  await onIsolate();
-                } finally {
-                  setActionLoading(null);
-                }
-              }}
-              className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-5 py-2 rounded-lg font-semibold flex gap-2"
-            >
-              <PlugZap size={18} /> Изолировать сессию
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                disabled={actionLoading === "isolate" || hasIsolatedSession}
+                onClick={async () => {
+                  try {
+                    setActionLoading("isolate");
+                    await onIsolate();
+                  } finally {
+                    setActionLoading(null);
+                  }
+                }}
+                className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-5 py-2 rounded-lg font-semibold flex gap-2"
+              >
+                <PlugZap size={18} /> Изолировать сессию
+              </button>
 
-            <button
-              disabled={actionLoading === "block" || hasBlockedUser}
-              onClick={async () => {
-                try {
-                  setActionLoading("block");
-                  await onBlock();
-                } finally {
-                  setActionLoading(null);
-                }
-              }}
-              className="bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white px-5 py-2 rounded-lg font-semibold flex gap-2"
-            >
-              <Ban size={18} /> Заблокировать пользователя
-            </button>
+              <SourceTooltip permission={getPermission("soc_isolate_session")} />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                disabled={actionLoading === "block" || hasBlockedUser}
+                onClick={async () => {
+                  try {
+                    setActionLoading("block");
+                    await onBlock();
+                  } finally {
+                    setActionLoading(null);
+                  }
+                }}
+                className="bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white px-5 py-2 rounded-lg font-semibold flex gap-2"
+              >
+                <Ban size={18} /> Заблокировать пользователя
+              </button>
+
+              <SourceTooltip permission={getPermission("soc_block_user")} />
+            </div>
 
             <button
               onClick={() => {
@@ -261,34 +282,29 @@ export default function InvestigationModal({
             <button
               disabled={!comment.trim() || isResolved}
               onClick={async () => {
-  if (!incident) return;
+                if (!incident) return;
 
-  try {
-    if (incident.backendId) {
-      // backend-persisted incident
-      await updateIncidentStatus(incident.backendId, "RESOLVED");
-    } else {
-      // frontend-only incident (expected case)
-      console.warn("Incident has no backendId, closing locally only");
-    }
+                try {
+                  if (incident.backendId) {
+                    await updateIncidentStatus(incident.backendId, "RESOLVED");
+                  }
 
-    // локально обновляем состояние
-    incident.status = "RESOLVED";
-    incident.closedAt = new Date().toISOString();
-    incident.comments = [
-      ...(incident.comments || []),
-      {
-        author: "soc",
-        message: comment,
-        timestamp: new Date().toISOString(),
-      },
-    ];
+                  incident.status = "RESOLVED";
+                  incident.closedAt = new Date().toISOString();
+                  incident.comments = [
+                    ...(incident.comments || []),
+                    {
+                      author: "soc",
+                      message: comment,
+                      timestamp: new Date().toISOString(),
+                    },
+                  ];
 
-    onClose();
-  } catch (e) {
-    console.error("Failed to close incident", e);
-  }
-}}
+                  onClose();
+                } catch (e) {
+                  console.error("Failed to close incident", e);
+                }
+              }}
               className="bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white px-5 py-2 rounded-lg font-semibold"
             >
               Закрыть инцидент

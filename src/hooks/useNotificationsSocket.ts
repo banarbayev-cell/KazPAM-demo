@@ -3,10 +3,14 @@ import { useNotifications } from "./useNotifications";
 import { useAuth } from "../store/auth";
 
 export function useNotificationsSocket() {
-  const { refresh } = useNotifications();
+  // 🔐 Канонично получаем token (ОДИН selector)
   const token = useAuth((s) => s.token);
 
+  // 🔔 notifications API
+  const { refresh } = useNotifications();
+
   useEffect(() => {
+    // без токена — без сокета (важно для logout / init)
     if (!token) return;
 
     const ws = new WebSocket(
@@ -16,12 +20,21 @@ export function useNotificationsSocket() {
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        if (data.type === "notification") {
-          refresh(); // аккуратно обновляем список
+        if (data?.type === "notification") {
+          refresh();
         }
-      } catch {}
+      } catch {
+        // намеренно игнорируем мусор
+      }
     };
 
-    return () => ws.close();
-  }, [token, refresh]);
+    ws.onerror = () => {
+      // сокет не должен валить приложение
+      console.warn("Notifications WS error");
+    };
+
+    return () => {
+      ws.close();
+    };
+  }, [token]); // ❗ refresh НЕ В deps
 }

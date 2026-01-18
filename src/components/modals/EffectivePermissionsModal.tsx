@@ -2,7 +2,10 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { buildEffectivePermissions, EffectivePermission } from "../../utils/effectivePermissions";
+import {
+  buildEffectivePermissions,
+  EffectivePermission,
+} from "../../utils/effectivePermissions";
 
 type PermissionLike = { code: string; description?: string };
 
@@ -49,6 +52,9 @@ export default function EffectivePermissionsModal({
   const [query, setQuery] = useState("");
   const [showDenied, setShowDenied] = useState(false);
 
+  // 🔹 НОВОЕ (усиление, по умолчанию выключено)
+  const [groupByRole, setGroupByRole] = useState(false);
+
   useEffect(() => {
     setMounted(true);
     return () => setMounted(false);
@@ -92,6 +98,35 @@ export default function EffectivePermissionsModal({
     });
   }, [effective, query]);
 
+  // 🔹 НОВОЕ: группировка по ролям (derived state)
+  const groupedByRole = useMemo(() => {
+    const map = new Map<string, EffectivePermission[]>();
+
+    for (const perm of filtered) {
+      if (!perm.granted) continue;
+
+      if (perm.roles.length === 0) {
+        const key = "Без роли";
+        if (!map.has(key)) map.set(key, []);
+        map.get(key)!.push(perm);
+        continue;
+      }
+
+      for (const role of perm.roles) {
+        if (!map.has(role)) map.set(role, []);
+        map.get(role)!.push(perm);
+      }
+    }
+
+    for (const perms of map.values()) {
+      perms.sort((a, b) => a.code.localeCompare(b.code));
+    }
+
+    return Array.from(map.entries()).sort((a, b) =>
+      a[0].localeCompare(b[0])
+    );
+  }, [filtered]);
+
   if (!isOpen || !mounted) return null;
 
   const titleUser = user?.email || user?.full_name || "Пользователь";
@@ -99,7 +134,11 @@ export default function EffectivePermissionsModal({
   const modal = (
     <div className="fixed inset-0 z-[9999]">
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/60" onMouseDown={onClose} aria-hidden="true" />
+      <div
+        className="absolute inset-0 bg-black/60"
+        onMouseDown={onClose}
+        aria-hidden="true"
+      />
 
       {/* Panel */}
       <div className="absolute inset-0 flex items-center justify-center p-4">
@@ -112,8 +151,12 @@ export default function EffectivePermissionsModal({
           {/* Header */}
           <div className="flex items-start justify-between gap-4 border-b border-[#1E2A45] px-6 py-5">
             <div className="min-w-0">
-              <div className="text-lg font-semibold text-white">Эффективные права</div>
-              <div className="mt-1 text-sm text-gray-300 break-words">{titleUser}</div>
+              <div className="text-lg font-semibold text-white">
+                Эффективные права
+              </div>
+              <div className="mt-1 text-sm text-gray-300 break-words">
+                {titleUser}
+              </div>
               <div className="mt-2 text-xs text-gray-400">
                 Read-only. Права агрегируются из ролей → политик → permissions.
               </div>
@@ -144,12 +187,30 @@ export default function EffectivePermissionsModal({
                   onChange={(e) => setShowDenied(e.target.checked)}
                   className="h-4 w-4 accent-[#0052FF]"
                 />
-                <span className="text-sm text-gray-200">Показывать Denied (если доступен allPermissions)</span>
+                <span className="text-sm text-gray-200">
+                  Показывать Denied (если доступен allPermissions)
+                </span>
+              </label>
+
+              {/* 🔹 НОВОЕ */}
+              <label className="flex items-center gap-2 select-none">
+                <input
+                  type="checkbox"
+                  checked={groupByRole}
+                  onChange={(e) => setGroupByRole(e.target.checked)}
+                  className="h-4 w-4 accent-[#0052FF]"
+                />
+                <span className="text-sm text-gray-200">
+                  Группировать по ролям
+                </span>
               </label>
             </div>
 
             <div className="text-sm text-gray-300">
-              Найдено: <span className="text-white font-semibold">{filtered.length}</span>
+              Найдено:{" "}
+              <span className="text-white font-semibold">
+                {filtered.length}
+              </span>
             </div>
           </div>
 
@@ -170,18 +231,78 @@ export default function EffectivePermissionsModal({
                   <tbody className="divide-y divide-[#1E2A45]">
                     {loading ? (
                       <tr>
-                        <td className="px-4 py-6 text-sm text-gray-300" colSpan={4}>
+                        <td
+                          className="px-4 py-6 text-sm text-gray-300"
+                          colSpan={4}
+                        >
                           Загрузка прав пользователя…
                         </td>
                       </tr>
+                    ) : groupByRole ? (
+                      groupedByRole.map(([role, perms]) => (
+                        <React.Fragment key={role}>
+                          <tr className="bg-[#0E1A3A]">
+                            <td
+                              colSpan={4}
+                              className="px-4 py-3 font-semibold text-white"
+                            >
+                              {role}
+                              <span className="ml-2 text-xs text-gray-400">
+                                ({perms.length})
+                              </span>
+                            </td>
+                          </tr>
+
+                          {perms.map((p) => (
+                            <tr
+                              key={`${role}:${p.code}`}
+                              className="text-gray-100 hover:bg-[#0E1A3A]/40"
+                            >
+                              <td className="px-4 py-3 align-top">
+                                <div className="font-mono text-[13px] text-white">
+                                  {p.code}
+                                </div>
+                                {p.description ? (
+                                  <div className="mt-1 text-xs text-gray-300">
+                                    {p.description}
+                                  </div>
+                                ) : null}
+                              </td>
+
+                              <td className="px-4 py-3 align-top">
+                                <span className="inline-flex items-center rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-semibold text-emerald-300 border border-emerald-500/30">
+                                  Granted
+                                </span>
+                              </td>
+
+                              <td className="px-4 py-3 align-top text-xs text-gray-300">
+                                Role
+                              </td>
+
+                              <td className="px-4 py-3 align-top text-xs text-gray-300">
+                                {p.policies.length > 0
+                                  ? p.policies.join(", ")
+                                  : "—"}
+                              </td>
+                            </tr>
+                          ))}
+                        </React.Fragment>
+                      ))
                     ) : (
                       <>
                         {filtered.map((p) => (
-                          <tr key={p.code} className="text-gray-100 hover:bg-[#0E1A3A]/40">
+                          <tr
+                            key={p.code}
+                            className="text-gray-100 hover:bg-[#0E1A3A]/40"
+                          >
                             <td className="px-4 py-3 align-top">
-                              <div className="font-mono text-[13px] text-white">{p.code}</div>
+                              <div className="font-mono text-[13px] text-white">
+                                {p.code}
+                              </div>
                               {p.description ? (
-                                <div className="mt-1 text-xs text-gray-300">{p.description}</div>
+                                <div className="mt-1 text-xs text-gray-300">
+                                  {p.description}
+                                </div>
                               ) : null}
                             </td>
 
@@ -227,19 +348,13 @@ export default function EffectivePermissionsModal({
                                   ))}
                                 </div>
                               ) : (
-                                <span className="text-xs text-gray-400">Not assigned</span>
+                                <span className="text-xs text-gray-400">
+                                  Not assigned
+                                </span>
                               )}
                             </td>
                           </tr>
                         ))}
-
-                        {filtered.length === 0 ? (
-                          <tr>
-                            <td className="px-4 py-6 text-sm text-gray-300" colSpan={4}>
-                              Ничего не найдено по текущему фильтру.
-                            </td>
-                          </tr>
-                        ) : null}
                       </>
                     )}
                   </tbody>
@@ -248,8 +363,8 @@ export default function EffectivePermissionsModal({
             </div>
 
             <div className="mt-3 text-xs text-gray-400">
-              Примечание: “Denied” отображается только если доступен полный справочник permissions (allPermissions).
-              
+              Примечание: “Denied” отображается только если доступен полный
+              справочник permissions (allPermissions).
             </div>
           </div>
         </div>

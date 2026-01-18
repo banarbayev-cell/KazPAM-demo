@@ -238,11 +238,34 @@ function download(blob: Blob, filename: string) {
 }
 
 function exportCsv(records: AuditRecord[]) {
-  const header = "id,time,user,category,action,status,ip,details\n";
+  const header = [
+    "id",
+    "time",
+    "user",
+    "category",
+    "action",
+    "status",
+    "ip",
+    "details",
+  ].join(";") + "\n";
+
   const rows = records
     .map((r) => {
-      const detailsStr = JSON.stringify(r.details ?? {}).replace(/"/g, '""');
-      return `${r.id},"${r.time}",${r.user},${r.category},"${r.action}",${r.status},${r.ip},"${detailsStr}"`;
+      const detailsStr = JSON.stringify(r.details ?? {})
+        .replace(/"/g, '""'); // CSV escape
+
+      return [
+        r.id,
+        r.time,
+        r.user,
+        r.category,
+        r.action,
+        r.status,
+        r.ip,
+        detailsStr,
+      ]
+        .map((v) => `"${String(v ?? "")}"`)
+        .join(";");
     })
     .join("\n");
 
@@ -253,6 +276,7 @@ function exportCsv(records: AuditRecord[]) {
     `audit_${new Date().toISOString().slice(0, 19)}.csv`
   );
 }
+
 
 function exportJson(records: AuditRecord[]) {
   download(

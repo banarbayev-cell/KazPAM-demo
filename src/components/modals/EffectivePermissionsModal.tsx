@@ -115,7 +115,7 @@ export default function EffectivePermissionsModal({
               <div className="text-lg font-semibold text-white">Эффективные права</div>
               <div className="mt-1 text-sm text-gray-300 break-words">{titleUser}</div>
               <div className="mt-2 text-xs text-gray-400">
-                Read-only. Права агрегируются из ролей → политик → permissions. Ничего не изменяется.
+                Read-only. Права агрегируются из ролей → политик → permissions.
               </div>
             </div>
 
@@ -249,7 +249,7 @@ export default function EffectivePermissionsModal({
 
             <div className="mt-3 text-xs text-gray-400">
               Примечание: “Denied” отображается только если доступен полный справочник permissions (allPermissions).
-              В v1 достаточно Granted — это уже даёт explainability.
+              
             </div>
           </div>
         </div>

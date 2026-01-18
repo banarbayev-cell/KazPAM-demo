@@ -207,9 +207,8 @@ function mapAuditLog(log: BackendAuditLog): AuditRecord {
 const ip =
   ipRaw
     ? String(ipRaw)
-    : log.user === "system"
-    ? "system"
     : "—";
+
 
 
   const category = normalizeCategory(log.category);

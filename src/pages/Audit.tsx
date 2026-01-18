@@ -6,14 +6,25 @@ import { apiGet } from "../api/client";
 import { useNavigate } from "react-router-dom";
 
 /* =====================================================
-   Backend model
+   Backend model (backward compatible)
 ===================================================== */
 interface BackendAuditLog {
   id: number;
-  created_at: string; // ISO или "DD.MM.YYYY HH:MM:SS"
+
+  // В старых версиях фронта было created_at,
+  // в текущем backend AuditLog есть timestamp.
+  // Держим оба, чтобы ничего не ломать.
+  created_at?: string;
+  timestamp?: string;
+
   user: string;
   action: string;
   category: string;
+
+  // backend может вернуть:
+  // - string (json.dumps или str(dict))
+  // - object
+  // - null
   details: any;
 }
 
@@ -23,52 +34,64 @@ interface BackendAuditLog {
 interface AuditRecord {
   id: number;
   time: string; // строка для UI
-  ts: number;   // timestamp для фильтра дат
+  ts: number; // timestamp для фильтра дат
   user: string;
   action: string;
-  category: string;
+  category: string; // нормализованная категория для фильтров
   status: "success" | "failed" | "warning";
   ip: string;
-  details: any;
+  details: any; // нормализованный details (object)
 }
 
 /* =====================================================
-   Status labels (ВАЖНО для TS)
+   Status labels
 ===================================================== */
 const STATUS_LABEL: Record<AuditRecord["status"], string> = {
   success: "Успешно",
   failed: "Ошибка",
   warning: "Предупреждение",
 };
-
 /* =====================================================
-   Date parsing (ISO + DD.MM.YYYY HH:MM:SS)
+   Date parsing (STRICT)
+   - DD.MM.YYYY HH:MM(:SS)
+   - ISO 8601 only
 ===================================================== */
-function parseCreatedAt(value: string): Date | null {
+function parseCreatedAt(value?: string): Date | null {
   if (!value) return null;
 
-  // ISO / стандартный Date
-  const iso = new Date(value);
-  if (!Number.isNaN(iso.getTime())) return iso;
+  const v = value.trim();
 
-  // DD.MM.YYYY HH:MM:SS
-  const m = value.match(
-    /^(\d{2})\.(\d{2})\.(\d{4})(?:\s+(\d{2}):(\d{2})(?::(\d{2}))?)?$/
-  );
-  if (!m) return null;
-
-  const d = new Date(
-    Number(m[3]),
-    Number(m[2]) - 1,
-    Number(m[1]),
-    Number(m[4] ?? 0),
-    Number(m[5] ?? 0),
-    Number(m[6] ?? 0)
+  // 1️⃣ СТРОГО: DD.MM.YYYY HH:MM(:SS)
+  const m = v.match(
+    /^(\d{2})\.(\d{2})\.(\d{4})(?:[,\s]+(\d{2}):(\d{2})(?::(\d{2}))?)?$/
   );
 
-  return Number.isNaN(d.getTime()) ? null : d;
+  if (m) {
+    const d = new Date(
+      Number(m[3]),        // YYYY
+      Number(m[2]) - 1,    // MM (0-based)
+      Number(m[1]),        // DD
+      Number(m[4] ?? 0),   // HH
+      Number(m[5] ?? 0),   // MM
+      Number(m[6] ?? 0)    // SS
+    );
+
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+
+  // 2️⃣ ТОЛЬКО ISO 8601
+  if (/^\d{4}-\d{2}-\d{2}T/.test(v)) {
+    const iso = new Date(v);
+    return Number.isNaN(iso.getTime()) ? null : iso;
+  }
+
+  // 3️⃣ Всё остальное — недоверенное
+  return null;
 }
 
+/* =====================================================
+   Date formatting (UI-safe)
+===================================================== */
 function formatDateTime(d: Date): string {
   return d.toLocaleString("ru-RU", {
     year: "numeric",
@@ -81,30 +104,127 @@ function formatDateTime(d: Date): string {
 }
 
 /* =====================================================
+   Details normalization (safe)
+===================================================== */
+function normalizeDetails(details: unknown): Record<string, any> {
+  if (!details) return {};
+
+  // object (already parsed)
+  if (typeof details === "object") return details as Record<string, any>;
+
+  // string → try JSON.parse
+  if (typeof details === "string") {
+    const s = details.trim();
+
+    if (!s || s === "null" || s === "undefined") return {};
+
+    try {
+      const parsed = JSON.parse(s);
+      if (parsed && typeof parsed === "object") return parsed as Record<string, any>;
+      return { raw: parsed };
+    } catch {
+      // python str(dict) или произвольная строка
+      return { raw: s };
+    }
+  }
+
+  // number/boolean/etc
+  return { raw: details };
+}
+
+/* =====================================================
+   Category normalization (for UI filters)
+   - backend: "AUTH", "role", "soc", "policy", ...
+   - UI selects: auth/role/policy/session/system/soc
+===================================================== */
+function normalizeCategory(category: unknown): string {
+  const c = String(category ?? "").trim();
+  if (!c) return "system";
+
+  // унифицируем
+  const lower = c.toLowerCase();
+
+  // поддержим варианты
+  if (lower === "auth") return "auth";
+  if (lower === "role" || lower === "roles") return "role";
+  if (lower === "policy" || lower === "policies") return "policy";
+  if (lower === "session" || lower === "sessions") return "session";
+  if (lower === "soc") return "soc";
+  if (lower === "system") return "system";
+
+  // если пришло что-то новое — не ломаем, но кладём как есть (lower)
+  return lower;
+}
+
+/* =====================================================
+   Status inference (safe)
+===================================================== */
+function inferStatus(action: string): AuditRecord["status"] {
+  const a = (action || "").toUpperCase();
+
+  // failed patterns
+  if (
+    a.includes("FAIL") ||
+    a.includes("FAILED") ||
+    a.includes("DENY") ||
+    a.includes("DENIED") ||
+    a.includes("ERROR")
+  ) {
+    return "failed";
+  }
+
+  // warning patterns
+  if (a.includes("WARN") || a.includes("WARNING")) {
+    return "warning";
+  }
+
+  return "success";
+}
+
+/* =====================================================
+   Timestamp extraction (created_at OR timestamp)
+===================================================== */
+function extractTimeField(log: BackendAuditLog): string {
+  // приоритет: timestamp (backend AuditLog), затем created_at (старые версии)
+  return (log.timestamp || log.created_at || "").toString();
+}
+
+/* =====================================================
    Mapper
 ===================================================== */
 function mapAuditLog(log: BackendAuditLog): AuditRecord {
-  const actionUpper = (log.action || "").toUpperCase();
+  const rawTime = extractTimeField(log);
+  const parsed = parseCreatedAt(rawTime);
 
-  let status: AuditRecord["status"] = "success";
-  if (actionUpper.includes("FAILED") || actionUpper.includes("DENY")) {
-    status = "failed";
-  } else if (actionUpper.includes("WARNING")) {
-    status = "warning";
-  }
+  const details = normalizeDetails(log.details);
+  const ipRaw =
+  details.ip ??
+  details.source_ip ??
+  details.client_ip ??
+  details.remote_ip ??
+  null;
 
-  const parsed = parseCreatedAt(log.created_at);
+const ip =
+  ipRaw
+    ? String(ipRaw)
+    : log.user === "system"
+    ? "system"
+    : "—";
+
+
+  const category = normalizeCategory(log.category);
+  const status = inferStatus(log.action);
 
   return {
     id: log.id,
-    time: parsed ? formatDateTime(parsed) : log.created_at,
+    time: parsed ? formatDateTime(parsed) : rawTime || "—",
     ts: parsed ? parsed.getTime() : 0,
     user: log.user,
     action: log.action,
-    category: log.category,
+    category,
     status,
-    ip: log.details?.ip ?? "—",
-    details: log.details ?? {},
+    ip,
+    details,
   };
 }
 
@@ -121,12 +241,10 @@ function download(blob: Blob, filename: string) {
 function exportCsv(records: AuditRecord[]) {
   const header = "id,time,user,category,action,status,ip,details\n";
   const rows = records
-    .map(
-      (r) =>
-        `${r.id},"${r.time}",${r.user},${r.category},"${r.action}",${r.status},${r.ip},"${JSON.stringify(
-          r.details
-        ).replace(/"/g, '""')}"`
-    )
+    .map((r) => {
+      const detailsStr = JSON.stringify(r.details ?? {}).replace(/"/g, '""');
+      return `${r.id},"${r.time}",${r.user},${r.category},"${r.action}",${r.status},${r.ip},"${detailsStr}"`;
+    })
     .join("\n");
 
   download(
@@ -175,27 +293,37 @@ function AuditDetailPanel({
         <h2 className="text-xl font-bold mb-4">Детали события</h2>
 
         <div className="space-y-2 text-sm">
-          <div><b>Время:</b> {record.time}</div>
-          <div><b>Пользователь:</b> {record.user}</div>
-          <div><b>Категория:</b> {record.category}</div>
-          <div><b>Действие:</b> {record.action}</div>
-          <div><b>IP:</b> {record.ip}</div>
-          <div><b>Статус:</b> {STATUS_LABEL[record.status]}</div>
+          <div>
+            <b>Время:</b> {record.time}
+          </div>
+          <div>
+            <b>Пользователь:</b> {record.user}
+          </div>
+          <div>
+            <b>Категория:</b> {record.category}
+          </div>
+          <div>
+            <b>Действие:</b> {record.action}
+          </div>
+          <div>
+            <b>IP:</b> {record.ip}
+          </div>
+          <div>
+            <b>Статус:</b> {STATUS_LABEL[record.status]}
+          </div>
         </div>
 
         <div className="mt-4 bg-[#0E1A3A] p-3 rounded border border-[#1E2A45]">
           <div className="text-xs font-semibold mb-1">Details</div>
           <pre className="text-xs whitespace-pre-wrap text-gray-300">
-{JSON.stringify(record.details, null, 2)}
+            {JSON.stringify(record.details, null, 2)}
           </pre>
         </div>
 
         <div className="mt-4 space-y-2">
           {record.details?.role_id && (
             <button
-              onClick={() =>
-                navigate(`/roles?highlight=${record.details.role_id}`)
-              }
+              onClick={() => navigate(`/roles?highlight=${record.details.role_id}`)}
               className="w-full px-4 py-2 bg-[#0E1A3A] hover:bg-[#1A243F] rounded"
             >
               Открыть роль
@@ -204,9 +332,7 @@ function AuditDetailPanel({
 
           {record.details?.session_id && (
             <button
-              onClick={() =>
-                navigate(`/sessions?session_id=${record.details.session_id}`)
-              }
+              onClick={() => navigate(`/sessions?session_id=${record.details.session_id}`)}
               className="w-full px-4 py-2 bg-[#0E1A3A] hover:bg-[#1A243F] rounded"
             >
               Открыть сессию
@@ -265,26 +391,26 @@ export default function Audit() {
 
   /* FILTER */
   const filtered = useMemo(() => {
-    const fromTs = dateFrom
-      ? new Date(dateFrom + "T00:00:00").getTime()
-      : null;
-    const toTs = dateTo
-      ? new Date(dateTo + "T23:59:59").getTime()
-      : null;
+    const fromTs = dateFrom ? new Date(dateFrom + "T00:00:00").getTime() : null;
+    const toTs = dateTo ? new Date(dateTo + "T23:59:59").getTime() : null;
+
+    const q = search.toLowerCase();
 
     return records.filter((r) => {
       const text =
-        r.user.toLowerCase().includes(search.toLowerCase()) ||
-        r.action.toLowerCase().includes(search.toLowerCase()) ||
-        r.ip.toLowerCase().includes(search.toLowerCase());
+        r.user.toLowerCase().includes(q) ||
+        r.action.toLowerCase().includes(q) ||
+        r.ip.toLowerCase().includes(q);
 
-      const matchCategory =
-        category === "all" || r.category === category;
-      const matchAction =
-        action === "all" || r.action === action;
+      const matchCategory = category === "all" || r.category === category;
+      const matchAction = action === "all" || r.action === action;
 
-      const matchFrom = fromTs === null ? true : r.ts >= fromTs;
-      const matchTo = toTs === null ? true : r.ts <= toTs;
+      const matchFrom =
+  fromTs === null ? true : (r.ts === 0 ? true : r.ts >= fromTs);
+
+const matchTo =
+  toTs === null ? true : (r.ts === 0 ? true : r.ts <= toTs);
+
 
       return text && matchCategory && matchAction && matchFrom && matchTo;
     });
@@ -308,7 +434,6 @@ export default function Audit() {
         <PolicyPieChart active={successCount} disabled={failedCount} />
       </div>
 
-
       {/* FILTERS + EXPORT */}
       <div className="flex flex-wrap gap-3 items-center mb-6">
         <Input
@@ -328,6 +453,7 @@ export default function Audit() {
           <option value="role">Roles</option>
           <option value="policy">Policies</option>
           <option value="session">Sessions</option>
+          <option value="soc">SOC</option>
           <option value="system">System</option>
         </select>
 
@@ -338,10 +464,16 @@ export default function Audit() {
         >
           <option value="all">Все действия</option>
           <option value="LOGIN_SUCCESS">LOGIN_SUCCESS</option>
-          <option value="ROLE_CREATE">ROLE_CREATE</option>
-          <option value="ROLE_UPDATE">ROLE_UPDATE</option>
-          <option value="SESSION_DENY">SESSION_DENY</option>
-          <option value="MFA_FAIL">MFA_FAIL</option>
+          <option value="LOGIN_FAIL">LOGIN_FAIL</option>
+          <option value="LOGOUT">LOGOUT</option>
+          <option value="role.create">role.create</option>
+          <option value="role.update">role.update</option>
+          <option value="role.assign">role.assign</option>
+          <option value="role.unassign">role.unassign</option>
+          <option value="session.denied">session.denied</option>
+          <option value="session.failed">session.failed</option>
+          <option value="SOC_ISOLATE_SESSION">SOC_ISOLATE_SESSION</option>
+          <option value="SOC_BLOCK_USER">SOC_BLOCK_USER</option>
         </select>
 
         <input

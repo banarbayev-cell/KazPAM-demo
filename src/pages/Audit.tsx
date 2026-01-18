@@ -429,9 +429,14 @@ const matchTo =
     <div className="p-6 w-full bg-gray-100 text-gray-900">
       <h1 className="text-3xl font-bold mb-6">Аудит</h1>
 
-      <div className="mb-8 h-[260px]">
-        <PolicyPieChart active={successCount} disabled={failedCount} />
-      </div>
+      <div className="mb-8">
+  <PolicyPieChart
+    active={successCount}
+    disabled={failedCount}
+    title="Статистика"
+  />
+</div>
+
 
       {/* FILTERS + EXPORT */}
       <div className="flex flex-wrap gap-3 items-center mb-6">

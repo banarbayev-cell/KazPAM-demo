@@ -42,28 +42,22 @@ export default function AssignRolesModal({
   /* =======================
      Load roles
   ======================= */
-  useEffect(() => {
-    if (!open) return;
+ useEffect(() => {
+  if (!open) return;
 
-    const loadRoles = async () => {
-      try {
-        const data = await api.get("/roles");
+  const loadRoles = async () => {
+    try {
+      const data = await api.get<Role[]>("/roles/");
+      setRoles(Array.isArray(data) ? data : []);
+    } catch {
+      toast.error("Ошибка загрузки ролей");
+      setRoles([]);
+    }
+  };
 
-        const items = Array.isArray(data?.items)
-          ? data.items
-          : Array.isArray(data)
-          ? data
-          : [];
+  loadRoles();
+}, [open]);
 
-        setRoles(items);
-      } catch {
-        toast.error("Ошибка загрузки ролей");
-        setRoles([]);
-      }
-    };
-
-    loadRoles();
-  }, [open]);
 
   /* =======================
      Init selected roles

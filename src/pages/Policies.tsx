@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import ConfirmModal from "../components/modals/ConfirmModal";
 import CreatePolicyModal from "../components/modals/CreatePolicyModal";
 import EditPolicyModal from "../components/modals/EditPolicyModal";
-import PolicyDetailModal from "../components/modals/PolicyDetailModal";
+import PolicyDetailsPanel from "../components/panels/PolicyDetailsPanel";
 import ActionMenuPolicy from "../components/ActionMenuPolicy";
 import PolicyPieChart from "../components/charts/PolicyPieChart";
 import { Button } from "../components/ui/button";
@@ -12,17 +12,42 @@ import { toast } from "sonner";
 import { formatDateTime } from "../utils/time";
 import { api } from "../services/api";
 
+/* =========================
+   Types
+========================= */
 interface Policy {
   id: number;
   name: string;
   type: string;
   status: string;
   updated_at: string;
+
+  mfa_required?: boolean;
+  time_start?: string;
+  time_end?: string;
+  ip_range?: string;
+  session_limit?: number;
+  enforce_all_policies?: boolean;
+
+  roles?: {
+    id: number;
+    name: string;
+  }[];
 }
 
-// -----------------------------
-// NORMALIZE STATUS
-// -----------------------------
+interface PolicyHistory {
+  id: number;
+  action: string;
+  timestamp: string;
+  user?: string;
+  details?: {
+    changes?: Record<string, [any, any]>;
+  };
+}
+
+/* =========================
+   Helpers
+========================= */
 const normalizeStatus = (s: string): string => {
   if (!s) return "active";
   const st = s.toLowerCase();
@@ -33,58 +58,133 @@ const normalizeStatus = (s: string): string => {
   return st;
 };
 
+/* =========================
+   Component
+========================= */
 export default function Policies() {
   const [policies, setPolicies] = useState<Policy[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const loadPolicies = () => {
-    setLoading(true);
-    api
-      .get<Policy[]>("/policies/list")
-      .then((data) => {
-        setPolicies(
-          data.map((p) => ({
-            ...p,
-            status: normalizeStatus(p.status),
-          }))
-        );
-        setLoading(false);
-      })
-      .catch(() => {
-        toast.error("Ошибка загрузки политик");
-        setLoading(false);
-      });
+  const [search, setSearch] = useState("");
+
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [policyDetails, setPolicyDetails] = useState<Policy | null>(null);
+  const [policyHistory, setPolicyHistory] = useState<PolicyHistory[]>([]);
+
+  const [selected, setSelected] = useState<Policy | null>(null);
+  const [action, setAction] =
+    useState<"delete" | "disable" | "activate" | null>(null);
+
+  /* =========================
+     Load policies list
+  ========================= */
+  const loadPolicies = async () => {
+    try {
+      setLoading(true);
+      const data = await api.get<Policy[]>("/policies/list");
+
+      setPolicies(
+        Array.isArray(data)
+          ? data.map((p) => ({
+              ...p,
+              status: normalizeStatus(p.status),
+            }))
+          : []
+      );
+    } catch {
+      toast.error("Ошибка загрузки политик");
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
     loadPolicies();
   }, []);
 
-  const [search, setSearch] = useState("");
+  /* =========================
+     Load details + history
+  ========================= */
+  const loadPolicyDetails = async (policyId: number) => {
+    try {
+      setDetailsLoading(true);
+      setPolicyHistory([]);
 
-  const filtered = policies.filter((p) =>
-    p.name.toLowerCase().includes(search.toLowerCase())
-  );
+      const policy = policies.find((p) => p.id === policyId);
+      if (!policy) throw new Error("Policy not found in state");
 
-  const activeCount = filtered.filter((p) => p.status === "active").length;
-  const disabledCount = filtered.filter((p) => p.status === "disabled").length;
+      setPolicyDetails(policy);
 
-  const [createOpen, setCreateOpen] = useState(false);
-  const [editOpen, setEditOpen] = useState(false);
-  const [detailOpen, setDetailOpen] = useState(false);
-  const [selected, setSelected] = useState<Policy | null>(null);
-  const [action, setAction] = useState<"delete" | "disable" | "activate" | null>(
-    null
-  );
+      const history = await api.get<PolicyHistory[]>(
+        `/policies/${policyId}/history`
+      );
 
+      setPolicyHistory(Array.isArray(history) ? history : []);
+      setDetailsOpen(true);
+    } catch (e) {
+      console.error(e);
+      toast.error("Ошибка загрузки данных политики");
+    } finally {
+      setDetailsLoading(false);
+    }
+  };
+
+  /* =========================
+     🔑 CANONICAL refresh
+  ========================= */
+  const refreshPolicy = async (policyId: number) => {
+    try {
+      // 1️⃣ reload policies
+      const data = await api.get<Policy[]>("/policies/list");
+
+      const normalized = Array.isArray(data)
+        ? data.map((p) => ({
+            ...p,
+            status: normalizeStatus(p.status),
+          }))
+        : [];
+
+      setPolicies(normalized);
+
+      // 2️⃣ update opened policy
+      const updated = normalized.find((p) => p.id === policyId);
+      if (updated) setPolicyDetails(updated);
+
+      // 3️⃣ reload history
+      setDetailsLoading(true);
+      const history = await api.get<PolicyHistory[]>(
+        `/policies/${policyId}/history`
+      );
+      setPolicyHistory(Array.isArray(history) ? history : []);
+    } catch (e) {
+      console.error(e);
+      toast.error("Не удалось обновить данные политики");
+    } finally {
+      setDetailsLoading(false);
+    }
+  };
+
+  /* =========================
+     Actions
+  ========================= */
   const confirmAction = async () => {
     if (!selected || !action) return;
+
     try {
-      if (action === "delete") await api.delete(`/policies/${selected.id}`);
-      if (action === "disable")
+      if (action === "delete") {
+        await api.delete(`/policies/${selected.id}`);
+      }
+      if (action === "disable") {
         await api.patch(`/policies/${selected.id}`, { status: "disabled" });
-      if (action === "activate")
+      }
+      if (action === "activate") {
         await api.patch(`/policies/${selected.id}`, { status: "active" });
+      }
+
       toast.success("Операция выполнена");
       loadPolicies();
     } catch {
@@ -95,63 +195,32 @@ export default function Policies() {
     }
   };
 
-  if (loading) {
-    return <div className="p-6">Загрузка…</div>;
-  }
+  /* =========================
+     Derived
+  ========================= */
+  const filtered = policies.filter((p) =>
+    p.name.toLowerCase().includes(search.toLowerCase())
+  );
 
-  // EMPTY STATE
-  if (policies.length === 0) {
-    return (
-      <div className="p-6 w-full bg-gray-100 text-gray-900">
-        <h1 className="text-3xl font-bold mb-4">Политики доступа</h1>
+  const activeCount = filtered.filter((p) => p.status === "active").length;
+  const disabledCount = filtered.filter((p) => p.status === "disabled").length;
 
-        <div className="bg-[#121A33] rounded-2xl border border-[#1E2A45] p-6 text-white">
-          <div className="text-lg font-semibold mb-2">
-            Политики доступа не созданы
-          </div>
-          <div className="text-sm text-gray-300 mb-4 max-w-2xl">
-            Создайте первую политику, чтобы управлять доступом: MFA, ограничения
-            по времени и IP, лимиты сессий и Zero Trust.
-          </div>
+  if (loading) return <div className="p-6">Загрузка…</div>;
 
-          
-            <Button
-  variant="default"
-  className="bg-blue-600 hover:bg-blue-700 text-white"
-  onClick={() => setCreateOpen(true)}
->
-  + Создать первую политику
-</Button>
-        
-        </div>
-
-        <CreatePolicyModal
-          open={createOpen}
-          onClose={() => setCreateOpen(false)}
-          onCreate={async (name, type) => {
-            await api.post("/policies", { name, type, status: "active" });
-            toast.success("Политика создана");
-            setCreateOpen(false);
-            loadPolicies();
-          }}
-        />
-      </div>
-    );
-  }
-
-  // MAIN UI
+  /* =========================
+     UI
+  ========================= */
   return (
     <div className="p-6 w-full bg-gray-100 text-gray-900">
       <h1 className="text-3xl font-bold mb-4">Политики доступа</h1>
 
-        <div className="mb-6">
-  <PolicyPieChart
-    active={activeCount}
-    disabled={disabledCount}
-    title="Статистика"
-  />
-</div>
-
+      <div className="mb-6">
+        <PolicyPieChart
+          active={activeCount}
+          disabled={disabledCount}
+          title="Статистика"
+        />
+      </div>
 
       <div className="flex gap-3 mb-6">
         <Input
@@ -162,13 +231,15 @@ export default function Policies() {
         />
 
         <Access permission="manage_policies">
-          <Button onClick={() => setCreateOpen(true)}>+ Создать политику</Button>
+          <Button onClick={() => setCreateOpen(true)}>
+            + Создать политику
+          </Button>
         </Access>
       </div>
 
       <div className="bg-[#121A33] rounded-xl overflow-hidden">
         <table className="w-full text-sm text-white">
-          <thead className="bg-[#0E1A3A] text-gray-300 text-xs uppercase">
+          <thead className="bg-[#0E1A3A] text-gray-300">
             <tr>
               <th className="px-4 py-3 text-left">Название</th>
               <th className="px-4 py-3 text-left">Тип</th>
@@ -189,10 +260,7 @@ export default function Policies() {
                 <td className="px-4 py-3 text-right">
                   <ActionMenuPolicy
                     status={p.status}
-                    onView={() => {
-                      setSelected(p);
-                      setDetailOpen(true);
-                    }}
+                    onView={() => loadPolicyDetails(p.id)}
                     onEdit={() => {
                       setSelected(p);
                       setEditOpen(true);
@@ -249,10 +317,13 @@ export default function Policies() {
         }}
       />
 
-      <PolicyDetailModal
-        open={detailOpen}
-        policy={selected}
-        onClose={() => setDetailOpen(false)}
+      <PolicyDetailsPanel
+        open={detailsOpen}
+        onClose={() => setDetailsOpen(false)}
+        policy={policyDetails}
+        auditLogs={policyHistory}
+        loading={detailsLoading}
+        onRefreshPolicy={refreshPolicy}
       />
     </div>
   );

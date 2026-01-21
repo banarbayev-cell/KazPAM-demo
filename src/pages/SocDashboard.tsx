@@ -72,6 +72,8 @@ type RbacError =
   | null;
 
 const SOC_INCIDENT_STORAGE_KEY = "kazpam_soc_incident_id";
+const SOC_INCIDENT_SESSION_KEY = "kazpam_soc_incident_restored";
+
 
 export default function SocDashboard() {
   // 🔐 Каноничный источник токена + ролей. ВАЖНО: один раз, в самом верху.
@@ -142,12 +144,19 @@ const roles = auth.user?.roles ?? [];
         const data = await r.json();
 
         setIncident({
-          ...data,
-          backendId: data.id,
-        });
+  ...data,
+  backendId: data.id,
+});
 
-        // открываем расследование автоматически — чтобы UX был “как было”
-        setInvestigationOpen(true);
+// 🔒 UX-GATE: автооткрываем ТОЛЬКО 1 РАЗ за сессию
+const alreadyRestoredThisSession = sessionStorage.getItem(
+  SOC_INCIDENT_SESSION_KEY
+);
+
+if (!alreadyRestoredThisSession) {
+  setInvestigationOpen(true);
+  sessionStorage.setItem(SOC_INCIDENT_SESSION_KEY, "1");
+}
       } catch (e) {
         // сеть/ошибка — не ломаем страницу, просто очищаем якорь
         localStorage.removeItem(SOC_INCIDENT_STORAGE_KEY);

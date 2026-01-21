@@ -1,15 +1,14 @@
-// src/components/modals/AssignPoliciesModal.tsx
-import { useEffect, useState } from "react";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "../ui/dialog";
+import { useEffect, useMemo, useState } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
 import { toast } from "sonner";
 import { api } from "../../services/api";
+
+/* =========================================================
+   🔒 Module-level optimistic cache (SURVIVES REMOUNT)
+========================================================= */
+const optimisticPolicyCache: Record<number, number[]> = {};
 
 interface Policy {
   id: number;
@@ -23,7 +22,7 @@ interface Props {
   onClose: () => void;
   roleId: number | null;
   roleName: string;
-  assignedPolicies: Policy[]; // ✅ ВАЖНО
+  assignedPolicies: Policy[];
   onAssigned: () => void;
 }
 
@@ -38,54 +37,72 @@ export default function AssignPoliciesModal({
   const [policies, setPolicies] = useState<Policy[]>([]);
   const [processingId, setProcessingId] = useState<number | null>(null);
 
-  // 🔒 уже привязанные политики
-  const assignedIds = new Set(assignedPolicies.map((p) => p.id));
-
-  // -----------------------------
-  // Загрузить список политик
-  // -----------------------------
-  const loadPolicies = async () => {
-    try {
-      const data = await api.get<Policy[]>("/policies/");
-      setPolicies(Array.isArray(data) ? data : []);
-    } catch {
-      toast.error("Ошибка загрузки политик");
-      setPolicies([]);
-    }
-  };
-
+  /* -------------------------------------------------------
+     Init optimistic cache ON OPEN
+  ------------------------------------------------------- */
   useEffect(() => {
-    if (open) {
-      loadPolicies();
+    if (!open || !roleId) return;
+
+    if (!optimisticPolicyCache[roleId]) {
+      optimisticPolicyCache[roleId] = assignedPolicies.map((p) => p.id);
     }
+  }, [open, roleId, assignedPolicies]);
+
+  /* -------------------------------------------------------
+     Derived assigned set (FROM CACHE)
+  ------------------------------------------------------- */
+  const assignedSet = useMemo(() => {
+    if (!roleId) return new Set<number>();
+    return new Set(optimisticPolicyCache[roleId] || []);
+  }, [roleId, optimisticPolicyCache[roleId]]);
+
+  /* -------------------------------------------------------
+     Load policies
+  ------------------------------------------------------- */
+  useEffect(() => {
+    if (!open) return;
+
+    api
+      .get<Policy[]>("/policies/")
+      .then((data) => setPolicies(Array.isArray(data) ? data : []))
+      .catch(() => {
+        toast.error("Ошибка загрузки политик");
+        setPolicies([]);
+      });
   }, [open]);
 
-  // -----------------------------
-  // Toggle policy
-  // -----------------------------
+  /* -------------------------------------------------------
+     Toggle policy (ABSOLUTE STABLE)
+  ------------------------------------------------------- */
   const togglePolicy = async (policy: Policy) => {
-    if (!roleId) return;
+    if (!roleId || processingId === policy.id) return;
 
     try {
       setProcessingId(policy.id);
 
-      if (assignedIds.has(policy.id)) {
-        await api.delete(
-          `/roles/${roleId}/remove_policy/${policy.id}`
+      const cache = optimisticPolicyCache[roleId] || [];
+
+      if (assignedSet.has(policy.id)) {
+        await api.delete(`/roles/${roleId}/remove_policy/${policy.id}`);
+
+        optimisticPolicyCache[roleId] = cache.filter(
+          (id) => id !== policy.id
         );
+
         toast.success(
           `Политика отвязана: ${policy.name} → роль «${roleName}»`
         );
       } else {
-        await api.post(
-          `/roles/${roleId}/add_policy/${policy.id}`
-        );
+        await api.post(`/roles/${roleId}/add_policy/${policy.id}`);
+
+        optimisticPolicyCache[roleId] = cache.includes(policy.id)
+          ? cache
+          : [...cache, policy.id];
+
         toast.success(
           `Политика привязана: ${policy.name} → роль «${roleName}»`
         );
       }
-
-      onAssigned();
     } catch {
       toast.error(
         `Ошибка изменения политики: ${policy.name} → роль «${roleName}»`
@@ -94,6 +111,16 @@ export default function AssignPoliciesModal({
       setProcessingId(null);
     }
   };
+
+  /* -------------------------------------------------------
+     Cleanup + refresh parent ON CLOSE
+  ------------------------------------------------------- */
+  useEffect(() => {
+    if (!open && roleId) {
+      delete optimisticPolicyCache[roleId];
+      onAssigned();
+    }
+  }, [open, roleId, onAssigned]);
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -106,13 +133,10 @@ export default function AssignPoliciesModal({
 
         <div className="space-y-2 max-h-80 overflow-y-auto pr-2">
           {policies.length === 0 ? (
-            <p className="text-sm text-gray-400">
-              Политики не найдены
-            </p>
+            <p className="text-sm text-gray-400">Политики не найдены</p>
           ) : (
             policies.map((p) => {
-              const active = assignedIds.has(p.id);
-              const isProcessing = processingId === p.id;
+              const active = assignedSet.has(p.id);
 
               return (
                 <div
@@ -120,15 +144,16 @@ export default function AssignPoliciesModal({
                   className="flex items-center justify-between p-2 border rounded-md"
                 >
                   <div className="flex items-center gap-3">
-                    <Checkbox checked={active} disabled />
-                    <span className="font-medium">
-                      {p.name}
-                    </span>
+                    <Checkbox
+                      checked={active}
+                      onCheckedChange={() => {}}
+                    />
+                    <span className="font-medium">{p.name}</span>
                   </div>
 
                   <Button
                     size="sm"
-                    disabled={isProcessing}
+                    disabled={processingId === p.id || !roleId}
                     onClick={() => togglePolicy(p)}
                     className={
                       active

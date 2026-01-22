@@ -2,7 +2,11 @@ import { useState, useMemo, useEffect } from "react";
 import { Input } from "../components/ui/input";
 import ActionMenuSession from "../components/ActionMenuSession";
 import SessionDetailPanel from "../components/SessionDetailPanel";
-import { getSessions, terminateSession } from "../api/sessions";
+import {
+  getSessions,
+  terminateSession,
+  startSession,
+} from "../api/sessions";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -39,7 +43,7 @@ interface BackendSession {
 }
 
 /* ===============================
-   FALLBACK MOCK (ТОЛЬКО ЕСЛИ [] )
+   FALLBACK MOCK
 ================================ */
 const MOCK_SESSIONS: Session[] = [
   {
@@ -59,7 +63,7 @@ const MOCK_SESSIONS: Session[] = [
 ];
 
 /* ===============================
-   MAPPER: backend → UI
+   MAPPER
 ================================ */
 function mapBackendSession(s: BackendSession): Session {
   return {
@@ -93,6 +97,14 @@ export default function Sessions() {
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(10);
 
+  const [startOpen, setStartOpen] = useState(false);
+  const [startForm, setStartForm] = useState({
+    user: "",
+    system: "",
+    os: "Linux",
+    ip: "",
+  });
+
   /* ===============================
      LOAD SESSIONS
   ================================ */
@@ -102,13 +114,12 @@ export default function Sessions() {
         if (Array.isArray(data) && data.length > 0) {
           setSessions(data.map(mapBackendSession));
         } else {
-          // fallback для demo / pilot
           setSessions(MOCK_SESSIONS);
         }
       })
       .catch(() => {
         setSessions(MOCK_SESSIONS);
-        toast.error("Не удалось загрузить сессии, показаны тестовые данные");
+        toast.error("Не удалось загрузить сессии");
       });
   };
 
@@ -117,16 +128,13 @@ export default function Sessions() {
   }, []);
 
   /* ===============================
-     OPEN DETAILS
+     ACTIONS
   ================================ */
   const openDetails = (session: Session) => {
     setSelectedSession(session);
     setDetailOpen(true);
   };
 
-  /* ===============================
-     ACTIONS
-  ================================ */
   const handleTerminate = async (session: Session) => {
     if (session.status !== "active") {
       toast.info("Сессия уже завершена");
@@ -135,19 +143,11 @@ export default function Sessions() {
 
     try {
       await terminateSession(session.id);
-
       setSessions((prev) =>
         prev.map((s) =>
           s.id === session.id ? { ...s, status: "closed" } : s
         )
       );
-
-      setSelectedSession((prev) =>
-        prev && prev.id === session.id
-          ? { ...prev, status: "closed" }
-          : prev
-      );
-
       toast.success("Сессия завершена");
     } catch {
       toast.error("Не удалось завершить сессию");
@@ -156,21 +156,6 @@ export default function Sessions() {
 
   const handleAudit = (session: Session) => {
     navigate(`/audit?session_id=${session.id}`);
-  };
-
-  /* ===== handlers для панели ===== */
-  const handlePanelTerminate = async () => {
-    if (!selectedSession) return;
-    await handleTerminate(selectedSession);
-  };
-
-  const handlePanelAudit = () => {
-    if (!selectedSession) return;
-    handleAudit(selectedSession);
-  };
-
-  const handlePanelDownloadLogs = () => {
-    toast.info("Экспорт логов будет добавлен позже");
   };
 
   /* ===============================
@@ -182,7 +167,7 @@ export default function Sessions() {
   const failedCount = sessions.filter((s) => s.status === "failed").length;
 
   /* ===============================
-     FILTER + SEARCH
+     FILTER
   ================================ */
   const filtered = useMemo(() => {
     return sessions.filter(
@@ -194,9 +179,6 @@ export default function Sessions() {
     );
   }, [sessions, search, statusFilter]);
 
-  /* ===============================
-     PAGINATION
-  ================================ */
   const totalPages = Math.max(1, Math.ceil(filtered.length / rowsPerPage));
   const currentRows = filtered.slice(
     (currentPage - 1) * rowsPerPage,
@@ -206,9 +188,16 @@ export default function Sessions() {
   return (
     <div className="p-6 w-full bg-gray-100 text-gray-900">
       <h1 className="text-3xl font-bold mb-1">Пользовательские сессии</h1>
-      <p className="text-gray-600 mb-6 text-lg">
+      <p className="text-gray-600 mb-4">
         Мониторинг активных и завершённых сессий
       </p>
+
+      <button
+        onClick={() => setStartOpen(true)}
+        className="mb-6 px-4 py-2 bg-[#0052FF] text-white rounded"
+      >
+        Запустить сессию
+      </button>
 
       {/* STATS */}
       <div className="grid grid-cols-4 gap-4 mb-8">
@@ -218,34 +207,10 @@ export default function Sessions() {
         <Stat title="Ошибочные" value={failedCount} color="text-red-400" />
       </div>
 
-      {/* FILTERS */}
-      <div className="flex gap-3 items-center mb-6">
-        <Input
-          placeholder="Поиск по пользователю, системе или IP..."
-          className="w-80 bg-white"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-
-        <select
-          className="bg-white border rounded-lg p-2"
-          value={statusFilter}
-          onChange={(e) => {
-            setStatusFilter(e.target.value);
-            setCurrentPage(1);
-          }}
-        >
-          <option value="all">Все статусы</option>
-          <option value="active">Активные</option>
-          <option value="closed">Завершённые</option>
-          <option value="failed">Ошибочные</option>
-        </select>
-      </div>
-
       {/* TABLE */}
-      <div className="overflow-y-auto max-h-[500px] rounded-xl border bg-[#121A33]">
+      <div className="overflow-y-auto rounded-xl border bg-[#121A33]">
         <table className="w-full text-sm text-white">
-          <thead className="bg-[#1A243F] text-gray-300 sticky top-0">
+          <thead className="bg-[#1A243F]">
             <tr>
               <th className="p-3 text-left">Пользователь</th>
               <th className="p-3 text-left">Система</th>
@@ -256,42 +221,20 @@ export default function Sessions() {
               <th className="p-3 text-left">Действия</th>
             </tr>
           </thead>
-
           <tbody>
-            {currentRows.map((session) => (
-              <tr
-                key={session.id}
-                className="border-t border-[#1E2A45] hover:bg-[#0E1A3A]"
-              >
-                <td className="p-3">{session.user}</td>
-                <td className="p-3">{session.system}</td>
-                <td className="p-3">{session.os}</td>
-                <td className="p-3">{session.conn}</td>
-                <td className="p-3">{session.ip}</td>
-
-                <td className="p-3">
-                  {session.status === "active" && (
-                    <span className="px-3 py-1 bg-green-700 rounded-full text-xs">
-                      Активна
-                    </span>
-                  )}
-                  {session.status === "closed" && (
-                    <span className="px-3 py-1 bg-blue-700 rounded-full text-xs">
-                      Завершена
-                    </span>
-                  )}
-                  {session.status === "failed" && (
-                    <span className="px-3 py-1 bg-red-700 rounded-full text-xs">
-                      Ошибка
-                    </span>
-                  )}
-                </td>
-
+            {currentRows.map((s) => (
+              <tr key={s.id} className="border-t border-[#1E2A45]">
+                <td className="p-3">{s.user}</td>
+                <td className="p-3">{s.system}</td>
+                <td className="p-3">{s.os}</td>
+                <td className="p-3">{s.conn}</td>
+                <td className="p-3">{s.ip}</td>
+                <td className="p-3">{s.status}</td>
                 <td className="p-3">
                   <ActionMenuSession
-                    onView={() => openDetails(session)}
-                    onTerminate={() => handleTerminate(session)}
-                    onAudit={() => handleAudit(session)}
+                    onView={() => openDetails(s)}
+                    onTerminate={() => handleTerminate(s)}
+                    onAudit={() => handleAudit(s)}
                   />
                 </td>
               </tr>
@@ -300,38 +243,76 @@ export default function Sessions() {
         </table>
       </div>
 
-      {/* DETAIL PANEL */}
       <SessionDetailPanel
         open={detailOpen}
         onClose={() => setDetailOpen(false)}
         session={selectedSession}
-        onTerminate={handlePanelTerminate}
-        onAudit={handlePanelAudit}
-        onDownloadLogs={handlePanelDownloadLogs}
+        onTerminate={() =>
+          selectedSession && handleTerminate(selectedSession)
+        }
+        onAudit={() => selectedSession && handleAudit(selectedSession)}
+        onDownloadLogs={() => toast.info("Экспорт позже")}
       />
 
-      {/* PAGINATION */}
-      <div className="flex justify-between items-center p-4">
-        <div className="flex items-center gap-2">
-          <span>Показать:</span>
-          <select
-            className="border p-1 rounded"
-            value={rowsPerPage}
-            onChange={(e) => {
-              setRowsPerPage(Number(e.target.value));
-              setCurrentPage(1);
-            }}
-          >
-            <option value={10}>10</option>
-            <option value={25}>25</option>
-            <option value={50}>50</option>
-          </select>
-        </div>
+      {startOpen && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-[#121A33] p-6 rounded-xl w-[420px] text-white space-y-4">
+            <h2 className="text-lg font-semibold">Запуск сессии</h2>
 
-        <span>
-          {currentPage} / {totalPages}
-        </span>
-      </div>
+            <Input
+              placeholder="Пользователь (email)"
+              value={startForm.user}
+              onChange={(e) =>
+                setStartForm({ ...startForm, user: e.target.value })
+              }
+            />
+
+            <Input
+              placeholder="Система"
+              value={startForm.system}
+              onChange={(e) =>
+                setStartForm({ ...startForm, system: e.target.value })
+              }
+            />
+
+            <Input
+              placeholder="IP"
+              value={startForm.ip}
+              onChange={(e) =>
+                setStartForm({ ...startForm, ip: e.target.value })
+              }
+            />
+
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setStartOpen(false)}
+                className="text-gray-300"
+              >
+                Отмена
+              </button>
+
+              <button
+                onClick={async () => {
+                  try {
+                    await startSession(startForm);
+                    toast.success("Сессия запущена");
+                    setStartOpen(false);
+                    loadSessions();
+                  } catch (e: any) {
+                    toast.error(
+                      e?.response?.data?.detail ||
+                        "Доступ запрещён политикой"
+                    );
+                  }
+                }}
+                className="px-4 py-2 bg-[#0052FF] rounded"
+              >
+                Запустить
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

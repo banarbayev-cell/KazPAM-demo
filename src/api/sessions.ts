@@ -1,5 +1,6 @@
 import { apiGet, apiPost } from "./client";
 
+
 export const getSessions = () => {
   return apiGet("/sessions/sessions/");
 };
@@ -27,3 +28,4 @@ export const startSession = (params: {
 export const terminateSession = (id: number) => {
   return apiPost(`/sessions/sessions/terminate/${id}`);
 };
+

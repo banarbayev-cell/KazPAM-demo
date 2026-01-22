@@ -1,9 +1,11 @@
 import { Outlet } from "react-router-dom";
 import Sidebar from "../components/ui/sidebar";
 import Header from "../components/Header";
+import { useNotificationsSocket } from "../hooks/useNotificationsSocket";
 
 export default function DashboardLayout() {
-  console.log("🔥 VITE_API_URL =", import.meta.env.VITE_API_URL);
+  // 🔔 realtime notifications (WS)
+  useNotificationsSocket();
 
   return (
     <div className="flex h-screen bg-white text-[var(--text)]">

@@ -21,47 +21,7 @@ function formatDate(value?: string) {
   });
 }
 
-const PERMISSION_LABELS: Record<
-  string,
-  { ru: string; en: string }
-> = {
-  manage_users: {
-    ru: "Управление пользователями (создание, удаление, блокировка)",
-    en: "Manage users (create, delete, block)",
-  },
-  view_users: {
-    ru: "Просмотр списка пользователей",
-    en: "View users list",
-  },
-  manage_roles: {
-    ru: "Управление ролями доступа",
-    en: "Manage access roles",
-  },
-  view_audit: {
-    ru: "Просмотр журналов аудита",
-    en: "View audit logs",
-  },
-  export_audit: {
-    ru: "Экспорт журналов аудита",
-    en: "Export audit logs",
-  },
-  view_sessions: {
-    ru: "Просмотр активных и завершённых сессий",
-    en: "View active and finished sessions",
-  },
-  soc_actions: {
-    ru: "SOC-действия (изоляция сессий, блокировка пользователей)",
-    en: "SOC actions (isolate sessions, block users)",
-  },
-  manage_settings: {
-    ru: "Изменение системных настроек",
-    en: "Manage system settings",
-  },
-  view_settings: {
-    ru: "Просмотр системных настроек",
-    en: "View system settings",
-  },
-};
+
 
 /**
  * =====================================================

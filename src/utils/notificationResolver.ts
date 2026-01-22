@@ -16,6 +16,8 @@ function safeStr(v: any): string | undefined {
   return undefined;
 }
 
+export type Severity = "low" | "medium" | "high" | "critical";
+
 export function resolveNotification(
   action: string,
   details: any,

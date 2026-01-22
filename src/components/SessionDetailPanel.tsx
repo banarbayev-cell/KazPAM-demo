@@ -13,97 +13,63 @@ interface Props {
   onDownloadLogs?: () => void;
 }
 
+
 export default function SessionDetailPanel({
   open,
   onClose,
   session,
   onTerminate,
   onAudit,
-  onDownloadLogs,
 }: Props) {
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   if (!open || !session) return null;
 
-  const canTerminate = session.status === "active";
-
   return (
-    <div
-      className="fixed inset-0 z-[1000]"
-      onClick={onClose}
-    >
-      {/* BACKDROP */}
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+    <div className="fixed inset-0 z-[1000]" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/40" />
 
-      {/* PANEL */}
       <div
         className="absolute right-0 top-0 h-full w-[420px]
-                   bg-[#121A33] text-white p-6 overflow-y-auto
-                   pointer-events-auto"
+        bg-[#121A33] text-white p-6"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="flex justify-between items-center mb-6">
+        <div className="flex justify-between mb-4">
           <h2 className="text-xl font-bold">Детали сессии</h2>
-          <button type="button" onClick={onClose}>
-            <X className="text-gray-400 hover:text-white" />
+          <button onClick={onClose}>
+            <X />
           </button>
         </div>
 
-        {/* Details */}
-        <div className="space-y-3 text-sm">
+        <div className="space-y-2 text-sm">
           <Row label="Пользователь" value={session.user} />
           <Row label="Система" value={session.system} />
-          <Row label="Тип системы" value={session.os} />
-          <Row label="Метод доступа" value={session.conn} />
-          <Row label="Приложение / БД" value={session.app} />
-          <Row label="IP-адрес" value={session.ip} />
-          <Row label="Начало" value={session.date || "—"} />
-          <Row label="Длительность" value={session.duration || "—"} />
-          <Row label="Последняя команда" value={session.last_command || "—"} />
-          <Row label="Риск" value={session.risk} />
+          <Row label="IP" value={session.ip} />
+          <Row label="Статус" value={session.status} />
         </div>
 
-        {/* Actions */}
-        <div className="mt-8 space-y-3">
-          {/* TERMINATE (через confirm) */}
+        {session.status === "failed" && (
+          <div className="mt-4 p-3 bg-red-900/30 border border-red-700 rounded">
+            Доступ запрещён политикой
+          </div>
+        )}
+
+        <div className="mt-6 space-y-3">
           <button
-            type="button"
-            onClick={() => {
-              if (!canTerminate) {
-                toast.info("Сессия уже завершена");
-                return;
-              }
-              setConfirmOpen(true);
-            }}
-            className="w-full py-2 rounded-md bg-red-600 hover:bg-red-700"
+            className="w-full bg-red-600 py-2 rounded"
+            onClick={() => setConfirmOpen(true)}
           >
-            Принудительно завершить сессию
+            Завершить сессию
           </button>
 
-          {/* AUDIT */}
           <button
-            type="button"
+            className="w-full bg-[#1A243F] py-2 rounded"
             onClick={() => onAudit?.()}
-            className="w-full py-2 rounded-md bg-[#1A243F] hover:bg-[#0E1A3A]"
           >
-            Начать расследование
-          </button>
-
-          {/* DOWNLOAD */}
-          <button
-            type="button"
-            onClick={() => {
-              if (onDownloadLogs) onDownloadLogs();
-              else toast.info("Экспорт логов будет добавлен позже");
-            }}
-            className="w-full py-2 rounded-md bg-[#1A243F] hover:bg-[#0E1A3A]"
-          >
-            Экспорт логов сессии
+            Перейти в Audit
           </button>
         </div>
 
-        {/* CONFIRM MODAL */}
         <ConfirmTerminateSessionModal
           open={confirmOpen}
           onCancel={() => setConfirmOpen(false)}
@@ -111,25 +77,18 @@ export default function SessionDetailPanel({
             setConfirmOpen(false);
             onTerminate?.();
           }}
-          session={{
-            user: session.user,
-            system: session.system,
-            ip: session.ip,
-          }}
+          session={session}
         />
       </div>
     </div>
   );
 }
 
-/* ===============================
-   SMALL ROW
-================================ */
 function Row({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex justify-between gap-4">
+    <div className="flex justify-between">
       <span className="text-gray-400">{label}</span>
-      <span className="text-right">{value}</span>
+      <span>{value}</span>
     </div>
   );
 }

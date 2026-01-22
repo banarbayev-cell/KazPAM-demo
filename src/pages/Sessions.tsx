@@ -2,11 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { Input } from "../components/ui/input";
 import ActionMenuSession from "../components/ActionMenuSession";
 import SessionDetailPanel from "../components/SessionDetailPanel";
-import {
-  getSessions,
-  terminateSession,
-  startSession,
-} from "../api/sessions";
+import { getSessions, terminateSession, startSession } from "../api/sessions";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -29,7 +25,7 @@ interface Session {
 }
 
 /* ===============================
-   BACKEND MODEL (READ ONLY)
+   BACKEND MODEL
 ================================ */
 interface BackendSession {
   id: number;
@@ -85,17 +81,13 @@ function mapBackendSession(s: BackendSession): Session {
 export default function Sessions() {
   const navigate = useNavigate();
 
-  /* ===============================
-     STATE
-  ================================ */
+  /* STATE */
   const [sessions, setSessions] = useState<Session[]>([]);
   const [detailOpen, setDetailOpen] = useState(false);
   const [selectedSession, setSelectedSession] = useState<Session | null>(null);
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [currentPage, setCurrentPage] = useState(1);
-  const [rowsPerPage, setRowsPerPage] = useState(10);
 
   const [startOpen, setStartOpen] = useState(false);
   const [startForm, setStartForm] = useState({
@@ -105,9 +97,7 @@ export default function Sessions() {
     ip: "",
   });
 
-  /* ===============================
-     LOAD SESSIONS
-  ================================ */
+  /* LOAD */
   const loadSessions = () => {
     getSessions()
       .then((data: BackendSession[]) => {
@@ -127,48 +117,23 @@ export default function Sessions() {
     loadSessions();
   }, []);
 
-  /* ===============================
-     ACTIONS
-  ================================ */
-  const openDetails = (session: Session) => {
-    setSelectedSession(session);
-    setDetailOpen(true);
-  };
-
+  /* ACTIONS */
   const handleTerminate = async (session: Session) => {
     if (session.status !== "active") {
       toast.info("Сессия уже завершена");
       return;
     }
 
-    try {
-      await terminateSession(session.id);
-      setSessions((prev) =>
-        prev.map((s) =>
-          s.id === session.id ? { ...s, status: "closed" } : s
-        )
-      );
-      toast.success("Сессия завершена");
-    } catch {
-      toast.error("Не удалось завершить сессию");
-    }
+    await terminateSession(session.id);
+    toast.success("Сессия завершена");
+    loadSessions();
   };
 
   const handleAudit = (session: Session) => {
     navigate(`/audit?session_id=${session.id}`);
   };
 
-  /* ===============================
-     STATS
-  ================================ */
-  const total = sessions.length;
-  const activeCount = sessions.filter((s) => s.status === "active").length;
-  const closedCount = sessions.filter((s) => s.status === "closed").length;
-  const failedCount = sessions.filter((s) => s.status === "failed").length;
-
-  /* ===============================
-     FILTER
-  ================================ */
+  /* FILTER */
   const filtered = useMemo(() => {
     return sessions.filter(
       (s) =>
@@ -179,18 +144,9 @@ export default function Sessions() {
     );
   }, [sessions, search, statusFilter]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / rowsPerPage));
-  const currentRows = filtered.slice(
-    (currentPage - 1) * rowsPerPage,
-    currentPage * rowsPerPage
-  );
-
   return (
     <div className="p-6 w-full bg-gray-100 text-gray-900">
-      <h1 className="text-3xl font-bold mb-1">Пользовательские сессии</h1>
-      <p className="text-gray-600 mb-4">
-        Мониторинг активных и завершённых сессий
-      </p>
+      <h1 className="text-3xl font-bold mb-4">Пользовательские сессии</h1>
 
       <button
         onClick={() => setStartOpen(true)}
@@ -199,40 +155,42 @@ export default function Sessions() {
         Запустить сессию
       </button>
 
-      {/* STATS */}
-      <div className="grid grid-cols-4 gap-4 mb-8">
-        <Stat title="Всего" value={total} />
-        <Stat title="Активные" value={activeCount} color="text-green-400" />
-        <Stat title="Завершённые" value={closedCount} color="text-blue-400" />
-        <Stat title="Ошибочные" value={failedCount} color="text-red-400" />
-      </div>
+      <Input
+        placeholder="Поиск по пользователю, системе или IP..."
+        className="w-80 mb-4 bg-white"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+      />
 
-      {/* TABLE */}
-      <div className="overflow-y-auto rounded-xl border bg-[#121A33]">
-        <table className="w-full text-sm text-white">
-          <thead className="bg-[#1A243F]">
+      <div className="bg-[#121A33] rounded-xl overflow-hidden">
+        <table className="w-full text-white text-sm">
+          <thead className="bg-[#1A243F] text-gray-300">
             <tr>
               <th className="p-3 text-left">Пользователь</th>
-              <th className="p-3 text-left">Система</th>
-              <th className="p-3 text-left">OS</th>
-              <th className="p-3 text-left">Метод</th>
-              <th className="p-3 text-left">IP</th>
-              <th className="p-3 text-left">Статус</th>
-              <th className="p-3 text-left">Действия</th>
+              <th className="p-3">Система</th>
+              <th className="p-3">OS</th>
+              <th className="p-3">IP</th>
+              <th className="p-3">Статус</th>
+              <th className="p-3">Действия</th>
             </tr>
           </thead>
           <tbody>
-            {currentRows.map((s) => (
-              <tr key={s.id} className="border-t border-[#1E2A45]">
+            {filtered.map((s) => (
+              <tr
+                key={s.id}
+                className="border-t border-[#1E2A45] hover:bg-[#0E1A3A]"
+              >
                 <td className="p-3">{s.user}</td>
                 <td className="p-3">{s.system}</td>
                 <td className="p-3">{s.os}</td>
-                <td className="p-3">{s.conn}</td>
                 <td className="p-3">{s.ip}</td>
                 <td className="p-3">{s.status}</td>
                 <td className="p-3">
                   <ActionMenuSession
-                    onView={() => openDetails(s)}
+                    onView={() => {
+                      setSelectedSession(s);
+                      setDetailOpen(true);
+                    }}
                     onTerminate={() => handleTerminate(s)}
                     onAudit={() => handleAudit(s)}
                   />
@@ -250,10 +208,12 @@ export default function Sessions() {
         onTerminate={() =>
           selectedSession && handleTerminate(selectedSession)
         }
-        onAudit={() => selectedSession && handleAudit(selectedSession)}
-        onDownloadLogs={() => toast.info("Экспорт позже")}
+        onAudit={() =>
+          selectedSession && handleAudit(selectedSession)
+        }
       />
 
+      {/* START SESSION MODAL */}
       {startOpen && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
           <div className="bg-[#121A33] p-6 rounded-xl w-[420px] text-white space-y-4">
@@ -284,14 +244,9 @@ export default function Sessions() {
             />
 
             <div className="flex justify-end gap-2">
+              <button onClick={() => setStartOpen(false)}>Отмена</button>
               <button
-                onClick={() => setStartOpen(false)}
-                className="text-gray-300"
-              >
-                Отмена
-              </button>
-
-              <button
+                className="px-4 py-2 bg-[#0052FF] rounded"
                 onClick={async () => {
                   try {
                     await startSession(startForm);
@@ -305,7 +260,6 @@ export default function Sessions() {
                     );
                   }
                 }}
-                className="px-4 py-2 bg-[#0052FF] rounded"
               >
                 Запустить
               </button>
@@ -313,26 +267,6 @@ export default function Sessions() {
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-/* ===============================
-   STAT
-================================ */
-function Stat({
-  title,
-  value,
-  color,
-}: {
-  title: string;
-  value: number;
-  color?: string;
-}) {
-  return (
-    <div className="bg-[#121A33] p-4 rounded-xl text-white">
-      <p className="text-gray-400 text-sm">{title}</p>
-      <p className={`text-3xl font-bold ${color ?? ""}`}>{value}</p>
     </div>
   );
 }

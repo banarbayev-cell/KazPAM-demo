@@ -12,6 +12,7 @@ import Sessions from "./pages/Sessions";
 import Audit from "./pages/Audit";
 import Settings from "./pages/Settings";
 import Vault from "./pages/Vault";
+import VaultRequests from "./pages/VaultRequests";
 import Policies from "./pages/Policies";
 import Roles from "./pages/Roles";
 import Permissions from "./pages/Permissions";
@@ -52,6 +53,7 @@ export default function App() {
           <Route path="users" element={<Users />} />
           <Route path="sessions" element={<Sessions />} />
           <Route path="vault" element={<Vault />} />
+          <Route path="vault/requests" element={<VaultRequests />} />
           <Route path="policies" element={<Policies />} />
           <Route path="audit" element={<Audit />} />
           <Route path="settings" element={<Settings />} />

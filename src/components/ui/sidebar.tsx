@@ -54,6 +54,13 @@ export default function Sidebar() {
           </NavLink>
         </Access>
 
+        <Access permission="view_vault_requests">
+  <NavLink to="/vault/requests" className={navClass}>
+    Запросы доступа
+  </NavLink>
+</Access>
+
+
         <Access permission="manage_policies">
           <NavLink to="/policies" className={navClass}>
             Политики безопасности

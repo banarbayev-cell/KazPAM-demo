@@ -1,27 +1,60 @@
 import { useEffect, useMemo, useState } from "react";
 import { FaWindows, FaLinux, FaAws, FaServer } from "react-icons/fa";
 import { SiCisco, SiMysql, SiPostgresql } from "react-icons/si";
+import { toast } from "sonner";
 
 import MFAConfirmModal from "../components/modals/MFAConfirmModal";
 import VaultHistoryPanel from "../components/panels/VaultHistoryPanel";
 import CreateSecretModal from "../components/modals/CreateSecretModal";
 import { Button } from "../components/ui/button";
 
+import { api } from "@/services/api";
+import { useAuth } from "@/store/auth";
+import { revealSecretApproved } from "@/api/vaultReveal";
+import SecureRevealModal from "@/components/modals/SecureRevealModal";
+
+
+/* ============================================================
+   Types
+============================================================ */
+
 interface SecretRecord {
+  id: number;
   system: string;
-  icon: JSX.Element;
   login: string;
   updated: string; // "DD.MM.YYYY"
   type: string;
   platform: string;
-
-  // Усиление (не ломает демо): если backend даст id — используем его
-  id?: string;
+  icon: JSX.Element;
 }
 
-// ------------------------------------------------------------
-// ИКОНКИ ДЛЯ ПЛАТФОРМ
-// ------------------------------------------------------------
+type VaultSecretDTO = {
+  id: number;
+  system: string;
+  login: string;
+  type: string;
+  platform: string;
+  updated?: string; // "DD.MM.YYYY" (если backend отдаёт так)
+  updated_at?: string; // ISO (если backend отдаёт так)
+};
+
+type VaultHistoryItemDTO = {
+  time: string;
+  user: string;
+  action: string;
+  ip?: string;
+  status?: string;
+};
+
+type VaultRevealDTO = {
+  id: number;
+  value: string;
+};
+
+/* ============================================================
+   Icons
+============================================================ */
+
 const getPlatformIcon = (platform: string) => {
   switch (platform) {
     case "Windows":
@@ -43,101 +76,9 @@ const getPlatformIcon = (platform: string) => {
   }
 };
 
-// ------------------------------------------------------------
-// ДЕМО-ДАННЫЕ (ОСТАВЛЯЕМ: fallback если backend Vault ещё не готов)
-// ------------------------------------------------------------
-const initialSecrets: SecretRecord[] = [
-  {
-    system: "Windows Server 2019 Prod",
-    icon: getPlatformIcon("Windows"),
-    login: "administrator",
-    updated: "12.11.2025",
-    type: "Пароль",
-    platform: "Windows",
-  },
-  {
-    system: "Active Directory Admin",
-    icon: getPlatformIcon("Windows"),
-    login: "corp-admin",
-    updated: "10.11.2025",
-    type: "Пароль",
-    platform: "Windows",
-  },
-  {
-    system: "Linux Root (Ubuntu Prod)",
-    icon: getPlatformIcon("Linux"),
-    login: "root",
-    updated: "05.11.2025",
-    type: "SSH ключ",
-    platform: "Linux",
-  },
-  {
-    system: "Cisco ASA Firewall",
-    icon: getPlatformIcon("Cisco"),
-    login: "enable",
-    updated: "01.11.2025",
-    type: "Пароль",
-    platform: "Cisco",
-  },
-  {
-    system: "PostgreSQL Cluster",
-    icon: getPlatformIcon("PostgreSQL"),
-    login: "pg-admin",
-    updated: "20.10.2025",
-    type: "Пароль",
-    platform: "PostgreSQL",
-  },
-  {
-    system: "MySQL Backup Server",
-    icon: getPlatformIcon("MySQL"),
-    login: "db-backup",
-    updated: "17.10.2025",
-    type: "Пароль",
-    platform: "MySQL",
-  },
-  {
-    system: "AWS Console Root",
-    icon: getPlatformIcon("AWS"),
-    login: "aws-root",
-    updated: "25.09.2025",
-    type: "Access Keys",
-    platform: "AWS",
-  },
-  {
-    system: "Solaris Root",
-    icon: getPlatformIcon("Solaris"),
-    login: "root",
-    updated: "21.09.2025",
-    type: "SSH ключ",
-    platform: "Solaris",
-  },
-];
-
-// ------------------------------------------------------------
-// BACKEND DTO (ожидаемое: как только появится Vault API, всё заработает)
-// ------------------------------------------------------------
-type VaultSecretDTO = {
-  id: string;
-  system: string;
-  login: string;
-  type: string;
-  platform: string;
-  updated?: string; // "DD.MM.YYYY" если backend отдаёт так
-  updated_at?: string; // ISO если backend отдаёт так
-};
-
-type VaultHistoryItemDTO = {
-  time: string;
-  user: string;
-  action: string;
-  ip?: string;
-  status?: string;
-};
-
-type VaultRevealDTO = {
-  id: string;
-  value: string;
-};
+/* ============================================================
+   Helpers
+============================================================ */
 
 function normalizeUpdated(dto: VaultSecretDTO): string {
   if (dto.updated && dto.updated.includes(".")) return dto.updated;
@@ -157,7 +98,7 @@ function normalizeUpdated(dto: VaultSecretDTO): string {
 
 function mapDtoToRecord(dto: VaultSecretDTO): SecretRecord {
   return {
-    id: dto.id,
+    id: Number(dto.id),
     system: dto.system,
     login: dto.login,
     type: dto.type,
@@ -167,144 +108,85 @@ function mapDtoToRecord(dto: VaultSecretDTO): SecretRecord {
   };
 }
 
-function getAuthToken(): string | null {
-  const keys = ["token", "access_token", "jwt", "auth_token"];
-  for (const k of keys) {
-    const v = localStorage.getItem(k);
-    if (v && v.trim()) return v;
-  }
+/* ============================================================
+   API calls (production)
+============================================================ */
 
-  const jsonKeys = ["auth", "authStore", "kazpam_auth", "session"];
-  for (const k of jsonKeys) {
-    const raw = localStorage.getItem(k);
-    if (!raw) continue;
-    try {
-      const obj = JSON.parse(raw);
-      const possible =
-        obj?.token || obj?.access_token || obj?.jwt || obj?.state?.token || obj?.state?.access_token;
-      if (possible && String(possible).trim()) return String(possible);
-    } catch {
-      // ignore
-    }
-  }
-
-  return null;
-}
-
-async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const token = getAuthToken();
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    ...(init?.headers as any),
-  };
-  if (token) headers.Authorization = `Bearer ${token}`;
-
-  const res = await fetch(`/api${path}`, { ...init, headers });
-
-  if (!res.ok) {
-    // 404 по Vault сейчас ожидаем, т.к. роутов нет в backend — обработаем выше.
-    let msg = `Request failed (${res.status})`;
-    try {
-      const data = await res.json();
-      msg = data?.detail || data?.message || msg;
-    } catch {
-      // ignore
-    }
-    const err: any = new Error(msg);
-    err.status = res.status;
-    throw err;
-  }
-
-  // 204 No Content
-  if (res.status === 204) return undefined as unknown as T;
-
-  return (await res.json()) as T;
-}
-
-// Vault API (ожидаемые пути; если пока не реализовано — будет fallback)
 async function vaultListSecrets(): Promise<VaultSecretDTO[]> {
-  return apiFetch<VaultSecretDTO[]>(`/vault/secrets`, { method: "GET" });
+  return api.get<VaultSecretDTO[]>("/vault/secrets");
 }
-async function vaultGetHistory(secretId: string): Promise<VaultHistoryItemDTO[]> {
-  return apiFetch<VaultHistoryItemDTO[]>(`/vault/secrets/${secretId}/history`, { method: "GET" });
+
+async function vaultGetHistory(secretId: number): Promise<VaultHistoryItemDTO[]> {
+  return api.get<VaultHistoryItemDTO[]>(`/vault/secrets/${secretId}/history`);
 }
-async function vaultRevealSecret(secretId: string, mfa_code: string): Promise<VaultRevealDTO> {
-  // enterprise pattern: reveal обычно POST, чтобы передать MFA code и записать audit
-  return apiFetch<VaultRevealDTO>(`/vault/secrets/${secretId}/reveal`, {
-    method: "POST",
-    body: JSON.stringify({ mfa_code }),
-  });
+
+async function vaultRevealSecretV1(secretId: number, mfa_code: string): Promise<VaultRevealDTO> {
+  return api.post<VaultRevealDTO>(`/vault/secrets/${secretId}/reveal`, { mfa_code });
 }
+
+async function vaultCopySecret(secretId: number): Promise<void> {
+  // backend: POST /vault/secrets/{secret_id}/copy
+  await api.post(`/vault/secrets/${secretId}/copy`, {});
+}
+
 async function vaultCreateSecret(payload: any): Promise<VaultSecretDTO> {
-  return apiFetch<VaultSecretDTO>(`/vault/secrets`, {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
+  return api.post<VaultSecretDTO>(`/vault/secrets`, payload);
 }
+
+async function vaultCreateRequest(secretId: number, reason: string): Promise<any> {
+  // backend: POST /vault/requests/
+  return api.post(`/vault/requests/`, { secret_id: secretId, reason });
+}
+
+/* ============================================================
+   Component
+============================================================ */
 
 export default function Vault() {
-  const [secretsList, setSecretsList] = useState<SecretRecord[]>(initialSecrets);
+  const user = useAuth((s) => s.user);
 
-  const [openMFA, setOpenMFA] = useState(false);
-  const [selectedSecret, setSelectedSecret] = useState<string | null>(null);
+  const hasPermission = (code: string): boolean =>
+    Array.isArray(user?.permissions) && user!.permissions.includes(code);
 
-  const [openHistory, setOpenHistory] = useState(false);
-  const [historySecret, setHistorySecret] = useState<SecretRecord | null>(null);
+  const [secretsList, setSecretsList] = useState<SecretRecord[]>([]);
 
-  const [openCreate, setOpenCreate] = useState(false);
-
-  // Усиление: статус загрузки и ошибка загрузки
+  // loading/errors
   const [loadingList, setLoadingList] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  // ------------------------------------------------------------
-  // ФИЛЬТРЫ
-  // ------------------------------------------------------------
+  // modals/panels
+  const [openMFA, setOpenMFA] = useState(false);
+  const [openHistory, setOpenHistory] = useState(false);
+  const [historySecret, setHistorySecret] = useState<SecretRecord | null>(null);
+  const [openCreate, setOpenCreate] = useState(false);
+
+  // selected action
+  const [selectedItem, setSelectedItem] = useState<SecretRecord | null>(null);
+  const [pendingAction, setPendingAction] = useState<"reveal" | "copy" | null>(null);
+
+  // history items
+  const [historyItems, setHistoryItems] = useState<
+    { time: string; user: string; action: string; ip: string; status: string }[]
+  >([]);
+
+  // filters
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [platformFilter, setPlatformFilter] = useState("all");
   const [sortByDate, setSortByDate] = useState("newest");
 
-  // ------------------------------------------------------------
-  // ПОДГОТОВКА: выбранный элемент и действие (reveal/copy)
-  // ------------------------------------------------------------
-  const [selectedItem, setSelectedItem] = useState<SecretRecord | null>(null);
-  const [pendingAction, setPendingAction] = useState<"reveal" | "copy" | null>(null);
-
-  // ------------------------------------------------------------
-  // ПОИСК + ФИЛЬТРЫ + СОРТИРОВКА
-  // ------------------------------------------------------------
-  const filtered = useMemo(() => {
-    return secretsList
-      .filter(
-        (s) =>
-          s.system.toLowerCase().includes(search.toLowerCase()) ||
-          s.login.toLowerCase().includes(search.toLowerCase())
-      )
-      .filter((s) => (typeFilter === "all" ? true : s.type === typeFilter))
-      .filter((s) => (platformFilter === "all" ? true : s.platform === platformFilter))
-      .sort((a, b) => {
-        const dateA = new Date(a.updated.split(".").reverse().join("-"));
-        const dateB = new Date(b.updated.split(".").reverse().join("-"));
-        return sortByDate === "newest" ? +dateB - +dateA : +dateA - +dateB;
-      });
-  }, [secretsList, search, typeFilter, platformFilter, sortByDate]);
-
-  // ------------------------------------------------------------
-  // ПАГИНАЦИЯ (как в Users)
-  // ------------------------------------------------------------
+  // pagination
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(10);
+ 
+  const [revealOpen, setRevealOpen] = useState(false);
+const [revealValue, setRevealValue] = useState("");
+const [revealTitle, setRevealTitle] = useState("");
+const [revealSubtitle, setRevealSubtitle] = useState<string | undefined>(undefined);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / rowsPerPage));
-  const indexOfLast = currentPage * rowsPerPage;
-  const indexOfFirst = indexOfLast - rowsPerPage;
-  const currentRows = filtered.slice(indexOfFirst, indexOfLast);
-
-  // ------------------------------------------------------------
-  // ЗАГРУЗКА ИЗ BACKEND (если Vault API уже есть)
-  // Если пока нет — fallback на initialSecrets
-  // ------------------------------------------------------------
+  /* ============================================================
+     Load secrets (production only)
+  ============================================================ */
   useEffect(() => {
     let mounted = true;
 
@@ -316,20 +198,12 @@ export default function Vault() {
         const list = await vaultListSecrets();
         const mapped = list.map(mapDtoToRecord);
         if (!mounted) return;
-
-        // если backend пустой — можно оставить демо, чтобы страница не была пустой
-        setSecretsList(mapped.length ? mapped : initialSecrets);
+        setSecretsList(mapped);
       } catch (e: any) {
         if (!mounted) return;
-
-        // Если 404 — Vault API ещё не внедрён в backend: это ожидаемо.
-        if (e?.status === 404) {
-          setLoadError("Vault API ещё не включён на backend. Используются демо-данные.");
-          setSecretsList(initialSecrets);
-        } else {
-          setLoadError(e?.message || "Не удалось загрузить Secrets из backend. Используются демо-данные.");
-          setSecretsList(initialSecrets);
-        }
+        const msg = e?.message || "Не удалось загрузить Secrets из backend";
+        setLoadError(msg);
+        setSecretsList([]);
       } finally {
         if (mounted) setLoadingList(false);
       }
@@ -341,45 +215,68 @@ export default function Vault() {
     };
   }, []);
 
-  // ------------------------------------------------------------
-  // История: fallback если нет backend
-  // ------------------------------------------------------------
-  const [historyItems, setHistoryItems] = useState<
-    { time: string; user: string; action: string; ip: string; status: string }[]
-  >([]);
+  /* ============================================================
+     Filtering + sorting
+  ============================================================ */
+  const filtered = useMemo(() => {
+    return secretsList
+      .filter((s) => {
+        const q = search.toLowerCase();
+        return s.system.toLowerCase().includes(q) || s.login.toLowerCase().includes(q);
+      })
+      .filter((s) => (typeFilter === "all" ? true : s.type === typeFilter))
+      .filter((s) => (platformFilter === "all" ? true : s.platform === platformFilter))
+      .sort((a, b) => {
+        const dateA = new Date(a.updated.split(".").reverse().join("-"));
+        const dateB = new Date(b.updated.split(".").reverse().join("-"));
+        return sortByDate === "newest" ? +dateB - +dateA : +dateA - +dateB;
+      });
+  }, [secretsList, search, typeFilter, platformFilter, sortByDate]);
 
-  // ------------------------------------------------------------
-  // ОБРАБОТЧИКИ (усиленные)
-  // ------------------------------------------------------------
-  const handleReveal = (item: SecretRecord) => {
-    setSelectedItem(item);
-    setPendingAction("reveal");
-    setSelectedSecret(item.system);
-    setOpenMFA(true);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / rowsPerPage));
+  const indexOfLast = currentPage * rowsPerPage;
+  const indexOfFirst = indexOfLast - rowsPerPage;
+  const currentRows = filtered.slice(indexOfFirst, indexOfLast);
+
+  /* ============================================================
+     Actions
+  ============================================================ */
+
+  const handleRevealOrRequest = async (item: SecretRecord, mode: "reveal" | "copy") => {
+    // 1) direct reveal path
+    if (hasPermission("reveal_vault_secret") || hasPermission("reveal_vault_approved")) {
+      setSelectedItem(item);
+      setPendingAction(mode);
+      setOpenMFA(true);
+      return;
+    }
+
+    // 2) request access path
+    if (hasPermission("request_vault_access")) {
+      try {
+        await vaultCreateRequest(item.id, "Требуется доступ для выполнения задачи");
+        toast.success("Запрос доступа отправлен на согласование");
+      } catch (e: any) {
+        toast.error(e?.message || "Ошибка при создании запроса доступа");
+      }
+      return;
+    }
+
+    // 3) no rights
+    toast.error("Недостаточно прав: нет reveal и нет request_vault_access");
   };
 
-  const handleCopy = (item: SecretRecord) => {
-    setSelectedItem(item);
-    setPendingAction("copy");
-    setSelectedSecret(item.system);
-    setOpenMFA(true);
+  const handleReveal = async (item: SecretRecord) => {
+    await handleRevealOrRequest(item, "reveal");
+  };
+
+  const handleCopy = async (item: SecretRecord) => {
+    await handleRevealOrRequest(item, "copy");
   };
 
   const openHistoryPanel = async (secret: SecretRecord) => {
     setHistorySecret(secret);
     setOpenHistory(true);
-
-    const fallback = [
-      { time: "19:32", user: "admin", action: "Просмотр", ip: "192.168.1.42", status: "Успешно" },
-      { time: "19:27", user: "root", action: "Изменение пароля", ip: "10.0.0.78", status: "Отклонено" },
-      { time: "19:25", user: "audit", action: "Сканирование", ip: "185.22.91.14", status: "Подозрительно" },
-    ];
-
-    // Если нет id — это демо, оставляем fallback
-    if (!secret.id) {
-      setHistoryItems(fallback);
-      return;
-    }
 
     try {
       const items = await vaultGetHistory(secret.id);
@@ -393,68 +290,54 @@ export default function Vault() {
         }))
       );
     } catch (e: any) {
-      // если backend ещё не умеет history — fallback
-      setHistoryItems(fallback);
+      setHistoryItems([]);
+      toast.error(e?.message || "Не удалось загрузить историю секрета");
     }
   };
 
   const handleCreateSecret = async (newData: any) => {
-    const icon = getPlatformIcon(newData.platform);
-
-    // 1) оптимистично добавляем локально (не ломаем UX)
-    const optimistic: SecretRecord = {
-      system: newData.system,
-      login: newData.login,
-      type: newData.type,
-      updated: newData.updated,
-      platform: newData.platform,
-      icon,
-    };
-
-    setSecretsList((prev) => [optimistic, ...prev]);
-    setOpenCreate(false);
-
-    // 2) пробуем создать в backend (когда API будет готов)
+    // production: создаём в backend, затем перечитываем список
     try {
-      const created = await vaultCreateSecret({
+      await vaultCreateSecret({
         system: newData.system,
         login: newData.login,
         type: newData.type,
         platform: newData.platform,
-        // value: newData.value, // если модалка отдаёт value и backend принимает
+        // value: newData.value, // включи, если backend принимает value
       });
 
-      const mapped = mapDtoToRecord(created);
+      toast.success("Секрет создан");
+      setOpenCreate(false);
 
-      // 3) заменяем первый элемент (наш optimistic) на backend-версию с id
-      setSecretsList((prev) => {
-        const copy = [...prev];
-        copy[0] = mapped;
-        return copy;
-      });
-    } catch {
-      // backend ещё не готов — оставляем optimistic запись
+      // reload list
+      setLoadingList(true);
+      const list = await vaultListSecrets();
+      setSecretsList(list.map(mapDtoToRecord));
+    } catch (e: any) {
+      toast.error(e?.message || "Ошибка создания секрета");
+    } finally {
+      setLoadingList(false);
     }
   };
 
-  // ------------------------------------------------------------
-  // UI
-  // ------------------------------------------------------------
+  /* ============================================================
+     UI
+  ============================================================ */
+
   return (
     <div className="p-6 w-full bg-white text-black min-h-screen">
       <div className="flex items-start justify-between gap-4 mb-4">
         <div>
           <h1 className="text-3xl font-bold">Хранилище привилегий (Vault)</h1>
           {loadingList && <div className="text-sm text-gray-600 mt-1">Загрузка из backend...</div>}
-          {loadError && <div className="text-sm text-gray-600 mt-1">{loadError}</div>}
+          {loadError && <div className="text-sm text-red-600 mt-1">{loadError}</div>}
         </div>
 
         <Button onClick={() => setOpenCreate(true)}>+ Добавить секрет</Button>
       </div>
 
-      {/* Фильтры */}
+      {/* Filters */}
       <div className="flex gap-3 items-center mb-6">
-        {/* Поиск */}
         <input
           placeholder="Поиск..."
           className="w-72 bg-white text-black border p-2 rounded"
@@ -465,7 +348,6 @@ export default function Vault() {
           }}
         />
 
-        {/* Тип */}
         <select
           className="bg-white text-black border rounded p-2"
           value={typeFilter}
@@ -481,7 +363,6 @@ export default function Vault() {
           <option value="API Token">API Token</option>
         </select>
 
-        {/* Платформа */}
         <select
           className="bg-white text-black border rounded p-2"
           value={platformFilter}
@@ -501,7 +382,6 @@ export default function Vault() {
           <option value="Custom">Другое</option>
         </select>
 
-        {/* Дата */}
         <select
           className="bg-white text-black border rounded p-2"
           value={sortByDate}
@@ -515,7 +395,7 @@ export default function Vault() {
         </select>
       </div>
 
-      {/* Таблица */}
+      {/* Table */}
       <div className="overflow-y-auto max-h-[500px] rounded-xl border border-[#1E2A45] shadow-lg bg-[#121A33]">
         <table className="w-full text-sm text-white">
           <thead className="bg-[#1A243F] text-gray-300 sticky top-0 z-10">
@@ -529,50 +409,66 @@ export default function Vault() {
           </thead>
 
           <tbody>
-            {currentRows.map((item, index) => (
-              <tr
-                key={item.id ? item.id : index}
-                className="border-t border-[#1E2A45] hover:bg-[#0E1A3A] transition"
-              >
-                <td className="p-3 flex items-center gap-2">
-                  {item.icon} {item.system}
-                </td>
-
-                <td className="p-3">{item.login}</td>
-                <td className="p-3">{item.updated}</td>
-                <td className="p-3">{item.type}</td>
-
-                <td className="p-3 flex gap-2">
-                  <button
-                    className="px-3 py-1 bg-blue-600 rounded hover:bg-blue-700"
-                    onClick={() => handleReveal(item)}
-                  >
-                    Показать
-                  </button>
-
-                  <button
-                    className="px-3 py-1 bg-gray-600 rounded hover:bg-gray-700"
-                    onClick={() => handleCopy(item)}
-                  >
-                    Скопировать
-                  </button>
-
-                  <button
-                    className="px-3 py-1 bg-gray-600 rounded hover:bg-gray-700"
-                    onClick={() => openHistoryPanel(item)}
-                  >
-                    Подробнее →
-                  </button>
+            {loadingList && (
+              <tr>
+                <td colSpan={5} className="p-6 text-center text-gray-300">
+                  Загрузка…
                 </td>
               </tr>
-            ))}
+            )}
+
+            {!loadingList && currentRows.length === 0 && (
+              <tr>
+                <td colSpan={5} className="p-6 text-center text-gray-300">
+                  Секреты не найдены
+                </td>
+              </tr>
+            )}
+
+            {!loadingList &&
+              currentRows.map((item) => (
+                <tr
+                  key={item.id}
+                  className="border-t border-[#1E2A45] hover:bg-[#0E1A3A] transition"
+                >
+                  <td className="p-3 flex items-center gap-2">
+                    {item.icon} {item.system}
+                  </td>
+
+                  <td className="p-3">{item.login}</td>
+                  <td className="p-3">{item.updated}</td>
+                  <td className="p-3">{item.type}</td>
+
+                  <td className="p-3 flex gap-2">
+                    <button
+                      className="px-3 py-1 bg-blue-600 rounded hover:bg-blue-700"
+                      onClick={() => handleReveal(item)}
+                    >
+                      Показать
+                    </button>
+
+                    <button
+                      className="px-3 py-1 bg-gray-600 rounded hover:bg-gray-700"
+                      onClick={() => handleCopy(item)}
+                    >
+                      Скопировать
+                    </button>
+
+                    <button
+                      className="px-3 py-1 bg-gray-600 rounded hover:bg-gray-700"
+                      onClick={() => openHistoryPanel(item)}
+                    >
+                      Подробнее →
+                    </button>
+                  </td>
+                </tr>
+              ))}
           </tbody>
         </table>
       </div>
 
-      {/* Пагинация */}
+      {/* Pagination */}
       <div className="flex justify-between items-center p-4">
-        {/* Кол-во строк */}
         <div className="flex items-center gap-2">
           <span>Показать:</span>
           <select
@@ -589,7 +485,6 @@ export default function Vault() {
           </select>
         </div>
 
-        {/* Страницы */}
         <div className="flex gap-2 items-center">
           <button className="px-2 text-black" onClick={() => setCurrentPage(1)} disabled={currentPage === 1}>
             {"<<"}
@@ -625,38 +520,46 @@ export default function Vault() {
         </div>
       </div>
 
-      {/* MFA: теперь реальная проверка через backend /mfa/verify.
-          После успеха — делаем reveal/copy через backend Vault API (если он есть),
-          иначе — безопасный fallback. */}
+      {/* MFA Confirm → reveal/copy (v2 -> fallback v1) */}
       <MFAConfirmModal
         open={openMFA}
         onClose={() => setOpenMFA(false)}
         verifyMode="backend"
         onSuccess={async (mfaCode) => {
           try {
-            if (!selectedItem) {
-              alert("Не выбран секрет.");
-              return;
-            }
+            if (!selectedItem || !pendingAction) return;
 
-            // Если секрет демо и не имеет id — оставляем прежнее поведение (не ломаем)
-            if (!selectedItem.id) {
-              alert(`🔓 Доступ к секрету "${selectedItem.system}" подтверждён (demo).`);
-              return;
-            }
+            let revealed: VaultRevealDTO;
 
-            // Пытаемся раскрыть через backend Vault API
-            const revealed = await vaultRevealSecret(selectedItem.id, mfaCode);
+            try {
+              // Vault v2 approval-based reveal (если есть grant)
+              revealed = await revealSecretApproved(Number(selectedItem.id), mfaCode);
+            } catch {
+              // fallback Vault v1 direct reveal
+              revealed = await vaultRevealSecretV1(Number(selectedItem.id), mfaCode);
+            }
 
             if (pendingAction === "copy") {
-              await navigator.clipboard.writeText(revealed.value);
-              alert(`Секрет "${selectedItem.system}" скопирован в буфер обмена.`);
-            } else {
-              alert(`Секрет "${selectedItem.system}":\n\n${revealed.value}`);
-            }
+  await navigator.clipboard.writeText(revealed.value);
+  toast.success(`Секрет "${selectedItem.system}" скопирован в буфер обмена.`);
+
+  // backend audit copy (best-effort)
+  try {
+    await vaultCopySecret(Number(selectedItem.id));
+  } catch {
+    // ignore
+  }
+} else {
+  // production: показываем секрет ТОЛЬКО в secure modal, не в toast
+  setRevealTitle(selectedItem.system);
+  setRevealSubtitle(`${selectedItem.login} · ${selectedItem.type}`);
+  setRevealValue(revealed.value);
+  setRevealOpen(true);
+
+  toast.success(`Доступ к секрету "${selectedItem.system}" подтверждён.`);
+}
           } catch (e: any) {
-            // Если Vault API пока не реализован — получим 404/422 и покажем понятное сообщение
-            alert(e?.message || "Ошибка доступа к секрету");
+            toast.error(e?.message || "Ошибка доступа к секрету");
           } finally {
             setPendingAction(null);
             setSelectedItem(null);
@@ -665,7 +568,7 @@ export default function Vault() {
         }}
       />
 
-      {/* История */}
+      {/* History panel */}
       <VaultHistoryPanel
         open={openHistory}
         onClose={() => setOpenHistory(false)}
@@ -678,8 +581,27 @@ export default function Vault() {
         onRestrict={() => console.log("Restrict")}
       />
 
-      {/* Создание секрета */}
-      <CreateSecretModal open={openCreate} onClose={() => setOpenCreate(false)} onCreate={handleCreateSecret} />
+      {/* Create secret */}
+      <CreateSecretModal
+        open={openCreate}
+        onClose={() => setOpenCreate(false)}
+        onCreate={handleCreateSecret}
+      />
+
+      <SecureRevealModal
+  open={revealOpen}
+  onClose={() => {
+    setRevealOpen(false);
+    setRevealValue("");
+    setRevealTitle("");
+    setRevealSubtitle(undefined);
+  }}
+  title={revealTitle}
+  subtitle={revealSubtitle}
+  secretValue={revealValue}
+  autoHideSeconds={20}
+/>
+
     </div>
   );
 }

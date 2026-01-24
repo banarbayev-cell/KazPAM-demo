@@ -1,5 +1,6 @@
 // src/pages/VaultRequests.tsx
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   listVaultRequests,
   approveVaultRequest,
@@ -20,10 +21,24 @@ const STATUS_OPTIONS: VaultRequestStatus[] = [
 ];
 
 export default function VaultRequests() {
+  const navigate = useNavigate();
+
   const [requests, setRequests] = useState<VaultRequest[]>([]);
   const [status, setStatus] = useState<VaultRequestStatus | "ALL">("PENDING");
   const [mine, setMine] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  // search (client-side, safe)
+  const [search, setSearch] = useState("");
+
+  // pagination (client-side, безопасно: backend не трогаем)
+  const [currentPage, setCurrentPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+
+  function openInVault(secretId: number) {
+    // best-effort navigation; Vault может позже использовать query для авто-фокуса
+    navigate(`/vault?secret_id=${encodeURIComponent(String(secretId))}`);
+  }
 
   async function load() {
     setLoading(true);
@@ -32,23 +47,27 @@ export default function VaultRequests() {
         status: status === "ALL" ? undefined : status,
         mine,
       });
-      setRequests(data);
+      setRequests(Array.isArray(data) ? data : []);
     } catch (e: any) {
       toast.error(e?.message || "Ошибка загрузки запросов Vault");
+      setRequests([]);
     } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => {
+    // фильтры поменялись — начинаем с первой страницы
+    setCurrentPage(1);
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, mine]);
 
   async function onApprove(id: number) {
     try {
       await approveVaultRequest(id, { grant_ttl_minutes: 60 });
       toast.success("Запрос одобрен");
-      load();
+      await load();
     } catch (e: any) {
       toast.error(e?.message || "Ошибка одобрения");
     }
@@ -58,7 +77,7 @@ export default function VaultRequests() {
     try {
       await denyVaultRequest(id);
       toast.success("Запрос отклонён");
-      load();
+      await load();
     } catch (e: any) {
       toast.error(e?.message || "Ошибка отклонения");
     }
@@ -68,38 +87,75 @@ export default function VaultRequests() {
     try {
       await cancelVaultRequest(id);
       toast.success("Запрос отменён");
-      load();
+      await load();
     } catch (e: any) {
       toast.error(e?.message || "Ошибка отмены");
     }
   }
 
+  // ===== search + derived list =====
+  const filteredRequests = useMemo(() => {
+    const safe = Array.isArray(requests) ? requests : [];
+    const q = search.trim().toLowerCase();
+    if (!q) return safe;
+
+    return safe.filter((r) => {
+      const requester = (r.requester ?? "").toLowerCase();
+      const secretId = String(r.secret_id ?? "");
+      const reqId = String(r.id ?? "");
+      return requester.includes(q) || secretId.includes(q) || reqId.includes(q);
+    });
+  }, [requests, search]);
+
+  // ===== pagination derived =====
+  const totalPages = useMemo(() => {
+    const total = Math.ceil((filteredRequests?.length ?? 0) / rowsPerPage);
+    return Math.max(1, total || 1);
+  }, [filteredRequests, rowsPerPage]);
+
+  const currentRows = useMemo(() => {
+    const safe = Array.isArray(filteredRequests) ? filteredRequests : [];
+    const start = (currentPage - 1) * rowsPerPage;
+    const end = start + rowsPerPage;
+    return safe.slice(start, end);
+  }, [filteredRequests, currentPage, rowsPerPage]);
+
+  // safety: если удалили/отфильтровали и страниц стало меньше
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
+
   return (
-    <div className="space-y-6">
+    <div className="p-6 w-full bg-gray-100 text-black min-h-screen space-y-6">
       {/* HEADER */}
-      <div>
-        <h1 className="text-2xl font-bold">Vault · Запросы доступа</h1>
-        <p className="text-sm text-gray-500">
-          Управление запросами на временный доступ к секретам
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold">Vault · Запросы доступа</h1>
+          <p className="text-sm text-gray-600 mt-1">
+            Управление запросами на временный доступ к секретам
+          </p>
+        </div>
       </div>
 
       {/* FILTERS */}
-      <div className="flex items-center gap-4">
-        <select
-          value={status}
-          onChange={(e) => setStatus(e.target.value as any)}
-          className="border rounded-md px-3 py-2 text-sm"
-        >
-          <option value="ALL">Все статусы</option>
-          {STATUS_OPTIONS.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
+      <div className="flex flex-wrap items-center gap-4">
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-gray-700">Статус:</span>
+          <select
+            value={status}
+            onChange={(e) => setStatus(e.target.value as any)}
+            className="border rounded-md px-3 py-2 text-sm bg-white text-black"
+          >
+            <option value="ALL">Все статусы</option>
+            {STATUS_OPTIONS.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        </div>
 
-        <label className="flex items-center gap-2 text-sm">
+        <label className="flex items-center gap-2 text-sm text-gray-800 select-none">
           <input
             type="checkbox"
             checked={mine}
@@ -107,86 +163,192 @@ export default function VaultRequests() {
           />
           Только мои
         </label>
+
+        <input
+          placeholder="Поиск: requester / secret_id / id…"
+          className="w-72 bg-white text-black border p-2 rounded"
+          value={search}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setCurrentPage(1);
+          }}
+        />
+
+        <div className="ml-auto text-sm text-gray-600">
+          Показано:{" "}
+          <span className="font-semibold text-gray-900">
+            {filteredRequests.length}
+          </span>{" "}
+          из{" "}
+          <span className="font-semibold text-gray-900">{requests.length}</span>
+        </div>
       </div>
 
-      {/* TABLE */}
-      <div className="bg-white border rounded-lg overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b">
+      {/* TABLE (KazPAM dark card) */}
+      <div className="overflow-hidden rounded-xl border border-[#1E2A45] shadow-lg bg-[#121A33]">
+        <table className="w-full text-sm text-white">
+          <thead className="bg-[#1A243F] text-gray-300">
             <tr>
-              <th className="px-4 py-2 text-left">ID</th>
-              <th className="px-4 py-2 text-left">Secret</th>
-              <th className="px-4 py-2 text-left">Requester</th>
-              <th className="px-4 py-2 text-left">Status</th>
-              <th className="px-4 py-2 text-left">Создан</th>
-              <th className="px-4 py-2 text-right">Действия</th>
+              <th className="px-4 py-3 text-left">ID</th>
+              <th className="px-4 py-3 text-left">Secret</th>
+              <th className="px-4 py-3 text-left">Requester</th>
+              <th className="px-4 py-3 text-left">Status</th>
+              <th className="px-4 py-3 text-left">Создан</th>
+              <th className="px-4 py-3 text-right">Действия</th>
             </tr>
           </thead>
 
           <tbody>
             {loading && (
               <tr>
-                <td colSpan={6} className="px-4 py-6 text-center">
+                <td colSpan={6} className="px-4 py-8 text-center text-gray-300">
                   Загрузка…
                 </td>
               </tr>
             )}
 
-            {!loading && requests.length === 0 && (
+            {!loading && currentRows.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-6 text-center text-gray-500">
+                <td colSpan={6} className="px-4 py-8 text-center text-gray-300">
                   Нет запросов
                 </td>
               </tr>
             )}
 
-            {requests.map((r) => (
-              <tr key={r.id} className="border-t">
-                <td className="px-4 py-2">{r.id}</td>
-                <td className="px-4 py-2">#{r.secret_id}</td>
-                <td className="px-4 py-2">{r.requester}</td>
-                <td className="px-4 py-2">
-                  <StatusChip status={r.status} />
-                </td>
-                <td className="px-4 py-2">
-                  {r.created_at
-                    ? new Date(r.created_at).toLocaleString()
-                    : "—"}
-                </td>
-                <td className="px-4 py-2 text-right space-x-2">
-                  {r.status === "PENDING" && (
-                    <>
-                      <Access permission="approve_vault_requests">
-                        <button
-                          onClick={() => onApprove(r.id)}
-                          className="px-3 py-1 rounded bg-green-600 text-white text-xs"
-                        >
-                          Approve
-                        </button>
+            {!loading &&
+              currentRows.map((r) => (
+                <tr
+                  key={r.id}
+                  className="border-t border-[#1E2A45] hover:bg-[#0E1A3A] transition"
+                >
+                  <td className="px-4 py-3">{r.id}</td>
 
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-100">#{r.secret_id}</span>
+
+                      {/* ВАЖНО: это только навигация, не раскрытие секрета */}
+                      <Access permission="view_vault">
                         <button
-                          onClick={() => onDeny(r.id)}
-                          className="px-3 py-1 rounded bg-red-600 text-white text-xs"
+                          type="button"
+                          onClick={() => openInVault(r.secret_id)}
+                          className="px-2 py-1 rounded bg-[#1A243F] border border-[#1E2A45] text-gray-200 hover:bg-[#0E1A3A] text-xs"
+                          title="Перейти в Vault к этому секрету"
                         >
-                          Deny
+                          Открыть в Vault
                         </button>
                       </Access>
+                    </div>
+                  </td>
 
-                      <Access permission="request_vault_access">
-                        <button
-                          onClick={() => onCancel(r.id)}
-                          className="px-3 py-1 rounded bg-gray-400 text-white text-xs"
-                        >
-                          Cancel
-                        </button>
-                      </Access>
-                    </>
-                  )}
-                </td>
-              </tr>
-            ))}
+                  <td className="px-4 py-3">{r.requester}</td>
+                  <td className="px-4 py-3">
+                    <StatusChip status={r.status} />
+                  </td>
+                  <td className="px-4 py-3 text-gray-200">
+                    {r.created_at ? new Date(r.created_at).toLocaleString() : "—"}
+                  </td>
+
+                  <td className="px-4 py-3 text-right space-x-2">
+                    {r.status === "PENDING" && (
+                      <>
+                        <Access permission="approve_vault_requests">
+                          <button
+                            onClick={() => onApprove(r.id)}
+                            className="px-3 py-1 rounded bg-green-600 hover:bg-green-700 text-white text-xs"
+                          >
+                            Approve
+                          </button>
+
+                          <button
+                            onClick={() => onDeny(r.id)}
+                            className="px-3 py-1 rounded bg-red-600 hover:bg-red-700 text-white text-xs"
+                          >
+                            Deny
+                          </button>
+                        </Access>
+
+                        <Access permission="request_vault_access">
+                          <button
+                            onClick={() => onCancel(r.id)}
+                            className="px-3 py-1 rounded bg-gray-600 hover:bg-gray-700 text-white text-xs"
+                          >
+                            Cancel
+                          </button>
+                        </Access>
+                      </>
+                    )}
+                  </td>
+                </tr>
+              ))}
           </tbody>
         </table>
+      </div>
+
+      {/* Pagination (light) */}
+      <div className="flex justify-between items-center px-2">
+        <div className="flex items-center gap-2 text-sm text-gray-800">
+          <span>Показать:</span>
+          <select
+            className="border p-1 rounded bg-white text-black"
+            value={rowsPerPage}
+            onChange={(e) => {
+              setRowsPerPage(Number(e.target.value));
+              setCurrentPage(1);
+            }}
+          >
+            <option value={10}>10</option>
+            <option value={25}>25</option>
+            <option value={50}>50</option>
+          </select>
+
+          <span className="text-gray-600 ml-2">
+            Строк:{" "}
+            <span className="font-semibold text-gray-900">{currentRows.length}</span>{" "}
+            из{" "}
+            <span className="font-semibold text-gray-900">
+              {filteredRequests.length}
+            </span>
+          </span>
+        </div>
+
+        <div className="flex gap-2 items-center text-sm">
+          <button
+            className="px-2 text-black disabled:text-gray-400"
+            onClick={() => setCurrentPage(1)}
+            disabled={currentPage === 1}
+          >
+            {"<<"}
+          </button>
+
+          <button
+            className="px-2 text-black disabled:text-gray-400"
+            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+            disabled={currentPage === 1}
+          >
+            {"<"}
+          </button>
+
+          <span className="font-medium text-gray-900">
+            {currentPage} / {totalPages}
+          </span>
+
+          <button
+            className="px-2 text-black disabled:text-gray-400"
+            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+            disabled={currentPage === totalPages}
+          >
+            {">"}
+          </button>
+
+          <button
+            className="px-2 text-black disabled:text-gray-400"
+            onClick={() => setCurrentPage(totalPages)}
+            disabled={currentPage === totalPages}
+          >
+            {">>"}
+          </button>
+        </div>
       </div>
     </div>
   );

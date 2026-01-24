@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { FaWindows, FaLinux, FaAws, FaServer } from "react-icons/fa";
 import { SiCisco, SiMysql, SiPostgresql } from "react-icons/si";
 import { toast } from "sonner";
@@ -12,7 +13,6 @@ import { api } from "@/services/api";
 import { useAuth } from "@/store/auth";
 import { revealSecretApproved } from "@/api/vaultReveal";
 import SecureRevealModal from "@/components/modals/SecureRevealModal";
-
 
 /* ============================================================
    Types
@@ -125,7 +125,6 @@ async function vaultRevealSecretV1(secretId: number, mfa_code: string): Promise<
 }
 
 async function vaultCopySecret(secretId: number): Promise<void> {
-  // backend: POST /vault/secrets/{secret_id}/copy
   await api.post(`/vault/secrets/${secretId}/copy`, {});
 }
 
@@ -134,7 +133,6 @@ async function vaultCreateSecret(payload: any): Promise<VaultSecretDTO> {
 }
 
 async function vaultCreateRequest(secretId: number, reason: string): Promise<any> {
-  // backend: POST /vault/requests/
   return api.post(`/vault/requests/`, { secret_id: secretId, reason });
 }
 
@@ -143,6 +141,7 @@ async function vaultCreateRequest(secretId: number, reason: string): Promise<any
 ============================================================ */
 
 export default function Vault() {
+  const location = useLocation();
   const user = useAuth((s) => s.user);
 
   const hasPermission = (code: string): boolean =>
@@ -178,14 +177,43 @@ export default function Vault() {
   // pagination
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(10);
- 
+
+  // secure reveal modal
   const [revealOpen, setRevealOpen] = useState(false);
-const [revealValue, setRevealValue] = useState("");
-const [revealTitle, setRevealTitle] = useState("");
-const [revealSubtitle, setRevealSubtitle] = useState<string | undefined>(undefined);
+  const [revealValue, setRevealValue] = useState("");
+  const [revealTitle, setRevealTitle] = useState("");
+  const [revealSubtitle, setRevealSubtitle] = useState<string | undefined>(undefined);
 
   /* ============================================================
-     Load secrets (production only)
+     URL focus (усиление, без влияния на обычный сценарий)
+     /vault?secret_id=2
+     /vault?secret_id=2&history=1  (опционально авто-открыть историю)
+  ============================================================ */
+  const querySecretId = useMemo(() => {
+    const sp = new URLSearchParams(location.search);
+    const raw = sp.get("secret_id");
+    if (!raw) return null;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : null;
+  }, [location.search]);
+
+  const queryOpenHistory = useMemo(() => {
+    const sp = new URLSearchParams(location.search);
+    return sp.get("history") === "1";
+  }, [location.search]);
+
+  const [focusedSecretId, setFocusedSecretId] = useState<number | null>(null);
+
+  useEffect(() => {
+    // если параметр есть — включаем фокус
+    if (querySecretId) setFocusedSecretId(querySecretId);
+  }, [querySecretId]);
+
+  // refs для скролла к строке
+  const rowRefs = useRef<Record<number, HTMLTableRowElement | null>>({});
+
+  /* ============================================================
+     Load secrets
   ============================================================ */
   useEffect(() => {
     let mounted = true;
@@ -239,6 +267,78 @@ const [revealSubtitle, setRevealSubtitle] = useState<string | undefined>(undefin
   const currentRows = filtered.slice(indexOfFirst, indexOfLast);
 
   /* ============================================================
+     URL focus → page select (если секрет есть в filtered)
+  ============================================================ */
+  useEffect(() => {
+    if (!focusedSecretId) return;
+    const idx = filtered.findIndex((x) => x.id === focusedSecretId);
+    if (idx === -1) return;
+
+    const targetPage = Math.floor(idx / rowsPerPage) + 1;
+    if (targetPage !== currentPage) setCurrentPage(targetPage);
+  }, [focusedSecretId, filtered, rowsPerPage, currentPage]);
+
+  /* ============================================================
+     URL focus → scroll into view (когда строка на текущей странице)
+  ============================================================ */
+  useEffect(() => {
+    if (!focusedSecretId) return;
+    const existsOnPage = currentRows.some((x) => x.id === focusedSecretId);
+    if (!existsOnPage) return;
+
+    const el = rowRefs.current[focusedSecretId];
+    if (!el) return;
+
+    try {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+    } catch {
+      // ignore
+    }
+  }, [focusedSecretId, currentRows]);
+
+  /* ============================================================
+     History panel (useCallback, чтобы можно было авто-открыть)
+  ============================================================ */
+  const openHistoryPanel = useCallback(
+    async (secret: SecretRecord) => {
+      setHistorySecret(secret);
+      setOpenHistory(true);
+
+      try {
+        const items = await vaultGetHistory(secret.id);
+        setHistoryItems(
+          items.map((x) => ({
+            time: x.time,
+            user: x.user,
+            action: x.action,
+            ip: x.ip || "—",
+            status: x.status || "—",
+          }))
+        );
+      } catch (e: any) {
+        setHistoryItems([]);
+        toast.error(e?.message || "Не удалось загрузить историю секрета");
+      }
+    },
+    [setHistorySecret, setOpenHistory, setHistoryItems]
+  );
+
+  // optional: auto-open history if &history=1
+  useEffect(() => {
+    if (!queryOpenHistory) return;
+    if (!focusedSecretId) return;
+    if (!secretsList.length) return;
+
+    const item = secretsList.find((x) => x.id === focusedSecretId);
+    if (!item) return;
+
+    // best-effort: не открываем повторно, если уже открыто
+    if (openHistory) return;
+
+    openHistoryPanel(item);
+  }, [queryOpenHistory, focusedSecretId, secretsList, openHistory, openHistoryPanel]);
+
+  /* ============================================================
      Actions
   ============================================================ */
 
@@ -274,29 +374,7 @@ const [revealSubtitle, setRevealSubtitle] = useState<string | undefined>(undefin
     await handleRevealOrRequest(item, "copy");
   };
 
-  const openHistoryPanel = async (secret: SecretRecord) => {
-    setHistorySecret(secret);
-    setOpenHistory(true);
-
-    try {
-      const items = await vaultGetHistory(secret.id);
-      setHistoryItems(
-        items.map((x) => ({
-          time: x.time,
-          user: x.user,
-          action: x.action,
-          ip: x.ip || "—",
-          status: x.status || "—",
-        }))
-      );
-    } catch (e: any) {
-      setHistoryItems([]);
-      toast.error(e?.message || "Не удалось загрузить историю секрета");
-    }
-  };
-
   const handleCreateSecret = async (newData: any) => {
-    // production: создаём в backend, затем перечитываем список
     try {
       await vaultCreateSecret({
         system: newData.system,
@@ -426,43 +504,53 @@ const [revealSubtitle, setRevealSubtitle] = useState<string | undefined>(undefin
             )}
 
             {!loadingList &&
-              currentRows.map((item) => (
-                <tr
-                  key={item.id}
-                  className="border-t border-[#1E2A45] hover:bg-[#0E1A3A] transition"
-                >
-                  <td className="p-3 flex items-center gap-2">
-                    {item.icon} {item.system}
-                  </td>
+              currentRows.map((item) => {
+                const isFocused = focusedSecretId === item.id;
 
-                  <td className="p-3">{item.login}</td>
-                  <td className="p-3">{item.updated}</td>
-                  <td className="p-3">{item.type}</td>
+                return (
+                  <tr
+                    key={item.id}
+                    ref={(el) => {
+                      rowRefs.current[item.id] = el;
+                    }}
+                    className={[
+                      "border-t border-[#1E2A45] hover:bg-[#0E1A3A] transition",
+                      isFocused ? "bg-[#0B1E4A] shadow-[0_0_0_2px_rgba(0,82,255,0.9)]" : "",
+                    ].join(" ")}
+                  >
+                    <td className="p-3 flex items-center gap-2">
+                      {item.icon} {item.system}
+                    </td>
 
-                  <td className="p-3 flex gap-2">
-                    <button
-                      className="px-3 py-1 bg-blue-600 rounded hover:bg-blue-700"
-                      onClick={() => handleReveal(item)}
-                    >
-                      Показать
-                    </button>
+                    <td className="p-3">{item.login}</td>
+                    <td className="p-3">{item.updated}</td>
+                    <td className="p-3">{item.type}</td>
 
-                    <button
-                      className="px-3 py-1 bg-gray-600 rounded hover:bg-gray-700"
-                      onClick={() => handleCopy(item)}
-                    >
-                      Скопировать
-                    </button>
+                    <td className="p-3 flex gap-2">
+                      <button
+                        className="px-3 py-1 bg-blue-600 rounded hover:bg-blue-700"
+                        onClick={() => handleReveal(item)}
+                      >
+                        Показать
+                      </button>
 
-                    <button
-                      className="px-3 py-1 bg-gray-600 rounded hover:bg-gray-700"
-                      onClick={() => openHistoryPanel(item)}
-                    >
-                      Подробнее →
-                    </button>
-                  </td>
-                </tr>
-              ))}
+                      <button
+                        className="px-3 py-1 bg-gray-600 rounded hover:bg-gray-700"
+                        onClick={() => handleCopy(item)}
+                      >
+                        Скопировать
+                      </button>
+
+                      <button
+                        className="px-3 py-1 bg-gray-600 rounded hover:bg-gray-700"
+                        onClick={() => openHistoryPanel(item)}
+                      >
+                        Подробнее →
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
           </tbody>
         </table>
       </div>
@@ -532,32 +620,28 @@ const [revealSubtitle, setRevealSubtitle] = useState<string | undefined>(undefin
             let revealed: VaultRevealDTO;
 
             try {
-              // Vault v2 approval-based reveal (если есть grant)
               revealed = await revealSecretApproved(Number(selectedItem.id), mfaCode);
             } catch {
-              // fallback Vault v1 direct reveal
               revealed = await vaultRevealSecretV1(Number(selectedItem.id), mfaCode);
             }
 
             if (pendingAction === "copy") {
-  await navigator.clipboard.writeText(revealed.value);
-  toast.success(`Секрет "${selectedItem.system}" скопирован в буфер обмена.`);
+              await navigator.clipboard.writeText(revealed.value);
+              toast.success(`Секрет "${selectedItem.system}" скопирован в буфер обмена.`);
 
-  // backend audit copy (best-effort)
-  try {
-    await vaultCopySecret(Number(selectedItem.id));
-  } catch {
-    // ignore
-  }
-} else {
-  // production: показываем секрет ТОЛЬКО в secure modal, не в toast
-  setRevealTitle(selectedItem.system);
-  setRevealSubtitle(`${selectedItem.login} · ${selectedItem.type}`);
-  setRevealValue(revealed.value);
-  setRevealOpen(true);
+              try {
+                await vaultCopySecret(Number(selectedItem.id));
+              } catch {
+                // ignore
+              }
+            } else {
+              setRevealTitle(selectedItem.system);
+              setRevealSubtitle(`${selectedItem.login} · ${selectedItem.type}`);
+              setRevealValue(revealed.value);
+              setRevealOpen(true);
 
-  toast.success(`Доступ к секрету "${selectedItem.system}" подтверждён.`);
-}
+              toast.success(`Доступ к секрету "${selectedItem.system}" подтверждён.`);
+            }
           } catch (e: any) {
             toast.error(e?.message || "Ошибка доступа к секрету");
           } finally {
@@ -589,19 +673,18 @@ const [revealSubtitle, setRevealSubtitle] = useState<string | undefined>(undefin
       />
 
       <SecureRevealModal
-  open={revealOpen}
-  onClose={() => {
-    setRevealOpen(false);
-    setRevealValue("");
-    setRevealTitle("");
-    setRevealSubtitle(undefined);
-  }}
-  title={revealTitle}
-  subtitle={revealSubtitle}
-  secretValue={revealValue}
-  autoHideSeconds={20}
-/>
-
+        open={revealOpen}
+        onClose={() => {
+          setRevealOpen(false);
+          setRevealValue("");
+          setRevealTitle("");
+          setRevealSubtitle(undefined);
+        }}
+        title={revealTitle}
+        subtitle={revealSubtitle}
+        secretValue={revealValue}
+        autoHideSeconds={20}
+      />
     </div>
   );
 }

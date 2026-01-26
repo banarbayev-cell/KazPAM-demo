@@ -4,11 +4,6 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import "./index.css";
 
-// 🔥 HARD FIX: remove any legacy beforeunload handlers
-window.onbeforeunload = null;
-window.addEventListener("beforeunload", () => undefined);
-
-
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <BrowserRouter>

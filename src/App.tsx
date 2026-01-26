@@ -1,3 +1,4 @@
+// src/App.tsx
 import React, { useEffect } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "sonner";
@@ -26,6 +27,7 @@ export default function App() {
   const loadFromStorage = useAuth((s) => s.loadFromStorage);
 
   useEffect(() => {
+    // safe init: hydrate auth once on app mount
     loadFromStorage();
   }, [loadFromStorage]);
 
@@ -34,22 +36,26 @@ export default function App() {
       <Toaster richColors closeButton position="top-right" />
 
       <Routes>
+        {/* Public */}
         <Route path="/login" element={<Login />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
 
+        {/* Protected layout */}
         <Route
           path="/"
           element={
             <ProtectedRoute>
               <DashboardLayout />
             </ProtectedRoute>
-  }
->
-
+          }
+        >
+          {/* default protected route */}
           <Route index element={<Navigate to="/dashboard" replace />} />
 
+          {/* dashboard routes */}
           <Route path="dashboard" element={<Home />} />
           <Route path="soc" element={<SocDashboard />} />
-
           <Route path="users" element={<Users />} />
           <Route path="sessions" element={<Sessions />} />
           <Route path="vault" element={<Vault />} />
@@ -59,10 +65,9 @@ export default function App() {
           <Route path="settings" element={<Settings />} />
           <Route path="roles" element={<Roles />} />
           <Route path="permissions" element={<Permissions />} />
-          <Route path="/forgot-password" element={<ForgotPassword />} />
-          <Route path="/reset-password" element={<ResetPassword />} />
         </Route>
 
+        {/* fallback */}
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </>

@@ -35,10 +35,13 @@ export default function VaultRequests() {
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(10);
 
-  function openInVault(secretId: number) {
-    // best-effort navigation; Vault может позже использовать query для авто-фокуса
-    navigate(`/vault?secret_id=${encodeURIComponent(String(secretId))}`);
-  }
+  const goToVault = (secretId: unknown, openHistory?: boolean) => {
+  const sid = Number(secretId);
+  if (!Number.isFinite(sid)) return;
+
+  const qs = openHistory ? `?secret_id=${sid}&history=1` : `?secret_id=${sid}`;
+  navigate(`/vault${qs}`);
+};
 
   async function load() {
     setLoading(true);
@@ -137,7 +140,7 @@ export default function VaultRequests() {
         </div>
       </div>
 
-      {/* FILTERS */}
+      {/* FILTERS (светлый блок, как общий стиль) */}
       <div className="flex flex-wrap items-center gap-4">
         <div className="flex items-center gap-2">
           <span className="text-sm text-gray-700">Статус:</span>
@@ -164,6 +167,7 @@ export default function VaultRequests() {
           Только мои
         </label>
 
+        {/* Search (client-side) */}
         <input
           placeholder="Поиск: requester / secret_id / id…"
           className="w-72 bg-white text-black border p-2 rounded"
@@ -184,7 +188,7 @@ export default function VaultRequests() {
         </div>
       </div>
 
-      {/* TABLE (KazPAM dark card) */}
+      {/* TABLE (тёмная карточка/таблица в стиле KazPAM) */}
       <div className="overflow-hidden rounded-xl border border-[#1E2A45] shadow-lg bg-[#121A33]">
         <table className="w-full text-sm text-white">
           <thead className="bg-[#1A243F] text-gray-300">
@@ -223,23 +227,28 @@ export default function VaultRequests() {
                 >
                   <td className="px-4 py-3">{r.id}</td>
 
+                  {/* Secret + quick open */}
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
-                      <span className="text-gray-100">#{r.secret_id}</span>
-
-                      {/* ВАЖНО: это только навигация, не раскрытие секрета */}
-                      <Access permission="view_vault">
-                        <button
-                          type="button"
-                          onClick={() => openInVault(r.secret_id)}
-                          className="px-2 py-1 rounded bg-[#1A243F] border border-[#1E2A45] text-gray-200 hover:bg-[#0E1A3A] text-xs"
-                          title="Перейти в Vault к этому секрету"
-                        >
-                          Открыть в Vault
+                      <span>#{r.secret_id}</span>
+                      <button
+                        type="button"
+                        onClick={() => goToVault(r.secret_id)}
+                        className="px-2 py-1 rounded border border-[#1E2A45] bg-[#0E1A3A] hover:border-[#0052FF] text-xs text-gray-200"
+                        title="Открыть секрет в Vault"
+                      >
+                        Открыть
+                      </button>
+                       <button
+                         type="button"
+                         onClick={() => goToVault(r.secret_id, true)}
+                         className="px-2 py-1 rounded border border-[#1E2A45] bg-[#0E1A3A] hover:border-[#0052FF] text-xs text-gray-200"
+                         title="Открыть Vault и сразу показать историю"
+                         >
+                         История
                         </button>
-                      </Access>
-                    </div>
-                  </td>
+                        </div>
+                        </td>
 
                   <td className="px-4 py-3">{r.requester}</td>
                   <td className="px-4 py-3">
@@ -285,7 +294,7 @@ export default function VaultRequests() {
         </table>
       </div>
 
-      {/* Pagination (light) */}
+      {/* Pagination (светлая, ВНЕ таблицы — как Users.tsx стиль) */}
       <div className="flex justify-between items-center px-2">
         <div className="flex items-center gap-2 text-sm text-gray-800">
           <span>Показать:</span>
@@ -304,7 +313,9 @@ export default function VaultRequests() {
 
           <span className="text-gray-600 ml-2">
             Строк:{" "}
-            <span className="font-semibold text-gray-900">{currentRows.length}</span>{" "}
+            <span className="font-semibold text-gray-900">
+              {currentRows.length}
+            </span>{" "}
             из{" "}
             <span className="font-semibold text-gray-900">
               {filteredRequests.length}

@@ -32,20 +32,31 @@ const PLATFORM_OPTIONS: { value: PlatformCode; label: string }[] = [
 
 function maskPreview(value: string) {
   if (!value) return "";
-  // лёгкая маска, чтобы не светить секрет полностью
   if (value.length <= 4) return "••••";
   return `${value.slice(0, 2)}••••••${value.slice(-2)}`;
 }
 
-export default function CreateSecretModal({ open, onClose, onCreate }: any) {
-  if (!open) return null;
+type CreateSecretPayload = {
+  system: string;
+  login: string;
+  type: TypeCode;
+  platform: PlatformCode;
+  value: string;
+};
 
+type Props = {
+  open: boolean;
+  onClose: () => void;
+  onCreate: (payload: CreateSecretPayload) => void;
+};
+
+export default function CreateSecretModal({ open, onClose, onCreate }: Props) {
+  // ✅ Hooks always run (не условно)
   const [system, setSystem] = useState("");
   const [login, setLogin] = useState("");
   const [type, setType] = useState<TypeCode>("password");
   const [platform, setPlatform] = useState<PlatformCode>("windows");
   const [value, setValue] = useState("");
-
   const [error, setError] = useState<string | null>(null);
 
   const typeLabel = useMemo(
@@ -54,15 +65,15 @@ export default function CreateSecretModal({ open, onClose, onCreate }: any) {
   );
 
   useEffect(() => {
-    // при открытии — чистый стейт (без сюрпризов при повторном открытии)
-    if (open) {
-      setError(null);
-      setSystem("");
-      setLogin("");
-      setType("password");
-      setPlatform("windows");
-      setValue("");
-    }
+    // при открытии — чистый стейт
+    if (!open) return;
+
+    setError(null);
+    setSystem("");
+    setLogin("");
+    setType("password");
+    setPlatform("windows");
+    setValue("");
   }, [open]);
 
   const handleSubmit = () => {
@@ -74,25 +85,25 @@ export default function CreateSecretModal({ open, onClose, onCreate }: any) {
       return;
     }
 
-    // Отдаём строго backend-коды + value
     onCreate({
       system: s,
       login: l,
-      type, // password / ssh_key / ...
-      platform, // windows / linux / ...
+      type,
+      platform,
       value,
     });
 
-    // Закрываем модалку снаружи (как и было)
     onClose();
   };
+
+  // ✅ Render gating AFTER hooks
+  if (!open) return null;
 
   return (
     <div
       className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50"
       onMouseDown={(e) => {
-        // закрытие по клику на фон — best-effort, не ломает UX
-        if (e.target === e.currentTarget) onClose?.();
+        if (e.target === e.currentTarget) onClose();
       }}
     >
       <div className="bg-white rounded-xl p-6 w-[460px] shadow-xl">
@@ -152,7 +163,6 @@ export default function CreateSecretModal({ open, onClose, onCreate }: any) {
             ))}
           </select>
 
-          {/* VALUE */}
           <div className="flex flex-col gap-1">
             <input
               className="border p-2 rounded text-black"
@@ -174,7 +184,8 @@ export default function CreateSecretModal({ open, onClose, onCreate }: any) {
               }}
             />
             <div className="text-xs text-gray-500">
-              Предпросмотр: <span className="font-mono">{maskPreview(value)}</span>{" "}
+              Предпросмотр:{" "}
+              <span className="font-mono">{maskPreview(value)}</span>{" "}
               <span className="text-gray-400">({typeLabel})</span>
             </div>
           </div>

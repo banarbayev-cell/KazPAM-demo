@@ -381,7 +381,7 @@ export default function Vault() {
         login: newData.login,
         type: newData.type,
         platform: newData.platform,
-        // value: newData.value, // включи, если backend принимает value
+        value: newData.value,
       });
 
       toast.success("Секрет создан");

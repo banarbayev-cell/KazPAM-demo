@@ -14,6 +14,8 @@ import { useAuth } from "@/store/auth";
 import { revealSecretApproved } from "@/api/vaultReveal";
 import SecureRevealModal from "@/components/modals/SecureRevealModal";
 
+import { useNavigate } from "react-router-dom";
+
 /* ============================================================
    Types
 ============================================================ */
@@ -183,6 +185,8 @@ export default function Vault() {
   const [revealValue, setRevealValue] = useState("");
   const [revealTitle, setRevealTitle] = useState("");
   const [revealSubtitle, setRevealSubtitle] = useState<string | undefined>(undefined);
+  
+  const navigate = useNavigate();
 
   /* ============================================================
      URL focus (усиление, без влияния на обычный сценарий)
@@ -397,6 +401,45 @@ export default function Vault() {
       setLoadingList(false);
     }
   };
+
+  const handleInvestigate = () => {
+  if (!historySecret) return;
+
+  navigate("/soc", {
+    state: {
+      focus: {
+        kind: "vault_secret",
+        secretId: historySecret.id,
+        system: historySecret.system,
+        login: historySecret.login,
+        type: historySecret.type,
+      },
+    },
+  });
+}; 
+
+  const handleRestrict = async () => {
+  if (!historySecret) return;
+
+  try {
+    await api.post("/incidents/", {
+      title: "Vault: Ограничение доступа",
+      category: "vault",
+      severity: "medium",
+      details: JSON.stringify({
+        secret_id: historySecret.id,
+        system: historySecret.system,
+        login: historySecret.login,
+        type: historySecret.type,
+        reason: "Ручное ограничение из Vault",
+      }),
+    });
+
+    toast.success("Инцидент создан. Доступ будет ограничен политиками SOC.");
+  } catch (e: any) {
+    toast.error(e?.message || "Ошибка при создании инцидента");
+  }
+};
 
   /* ============================================================
      UI
@@ -661,8 +704,8 @@ export default function Vault() {
         updated={historySecret?.updated}
         type={historySecret?.type}
         history={historyItems}
-        onInvestigate={() => console.log("Investigate")}
-        onRestrict={() => console.log("Restrict")}
+        onInvestigate={handleInvestigate}
+        onRestrict={handleRestrict}
       />
 
       {/* Create secret */}

@@ -248,7 +248,7 @@ export default function VaultRequests() {
                          История
                         </button>
                         </div>
-                        </td>
+</td>
 
                   <td className="px-4 py-3">{r.requester}</td>
                   <td className="px-4 py-3">

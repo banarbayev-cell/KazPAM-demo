@@ -282,29 +282,16 @@ export default function InvestigationModal({
             <button
               disabled={!comment.trim() || isResolved}
               onClick={async () => {
-                if (!incident) return;
+  if (!incident || !incident.backendId) return;
 
-                try {
-                  if (incident.backendId) {
-                    await updateIncidentStatus(incident.backendId, "RESOLVED");
-                  }
+  try {
+    await updateIncidentStatus(incident.backendId, "RESOLVED");
+    onClose(); // UI просто закрывается
+  } catch (e) {
+    console.error("Failed to close incident", e);
+  }
+}}
 
-                  incident.status = "RESOLVED";
-                  incident.closedAt = new Date().toISOString();
-                  incident.comments = [
-                    ...(incident.comments || []),
-                    {
-                      author: "soc",
-                      message: comment,
-                      timestamp: new Date().toISOString(),
-                    },
-                  ];
-
-                  onClose();
-                } catch (e) {
-                  console.error("Failed to close incident", e);
-                }
-              }}
               className="bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white px-5 py-2 rounded-lg font-semibold"
             >
               Закрыть инцидент

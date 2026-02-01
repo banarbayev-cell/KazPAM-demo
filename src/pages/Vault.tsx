@@ -27,6 +27,7 @@ interface SecretRecord {
   updated: string; // "DD.MM.YYYY"
   type: string;
   platform: string;
+  restricted: boolean;   // ← ВАЖНО
   icon: JSX.Element;
 }
 
@@ -36,6 +37,7 @@ type VaultSecretDTO = {
   login: string;
   type: string;
   platform: string;
+  restricted?: boolean; // ← ВАЖНО
   updated?: string; // "DD.MM.YYYY" (если backend отдаёт так)
   updated_at?: string; // ISO (если backend отдаёт так)
 };
@@ -105,10 +107,12 @@ function mapDtoToRecord(dto: VaultSecretDTO): SecretRecord {
     login: dto.login,
     type: dto.type,
     platform: dto.platform,
+    restricted: Boolean(dto.restricted), // ← КЛЮЧЕВО
     updated: normalizeUpdated(dto),
     icon: getPlatformIcon(dto.platform),
   };
 }
+
 
 /* ============================================================
    API calls (production)

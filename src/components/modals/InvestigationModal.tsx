@@ -13,6 +13,8 @@ import { updateIncidentStatus } from "../../api/incidents";
 
 import PlaybookCard from "../soc/PlaybookCard";
 import { detectPlaybookFromTimeline } from "../../soc/playbooks/detectPlaybook";
+import { useNavigate } from "react-router-dom";
+
 
 interface InvestigationModalProps {
   isOpen: boolean;
@@ -52,6 +54,7 @@ export default function InvestigationModal({
     useState<null | "block" | "isolate">(null);
 
   const [comment, setComment] = useState("");
+  const navigate = useNavigate();
 
   const isResolved = incident?.status === "RESOLVED";
   const hasBlockedUser =
@@ -169,15 +172,23 @@ export default function InvestigationModal({
               </div>
 
               <div className="text-xs text-gray-400 mt-1">
-                Created: {new Date(incident.createdAt).toLocaleString()}
-              </div>
+  Created:{" "}
+  {incident.createdAt
+    ? new Date(incident.createdAt).toLocaleString()
+    : "—"}
+</div>
 
-              {incident.closedAt && (
-                <div className="text-xs text-gray-500 mt-1">
-                  Closed: {new Date(incident.closedAt).toLocaleString()}
-                </div>
-              )}
-            </div>
+
+              {/* ✅ ВОТ ОНА */}
+        {incident.backendId && (
+          <button
+            onClick={() => navigate(`/incidents/${incident.backendId}`)}
+            className="px-3 py-1 text-xs rounded bg-[#0052FF] text-white hover:opacity-90"
+          >
+            Открыть инцидент
+          </button>
+        )}
+      </div>
           )}
 
           {/* PLAYBOOK */}

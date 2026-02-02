@@ -13,6 +13,7 @@ import Permissions from "../pages/Permissions";
 import SocDashboard from "../pages/SocDashboard";
 import SettingsPage from "../pages/Settings";
 import Access from "../components/Access";
+import IncidentDetails from "../pages/IncidentDetails";
 
 const router = createBrowserRouter([
   { path: "/login", element: <Login /> },
@@ -29,6 +30,7 @@ const router = createBrowserRouter([
           { path: "/sessions", element: <Sessions /> },
           { path: "/audit", element: <Audit /> },
           { path: "/permissions", element: <Permissions /> },
+          { path: "/incidents/:id", element: <IncidentDetails /> },
 
           // ✅ SETTINGS С RBAC
           {

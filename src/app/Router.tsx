@@ -12,8 +12,11 @@ import Audit from "../pages/Audit";
 import Permissions from "../pages/Permissions";
 import SocDashboard from "../pages/SocDashboard";
 import SettingsPage from "../pages/Settings";
-import Access from "../components/Access";
 import IncidentDetails from "../pages/IncidentDetails";
+import Access from "../components/Access";
+
+import Recordings from "../pages/Recordings";
+import SessionReplay from "../pages/SessionReplay";
 
 const router = createBrowserRouter([
   { path: "/login", element: <Login /> },
@@ -31,6 +34,10 @@ const router = createBrowserRouter([
           { path: "/audit", element: <Audit /> },
           { path: "/permissions", element: <Permissions /> },
           { path: "/incidents/:id", element: <IncidentDetails /> },
+
+          // ✅ RECORDINGS
+          { path: "/recordings", element: <Recordings /> },
+          { path: "/recordings/:id", element: <SessionReplay /> },
 
           // ✅ SETTINGS С RBAC
           {

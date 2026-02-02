@@ -344,24 +344,38 @@ function AuditDetailPanel({
         </div>
 
         <div className="mt-4 space-y-2">
-          {record.details?.role_id && (
-            <button
-              onClick={() => navigate(`/roles?highlight=${record.details.role_id}`)}
-              className="w-full px-4 py-2 bg-[#0E1A3A] hover:bg-[#1A243F] rounded"
-            >
-              Открыть роль
-            </button>
-          )}
+  {record.details?.role_id && (
+    <button
+      onClick={() => navigate(`/roles?highlight=${record.details.role_id}`)}
+      className="w-full px-4 py-2 bg-[#0E1A3A] hover:bg-[#1A243F] rounded"
+    >
+      Открыть роль
+    </button>
+  )}
 
-          {record.details?.session_id && (
-            <button
-              onClick={() => navigate(`/sessions?session_id=${record.details.session_id}`)}
-              className="w-full px-4 py-2 bg-[#0E1A3A] hover:bg-[#1A243F] rounded"
-            >
-              Открыть сессию
-            </button>
-          )}
-        </div>
+  {record.details?.session_id && (
+    <button
+      onClick={() =>
+        navigate(`/sessions?session_id=${record.details.session_id}`)
+      }
+      className="w-full px-4 py-2 bg-[#0E1A3A] hover:bg-[#1A243F] rounded"
+    >
+      Открыть сессию
+    </button>
+  )}
+
+  {record.details?.recording_id && (
+    <button
+      onClick={() =>
+        navigate(`/recordings/${record.details.recording_id}`)
+      }
+      className="w-full px-4 py-2 bg-[#0E1A3A] hover:bg-[#1A243F] rounded"
+    >
+      Воспроизвести запись сессии
+    </button>
+  )}
+</div>
+
 
         <button
           onClick={onClose}

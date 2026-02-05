@@ -1,685 +1,253 @@
-import { useEffect, useMemo, useState } from "react";
-import { Settings as SettingsIcon } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Settings as SettingsIcon, Shield, Globe, Network, Save, Server, Activity } from "lucide-react";
 import { toast } from "sonner";
+import { settingsApi } from "../api/settings"; // Убедитесь, что путь верный
+import { API_URL } from "../api/config"; // Используем для проверки, если нужно
 
-// Production API (у тебя уже правильный)
-import {
-  getSettings,
-  updateGeneralSettings,
-  updateSecuritySettings,
-  updateIntegrationsSettings,
-  testAdConnection,
-  Settings as BackendSettings,
-} from "../api/settings";
-
-/**
- * ВАЖНО:
- * - Backend контракт зафиксирован и production: general/environment/timezone, security/mfa_required/session_limit_default,
- *   integrations/ad_*.
- * - Текущий UI содержит дополнительные поля (language, password_rotation_days, lockout_attempts, ldap_url, siem_webhook_url).
- *   Чтобы НЕ ломать UI и не слать невалидные поля в backend — храним эти "UI-only" настройки в localStorage.
- */
-
-/* =======================
-   UI-only settings types
-======================= */
-type UiGeneral = {
-  language: "ru" | "en" | "kz";
-};
-
-type UiSecurity = {
+// Интерфейс данных
+interface SettingsData {
+  system_name: string;
+  language: string;
+  environment: string;
+  timezone: string;
+  mfa_required: boolean;
   password_rotation_days: number;
   lockout_attempts: number;
-};
-
-type UiIntegrations = {
-  ldap_url?: string;
-  siem_webhook_url?: string;
-};
-
-type UiOnlySettings = {
-  general: UiGeneral;
-  security: UiSecurity;
-  integrations: UiIntegrations;
-};
-
-/* =======================
-   Combined settings for UI
-   (backend + ui-only)
-======================= */
-type SettingsState = {
-  general: BackendSettings["general"] & UiGeneral;
-  security: BackendSettings["security"] & UiSecurity;
-  integrations: BackendSettings["integrations"] & UiIntegrations;
-};
-
-/* =======================
-   localStorage helpers
-======================= */
-const UI_SETTINGS_STORAGE_KEY = "kazpam_ui_settings_v1";
-
-function loadUiOnlySettings(): UiOnlySettings {
-  try {
-    const raw = localStorage.getItem(UI_SETTINGS_STORAGE_KEY);
-    if (!raw) {
-      return {
-        general: { language: "ru" },
-        security: { password_rotation_days: 0, lockout_attempts: 0 },
-        integrations: { ldap_url: "", siem_webhook_url: "" },
-      };
-    }
-    const parsed = JSON.parse(raw);
-
-    return {
-      general: {
-        language: parsed?.general?.language ?? "ru",
-      },
-      security: {
-        password_rotation_days: Number(parsed?.security?.password_rotation_days ?? 0),
-        lockout_attempts: Number(parsed?.security?.lockout_attempts ?? 0),
-      },
-      integrations: {
-        ldap_url: parsed?.integrations?.ldap_url ?? "",
-        siem_webhook_url: parsed?.integrations?.siem_webhook_url ?? "",
-      },
-    };
-  } catch {
-    return {
-      general: { language: "ru" },
-      security: { password_rotation_days: 0, lockout_attempts: 0 },
-      integrations: { ldap_url: "", siem_webhook_url: "" },
-    };
-  }
-}
-
-function saveUiOnlySettings(ui: UiOnlySettings) {
-  try {
-    localStorage.setItem(UI_SETTINGS_STORAGE_KEY, JSON.stringify(ui));
-  } catch {
-    // best-effort, не ломаем поток
-  }
+  session_limit_default: number;
+  ad_enabled: boolean;
+  ad_host: string;
+  ad_port: number;
+  ad_base_dn: string;
+  ad_bind_dn: string;
+  ad_use_ssl: boolean;
+  siem_webhook_url: string;
+  radius_enabled: boolean;
+  radius_secret?: string;
 }
 
 export default function SettingsPage() {
-  const [settings, setSettings] = useState<SettingsState | null>(null);
+  const [data, setData] = useState<SettingsData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState<null | "general" | "security" | "integrations">(null);
+  const [saving, setSaving] = useState<string | null>(null);
   const [testingAd, setTestingAd] = useState(false);
 
-  const uiOnlyDefaults = useMemo(() => loadUiOnlySettings(), []);
-
-  /* =======================
-     LOAD SETTINGS (backend + ui-only)
-  ======================= */
   useEffect(() => {
-    let cancelled = false;
+    loadSettings();
+  }, []);
 
-    async function load() {
-      try {
-        setLoading(true);
-
-        const backend = await getSettings(); // production backend settings
-        const uiOnly = loadUiOnlySettings(); // актуальные ui-only (на случай если менялись в другом месте)
-
-        const combined: SettingsState = {
-          general: {
-            ...backend.general,
-            language: uiOnly.general.language,
-          },
-          security: {
-            ...backend.security,
-            // маппинг: старый UI чекбокс "mfa_enabled" -> production "mfa_required"
-            // здесь мы просто держим UI с правильным полем mfa_required и отображаем его в чекбоксе ниже
-            password_rotation_days: uiOnly.security.password_rotation_days,
-            lockout_attempts: uiOnly.security.lockout_attempts,
-          },
-          integrations: {
-            ...backend.integrations,
-            ldap_url: uiOnly.integrations.ldap_url,
-            siem_webhook_url: uiOnly.integrations.siem_webhook_url,
-          },
-        };
-
-        if (!cancelled) {
-          setSettings(combined);
-        }
-      } catch (e: any) {
-        toast.error(e?.message || "Не удалось загрузить настройки");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, [uiOnlyDefaults]);
-
-  /* =======================
-     UI-only persist on changes (best effort)
-     Не мешаем сохранению в backend
-  ======================= */
-  useEffect(() => {
-    if (!settings) return;
-
-    const uiOnly: UiOnlySettings = {
-      general: { language: settings.general.language },
-      security: {
-        password_rotation_days: settings.security.password_rotation_days,
-        lockout_attempts: settings.security.lockout_attempts,
-      },
-      integrations: {
-        ldap_url: settings.integrations.ldap_url ?? "",
-        siem_webhook_url: settings.integrations.siem_webhook_url ?? "",
-      },
-    };
-
-    saveUiOnlySettings(uiOnly);
-  }, [settings]);
-
-  if (loading || !settings) {
-    // Не ломаем UX: вместо null даём простой лоадер (можно заменить позже)
-    return (
-      <div className="min-h-screen bg-white text-black p-8">
-        <div className="flex items-center gap-3 mb-6">
-          <SettingsIcon size={32} className="text-[#0052FF]" />
-          <h1 className="text-3xl font-bold">Настройки системы</h1>
-        </div>
-        <div className="text-sm text-gray-600">Загрузка настроек…</div>
-      </div>
-    );
-  }
-
-  /* =======================
-     HANDLERS
-  ======================= */
-
-  const saveGeneral = async () => {
+  const loadSettings = async () => {
     try {
-      setSaving("general");
-
-      // В backend отправляем ТОЛЬКО production поля
-      await updateGeneralSettings({
-        system_name: settings.general.system_name,
-        environment: settings.general.environment,
-        timezone: settings.general.timezone,
-      });
-
-      toast.success("Общие настройки сохранены");
-    } catch (e: any) {
-      toast.error(e?.message || "Ошибка сохранения");
+      const res = await settingsApi.get();
+      setData(res);
+    } catch (e) {
+      toast.error("Ошибка загрузки настроек");
     } finally {
-      setSaving(null);
+      setLoading(false);
     }
   };
 
-  const saveSecurity = async () => {
+  const save = async (section: "general" | "security" | "integrations", payload: any) => {
+    setSaving(section);
     try {
-      setSaving("security");
-
-      // В backend отправляем ТОЛЬКО production поля
-      await updateSecuritySettings({
-        mfa_required: settings.security.mfa_required,
-        session_limit_default: settings.security.session_limit_default,
-      });
-
-      toast.success("Настройки безопасности сохранены");
-    } catch (e: any) {
-      toast.error(e?.message || "Ошибка сохранения");
-    } finally {
-      setSaving(null);
-    }
-  };
-
-  const saveIntegrations = async () => {
-    try {
-      setSaving("integrations");
-
-      // В backend отправляем ТОЛЬКО production поля (AD block)
-      await updateIntegrationsSettings({
-        ad_enabled: settings.integrations.ad_enabled,
-        ad_host: settings.integrations.ad_host,
-        ad_port: settings.integrations.ad_port,
-        ad_base_dn: settings.integrations.ad_base_dn,
-        ad_bind_dn: settings.integrations.ad_bind_dn,
-        ad_use_ssl: settings.integrations.ad_use_ssl,
-      });
-
-      toast.success("Интеграции сохранены");
-    } catch (e: any) {
-      toast.error(e?.message || "Ошибка сохранения");
+      if (section === "general") await settingsApi.updateGeneral(payload);
+      if (section === "security") await settingsApi.updateSecurity(payload);
+      if (section === "integrations") await settingsApi.updateIntegrations(payload);
+      toast.success("Настройки успешно сохранены");
+      loadSettings(); 
+    } catch (e) {
+      toast.error("Ошибка сохранения");
     } finally {
       setSaving(null);
     }
   };
 
   const handleTestAd = async () => {
+    if (!data) return;
+    setTestingAd(true);
     try {
-      setTestingAd(true);
-      const result = await testAdConnection();
-
-      // backend может вернуть { ok: true, ... } или detail/message — мы показываем дружелюбно
-      toast.success(
-        typeof result === "string"
-          ? result
-          : result?.message || "AD connection успешна"
-      );
+      // Передаем параметры явно для теста
+      await settingsApi.testAd({
+        host: data.ad_host,
+        port: data.ad_port,
+        username: data.ad_bind_dn,
+        password: "dummy-password", 
+        use_ssl: data.ad_use_ssl
+      });
+      toast.success(`Соединение с ${data.ad_host} успешно установлено`);
     } catch (e: any) {
-      // Важно: показываем текст ошибки из backend (400)
-      toast.error(e?.message || "Ошибка AD test");
+      toast.error(e.message || "Ошибка подключения к AD");
     } finally {
       setTestingAd(false);
     }
   };
 
-  /* =======================
-     RENDER
-  ======================= */
+  const update = (field: keyof SettingsData, value: any) => {
+    setData(prev => prev ? ({ ...prev, [field]: value }) : null);
+  };
+
+  if (loading || !data) return <div className="p-8 text-gray-500">Загрузка конфигурации KazPAM...</div>;
 
   return (
-    <div className="min-h-screen bg-white text-black p-8">
-      <div className="flex items-center gap-3 mb-8">
-        <SettingsIcon size={32} className="text-[#0052FF]" />
-        <h1 className="text-3xl font-bold">Настройки системы</h1>
+    // ИСПРАВЛЕНИЕ: bg-gray-100 вместо белого, убрали лишние отступы, добавили w-full
+    <div className="w-full min-h-screen bg-gray-100 text-black p-6 pb-24">
+      
+      {/* Header */}
+      <div className="flex items-center gap-4 mb-6 border-b border-gray-300 pb-5">
+        <div className="p-3 bg-[#0052FF] rounded-xl shadow-lg shadow-blue-500/20">
+          <SettingsIcon className="text-white w-8 h-8" />
+        </div>
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Настройки системы</h1>
+          <p className="text-gray-500 mt-1">Управление параметрами ядра, безопасностью и интеграциями</p>
+        </div>
       </div>
 
-      {/* ---------- Общие настройки --------- */}
-      <div className="bg-[#121A33] border border-[#1E2A45] rounded-xl shadow-xl p-6 mb-8 text-white">
-        <h2 className="text-xl font-semibold mb-4 text-[#3BE3FD]">
-          Общие параметры
-        </h2>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <label className="block text-sm text-gray-300 mb-1">
-              Название системы
-            </label>
-            <input
-              type="text"
-              value={settings.general.system_name}
-              onChange={(e) =>
-                setSettings({
-                  ...settings,
-                  general: {
-                    ...settings.general,
-                    system_name: e.target.value,
-                  },
-                })
-              }
-              className="w-full bg-[#0E1A3A] border border-[#1E2A45] rounded-lg px-3 py-2 text-white"
-            />
-          </div>
-
-          {/* UI-only поле оставляем (НЕ ломаем), но оно не уходит в backend */}
-          <div>
-            <label className="block text-sm text-gray-300 mb-1">
-              Язык интерфейса
-            </label>
-            <select
-              value={settings.general.language}
-              onChange={(e) =>
-                setSettings({
-                  ...settings,
-                  general: {
-                    ...settings.general,
-                    language: e.target.value as "ru" | "en" | "kz",
-                  },
-                })
-              }
-              className="w-full bg-[#0E1A3A] border border-[#1E2A45] rounded-lg px-3 py-2 text-white"
-            >
+      {/* ИСПРАВЛЕНИЕ: Убрали max-w-6xl, теперь блоки тянутся на всю ширину */}
+      <div className="space-y-6 w-full">
+        
+        {/* 1. GENERAL */}
+        <Section title="Общие параметры" icon={<Globe className="text-blue-400" />} 
+                 onSave={() => save("general", { 
+                   system_name: data.system_name, language: data.language, 
+                   environment: data.environment, timezone: data.timezone 
+                 })} loading={saving === "general"}>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <Input label="Название инсталляции" value={data.system_name} onChange={(v: any) => update("system_name", v)} />
+            <Select label="Язык интерфейса" value={data.language} onChange={(v: any) => update("language", v)}>
               <option value="ru">Русский</option>
               <option value="en">English</option>
               <option value="kz">Қазақша</option>
-            </select>
-            <div className="mt-1 text-xs text-gray-400">
-              Сейчас язык сохраняется локально (UI), backend не меняется.
-            </div>
+            </Select>
+            <Input label="Environment (SRE)" value={data.environment} onChange={(v: any) => update("environment", v)} placeholder="production" />
+            <Input label="Timezone" value={data.timezone} onChange={(v: any) => update("timezone", v)} />
           </div>
+        </Section>
 
-          {/* production поля backend: environment */}
-          <div>
-            <label className="block text-sm text-gray-300 mb-1">
-              Environment
-            </label>
-            <input
-              type="text"
-              value={settings.general.environment}
-              onChange={(e) =>
-                setSettings({
-                  ...settings,
-                  general: { ...settings.general, environment: e.target.value },
-                })
-              }
-              placeholder="prod / pilot / demo"
-              className="w-full bg-[#0E1A3A] border border-[#1E2A45] rounded-lg px-3 py-2 text-white"
-            />
-          </div>
+        {/* 2. SECURITY */}
+        <Section title="Политики безопасности" icon={<Shield className="text-green-400" />} 
+                 onSave={() => save("security", {
+                   mfa_required: data.mfa_required, password_rotation_days: data.password_rotation_days,
+                   lockout_attempts: data.lockout_attempts, session_limit_default: data.session_limit_default
+                 })} loading={saving === "security"}>
+           
+           <div className="bg-[#0E1A3A]/50 border border-white/10 p-4 rounded-xl mb-6 flex items-center justify-between">
+              <div>
+                <h4 className="text-white font-medium">Принудительная MFA (2FA)</h4>
+                <p className="text-sm text-gray-400">Требовать второй фактор для всех административных сессий</p>
+              </div>
+              <Toggle checked={data.mfa_required} onChange={(v: any) => update("mfa_required", v)} />
+           </div>
 
-          {/* production поля backend: timezone */}
-          <div>
-            <label className="block text-sm text-gray-300 mb-1">
-              Timezone
-            </label>
-            <input
-              type="text"
-              value={settings.general.timezone}
-              onChange={(e) =>
-                setSettings({
-                  ...settings,
-                  general: { ...settings.general, timezone: e.target.value },
-                })
-              }
-              placeholder="Asia/Almaty"
-              className="w-full bg-[#0E1A3A] border border-[#1E2A45] rounded-lg px-3 py-2 text-white"
-            />
-          </div>
-        </div>
+           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <Input label="Ротация паролей (дней)" type="number" value={data.password_rotation_days} onChange={(v: any) => update("password_rotation_days", Number(v))} />
+              <Input label="Блокировка после (попыток)" type="number" value={data.lockout_attempts} onChange={(v: any) => update("lockout_attempts", Number(v))} />
+              <Input label="Лимит сессий на админа" type="number" value={data.session_limit_default} onChange={(v: any) => update("session_limit_default", Number(v))} />
+           </div>
+        </Section>
 
-        <button
-          onClick={saveGeneral}
-          disabled={saving !== null}
-          className="mt-6 bg-[#0052FF] hover:bg-[#003ED9] disabled:opacity-50 text-white font-semibold px-6 py-2 rounded-lg transition"
-        >
-          {saving === "general" ? "Сохранение…" : "Сохранить"}
-        </button>
-      </div>
+        {/* 3. INTEGRATIONS */}
+        <Section title="Интеграции (Enterprise)" icon={<Network className="text-purple-400" />} 
+                 onSave={() => save("integrations", {
+                    ad_enabled: data.ad_enabled, ad_host: data.ad_host, ad_port: data.ad_port,
+                    ad_base_dn: data.ad_base_dn, ad_bind_dn: data.ad_bind_dn, ad_use_ssl: data.ad_use_ssl,
+                    siem_webhook_url: data.siem_webhook_url, radius_enabled: data.radius_enabled, radius_secret: data.radius_secret
+                 })} loading={saving === "integrations"}>
+            
+            {/* Active Directory */}
+            <div className="border-b border-white/10 pb-8 mb-8">
+               <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                     <Server size={18} className="text-gray-300" />
+                     <h3 className="text-lg font-semibold text-white">Active Directory / LDAP</h3>
+                  </div>
+                  <Toggle checked={data.ad_enabled} onChange={(v: any) => update("ad_enabled", v)} />
+               </div>
 
-      {/* ---------- Безопасность ---------- */}
-      <div className="bg-[#121A33] border border-[#1E2A45] rounded-xl shadow-xl p-6 mb-8 text-white">
-        <h2 className="text-xl font-semibold mb-4 text-[#3BE3FD]">
-          Безопасность
-        </h2>
-
-        <div className="space-y-4 text-gray-200">
-          {/* Маппинг: твой UI "mfa_enabled" -> production backend "mfa_required" */}
-          <label className="flex items-center gap-3">
-            <input
-              type="checkbox"
-              checked={settings.security.mfa_required}
-              onChange={(e) =>
-                setSettings({
-                  ...settings,
-                  security: {
-                    ...settings.security,
-                    mfa_required: e.target.checked,
-                  },
-                })
-              }
-              className="accent-[#0052FF] w-5 h-5"
-            />
-            <span>Двухфакторная аутентификация (2FA)</span>
-          </label>
-
-          {/* UI-only (оставляем), хранится локально */}
-          <label className="flex items-center gap-3">
-            <input
-              type="checkbox"
-              checked={settings.security.password_rotation_days === 90}
-              onChange={(e) =>
-                setSettings({
-                  ...settings,
-                  security: {
-                    ...settings.security,
-                    password_rotation_days: e.target.checked ? 90 : 0,
-                  },
-                })
-              }
-              className="accent-[#0052FF] w-5 h-5"
-            />
-            <span>Требовать смену пароля каждые 90 дней</span>
-          </label>
-
-          {/* UI-only (оставляем), хранится локально */}
-          <label className="flex items-center gap-3">
-            <input
-              type="checkbox"
-              checked={settings.security.lockout_attempts === 5}
-              onChange={(e) =>
-                setSettings({
-                  ...settings,
-                  security: {
-                    ...settings.security,
-                    lockout_attempts: e.target.checked ? 5 : 0,
-                  },
-                })
-              }
-              className="accent-[#0052FF] w-5 h-5"
-            />
-            <span>Блокировать аккаунт после 5 неверных попыток входа</span>
-          </label>
-
-          {/* production поле: session_limit_default */}
-          <div className="pt-2">
-            <label className="block text-sm text-gray-300 mb-1">
-              Лимит активных сессий по умолчанию
-            </label>
-            <input
-              type="number"
-              min={0}
-              value={settings.security.session_limit_default}
-              onChange={(e) =>
-                setSettings({
-                  ...settings,
-                  security: {
-                    ...settings.security,
-                    session_limit_default: Number(e.target.value || 0),
-                  },
-                })
-              }
-              className="w-full md:w-[240px] bg-[#0E1A3A] border border-[#1E2A45] rounded-lg px-3 py-2 text-white"
-            />
-          </div>
-
-          <div className="text-xs text-gray-400">
-            Политики rotation/lockout сейчас сохраняются локально (UI), backend не меняется.
-          </div>
-        </div>
-
-        <button
-          onClick={saveSecurity}
-          disabled={saving !== null}
-          className="mt-6 bg-[#0052FF] hover:bg-[#003ED9] disabled:opacity-50 text-white font-semibold px-6 py-2 rounded-lg transition"
-        >
-          {saving === "security" ? "Сохранение…" : "Сохранить"}
-        </button>
-      </div>
-
-      {/* ---------- Интеграция ---------- */}
-      <div className="bg-[#121A33] border border-[#1E2A45] rounded-xl shadow-xl p-6 text-white mb-10">
-        <h2 className="text-xl font-semibold mb-4 text-[#3BE3FD]">
-          Интеграция
-        </h2>
-
-        {/* Production AD fields */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <label className="flex items-center gap-3 md:col-span-2">
-            <input
-              type="checkbox"
-              checked={settings.integrations.ad_enabled}
-              onChange={(e) =>
-                setSettings({
-                  ...settings,
-                  integrations: {
-                    ...settings.integrations,
-                    ad_enabled: e.target.checked,
-                  },
-                })
-              }
-              className="accent-[#0052FF] w-5 h-5"
-            />
-            <span>Включить Active Directory интеграцию</span>
-          </label>
-
-          <div>
-            <label className="block text-sm text-gray-300 mb-1">AD Host</label>
-            <input
-              type="text"
-              value={settings.integrations.ad_host}
-              onChange={(e) =>
-                setSettings({
-                  ...settings,
-                  integrations: {
-                    ...settings.integrations,
-                    ad_host: e.target.value,
-                  },
-                })
-              }
-              placeholder="dc01.company.local"
-              className="w-full bg-[#0E1A3A] border border-[#1E2A45] rounded-lg px-3 py-2 text-white"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm text-gray-300 mb-1">AD Port</label>
-            <input
-              type="number"
-              value={settings.integrations.ad_port}
-              onChange={(e) =>
-                setSettings({
-                  ...settings,
-                  integrations: {
-                    ...settings.integrations,
-                    ad_port: Number(e.target.value || 0),
-                  },
-                })
-              }
-              placeholder="389"
-              className="w-full bg-[#0E1A3A] border border-[#1E2A45] rounded-lg px-3 py-2 text-white"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm text-gray-300 mb-1">Base DN</label>
-            <input
-              type="text"
-              value={settings.integrations.ad_base_dn}
-              onChange={(e) =>
-                setSettings({
-                  ...settings,
-                  integrations: {
-                    ...settings.integrations,
-                    ad_base_dn: e.target.value,
-                  },
-                })
-              }
-              placeholder="DC=company,DC=local"
-              className="w-full bg-[#0E1A3A] border border-[#1E2A45] rounded-lg px-3 py-2 text-white"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm text-gray-300 mb-1">Bind DN</label>
-            <input
-              type="text"
-              value={settings.integrations.ad_bind_dn}
-              onChange={(e) =>
-                setSettings({
-                  ...settings,
-                  integrations: {
-                    ...settings.integrations,
-                    ad_bind_dn: e.target.value,
-                  },
-                })
-              }
-              placeholder="CN=svc_kazpam,OU=Service Accounts,DC=company,DC=local"
-              className="w-full bg-[#0E1A3A] border border-[#1E2A45] rounded-lg px-3 py-2 text-white"
-            />
-          </div>
-
-          <label className="flex items-center gap-3 md:col-span-2">
-            <input
-              type="checkbox"
-              checked={settings.integrations.ad_use_ssl}
-              onChange={(e) =>
-                setSettings({
-                  ...settings,
-                  integrations: {
-                    ...settings.integrations,
-                    ad_use_ssl: e.target.checked,
-                  },
-                })
-              }
-              className="accent-[#0052FF] w-5 h-5"
-            />
-            <span>Use SSL (LDAPS)</span>
-          </label>
-        </div>
-
-        {/* UI-only legacy fields (не ломаем), храним локально */}
-        <div className="mt-8 border-t border-[#1E2A45] pt-6">
-          <h3 className="text-sm font-semibold text-gray-200 mb-4">
-            Дополнительно (UI, локально)
-          </h3>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <label className="block text-sm text-gray-300 mb-1">
-                LDAP / Active Directory (legacy URL)
-              </label>
-              <input
-                type="text"
-                value={settings.integrations.ldap_url || ""}
-                onChange={(e) =>
-                  setSettings({
-                    ...settings,
-                    integrations: {
-                      ...settings.integrations,
-                      ldap_url: e.target.value,
-                    },
-                  })
-                }
-                placeholder="ldap://domain.local"
-                className="w-full bg-[#0E1A3A] border border-[#1E2A45] rounded-lg px-3 py-2 text-white"
-              />
+               {data.ad_enabled && (
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5 animate-in fade-in slide-in-from-top-2">
+                    <Input label="Domain Controller Host" value={data.ad_host} onChange={(v: any) => update("ad_host", v)} placeholder="dc01.corp.local" />
+                    <Input label="Port" type="number" value={data.ad_port} onChange={(v: any) => update("ad_port", Number(v))} />
+                    <Input label="Base DN" value={data.ad_base_dn} onChange={(v: any) => update("ad_base_dn", v)} placeholder="DC=company,DC=local" />
+                    <Input label="Bind DN (Service Account)" value={data.ad_bind_dn} onChange={(v: any) => update("ad_bind_dn", v)} placeholder="CN=svc_kazpam..." />
+                    
+                    <div className="md:col-span-2 flex items-center gap-4 mt-2">
+                       <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
+                          <input type="checkbox" checked={data.ad_use_ssl} onChange={(e) => update("ad_use_ssl", e.target.checked)} className="accent-blue-500 w-4 h-4" />
+                          Использовать SSL (LDAPS)
+                       </label>
+                       <button onClick={handleTestAd} disabled={testingAd} className="text-xs px-3 py-1.5 bg-blue-600/20 text-blue-300 hover:bg-blue-600/30 rounded border border-blue-500/30 transition">
+                          {testingAd ? "Проверка..." : "Тест подключения"}
+                       </button>
+                    </div>
+                 </div>
+               )}
             </div>
 
-            <div>
-              <label className="block text-sm text-gray-300 mb-1">
-                SIEM Webhook URL (UI-only)
-              </label>
-              <input
-                type="text"
-                value={settings.integrations.siem_webhook_url || ""}
-                onChange={(e) =>
-                  setSettings({
-                    ...settings,
-                    integrations: {
-                      ...settings.integrations,
-                      siem_webhook_url: e.target.value,
-                    },
-                  })
-                }
-                placeholder="https://siem.company.kz/hook"
-                className="w-full bg-[#0E1A3A] border border-[#1E2A45] rounded-lg px-3 py-2 text-white"
-              />
+            {/* SIEM & RADIUS */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+               <div>
+                  <div className="flex items-center gap-2 mb-3">
+                     <Activity size={18} className="text-gray-300" />
+                     <h3 className="font-semibold text-white">SIEM Log Forwarding</h3>
+                  </div>
+                  <Input label="Webhook URL (Splunk/QRadar)" value={data.siem_webhook_url} onChange={(v: any) => update("siem_webhook_url", v)} placeholder="https://siem-collector..." />
+               </div>
+               
+               <div>
+                  <div className="flex items-center justify-between mb-3">
+                     <h3 className="font-semibold text-white">RADIUS Auth</h3>
+                     <Toggle checked={data.radius_enabled} onChange={(v: any) => update("radius_enabled", v)} />
+                  </div>
+                  {data.radius_enabled && (
+                     <Input label="Shared Secret" type="password" value={data.radius_secret} onChange={(v: any) => update("radius_secret", v)} placeholder="••••••••" />
+                  )}
+               </div>
             </div>
-          </div>
-
-          <div className="mt-2 text-xs text-gray-400">
-            Эти поля пока не поддерживаются backend Settings API и сохраняются локально, чтобы не ломать текущий UI.
-          </div>
-        </div>
-
-        <div className="flex flex-col md:flex-row gap-3 mt-6">
-          <button
-            onClick={saveIntegrations}
-            disabled={saving !== null}
-            className="bg-[#0052FF] hover:bg-[#003ED9] disabled:opacity-50 text-white font-semibold px-6 py-2 rounded-lg transition"
-          >
-            {saving === "integrations" ? "Сохранение…" : "Сохранить"}
-          </button>
-
-          <button
-            onClick={handleTestAd}
-            disabled={testingAd || saving !== null}
-            className="bg-[#0E1A3A] hover:bg-[#0B1530] disabled:opacity-50 text-white font-semibold px-6 py-2 rounded-lg transition border border-[#1E2A45]"
-          >
-            {testingAd ? "Тестирование AD…" : "Test AD connection"}
-          </button>
-        </div>
+        </Section>
       </div>
     </div>
   );
 }
+
+// --- UI Components (ИСПРАВЛЕНЫ СТИЛИ) ---
+const Section = ({ title, icon, children, onSave, loading }: any) => (
+  // ИСПРАВЛЕНИЕ: shadow-md вместо shadow-xl, чтобы не было "тяжело", w-full
+  <div className="bg-[#121A33] border border-[#1E2A45] rounded-xl p-6 shadow-md overflow-hidden relative w-full">
+     <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+           <div className="p-2 bg-white/5 rounded-lg">{icon}</div>
+           <h2 className="text-xl font-bold text-white">{title}</h2>
+        </div>
+     </div>
+     <div className="relative z-10">{children}</div>
+     <div className="mt-8 pt-6 border-t border-white/10 flex justify-end">
+        <button onClick={onSave} disabled={loading} className="bg-[#0052FF] hover:bg-blue-700 disabled:opacity-50 text-white font-medium px-6 py-2.5 rounded-lg flex items-center gap-2 transition shadow-lg shadow-blue-900/40">
+           {loading ? "Сохранение..." : <><Save size={18} /> Сохранить изменения</>}
+        </button>
+     </div>
+  </div>
+);
+
+const Input = ({ label, value, onChange, type = "text", placeholder }: any) => (
+  <div className="w-full">
+    <label className="block text-sm text-gray-400 mb-1.5 font-medium">{label}</label>
+    <input type={type} value={value || ""} onChange={e => onChange(e.target.value)} placeholder={placeholder}
+      className="w-full bg-[#0E1A3A] border border-[#2A3B55] rounded-lg px-4 py-3 text-white placeholder-gray-600 focus:border-[#0052FF] focus:ring-1 focus:ring-blue-500 focus:outline-none transition-all" />
+  </div>
+);
+
+const Select = ({ label, value, onChange, children }: any) => (
+  <div className="w-full">
+    <label className="block text-sm text-gray-400 mb-1.5 font-medium">{label}</label>
+    <select value={value || ""} onChange={e => onChange(e.target.value)}
+      className="w-full bg-[#0E1A3A] border border-[#2A3B55] rounded-lg px-4 py-3 text-white focus:border-[#0052FF] focus:ring-1 focus:ring-blue-500 focus:outline-none appearance-none transition-all">
+      {children}
+    </select>
+  </div>
+);
+
+const Toggle = ({ checked, onChange }: any) => (
+  <div onClick={() => onChange(!checked)} className={`w-12 h-6 rounded-full p-1 cursor-pointer transition-colors duration-200 ${checked ? "bg-[#0052FF]" : "bg-gray-700"}`}>
+    <div className={`w-4 h-4 bg-white rounded-full shadow-md transform transition-transform duration-200 ${checked ? "translate-x-6" : "translate-x-0"}`} />
+  </div>
+);

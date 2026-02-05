@@ -9,8 +9,8 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-
-const API = import.meta.env.VITE_API_URL;
+// ИЗМЕНЕНИЕ: Импортируем наш настроенный конфиг, который работает и локально (через Proxy), и на сервере
+import { API_URL } from "../api/config";
 
 /* =======================
    TYPES
@@ -62,7 +62,8 @@ export default function Home() {
 
         const token = localStorage.getItem("access_token");
         if (!token) {
-          setError("Не найден токен авторизации");
+          // Если токена нет — сразу перекидываем на логин
+          navigate("/login"); 
           return;
         }
 
@@ -70,6 +71,7 @@ export default function Home() {
           Authorization: "Bearer " + token,
         };
 
+        // Используем API_URL вместо старой переменной API
         const [
           privilegedRes,
           usersRes,
@@ -77,13 +79,13 @@ export default function Home() {
           cpuRes,
           failedAlertRes,
         ] = await Promise.all([
-          fetch(`${API}/stats/stats/privileged-accounts`, { headers }).then((r) =>
+          fetch(`${API_URL}/stats/stats/privileged-accounts`, { headers }).then((r) =>
             r.json()
           ),
-          fetch(`${API}/stats/stats/users`, { headers }).then((r) => r.json()),
-          fetch(`${API}/stats/stats/sessions`, { headers }).then((r) => r.json()),
-          fetch(`${API}/stats/stats/cpu`, { headers }).then((r) => r.json()),
-          fetch(`${API}/sessions/alerts/failed`, { headers }).then((r) =>
+          fetch(`${API_URL}/stats/stats/users`, { headers }).then((r) => r.json()),
+          fetch(`${API_URL}/stats/stats/sessions`, { headers }).then((r) => r.json()),
+          fetch(`${API_URL}/stats/stats/cpu`, { headers }).then((r) => r.json()),
+          fetch(`${API_URL}/sessions/alerts/failed`, { headers }).then((r) =>
             r.json()
           ),
         ]);
@@ -106,7 +108,8 @@ export default function Home() {
         }
 
         setFailedAlert(failedAlertRes);
-      } catch {
+      } catch (err) {
+        console.error(err);
         setError("Не удалось загрузить данные дашборда");
       } finally {
         setLoading(false);
@@ -114,25 +117,39 @@ export default function Home() {
     }
 
     load();
-  }, []);
+  }, [navigate]);
 
   if (loading) {
-    return <div className="text-gray-500">Загрузка данных…</div>;
+    return (
+      <div className="flex items-center justify-center h-full text-gray-500">
+        Загрузка данных…
+      </div>
+    );
   }
 
   if (error) {
-    return <div className="text-red-600">{error}</div>;
+    return (
+      <div className="p-6 text-center">
+        <div className="text-red-500 mb-4">{error}</div>
+        <button 
+            onClick={() => window.location.reload()} 
+            className="px-4 py-2 bg-[#0052FF] text-white rounded hover:bg-blue-700"
+        >
+            Попробовать снова
+        </button>
+      </div>
+    );
   }
 
   /* =======================
-     RENDER
+      RENDER
   ======================= */
 
   return (
-    <div className="space-y-8 bg-gray-100 text-gray-900">
+    <div className="space-y-8 bg-gray-100 text-gray-900 pb-10">
 
       {/* HEADER */}
-      <div className="bg-[#121A33] border border-[#1E2A45] rounded-xl p-6">
+      <div className="bg-[#121A33] border border-[#1E2A45] rounded-xl p-6 shadow-lg">
         <h1 className="text-2xl font-bold text-white">
           Dashboard · Добро пожаловать в {" "} <span className="font-bold"> Kaz<span className="text-[#0052FF]">PAM</span>
         </span>  
@@ -150,7 +167,7 @@ export default function Home() {
       </div>
 
       {/* QUICK ACTIONS */}
-      <div className="bg-[#121A33] border border-[#1E2A45] rounded-xl p-5">
+      <div className="bg-[#121A33] border border-[#1E2A45] rounded-xl p-5 shadow-lg">
         <h2 className="text-lg font-semibold mb-4 text-white">
           Быстрые действия
         </h2>
@@ -180,7 +197,7 @@ export default function Home() {
       </div>
 
       {/* SECURITY POSTURE */}
-      <div className="bg-[#121A33] border border-[#1E2A45] rounded-xl p-5">
+      <div className="bg-[#121A33] border border-[#1E2A45] rounded-xl p-5 shadow-lg">
         <h2 className="text-lg font-semibold text-white mb-4">
           Security Posture
         </h2>
@@ -195,7 +212,7 @@ export default function Home() {
 
       {/* ALERTS */}
       {failedAlert && (
-        <div className="bg-[#121A33] border border-[#1E2A45] rounded-xl p-5">
+        <div className="bg-[#121A33] border border-[#1E2A45] rounded-xl p-5 shadow-lg">
           <h2 className="text-lg font-semibold text-white mb-3">
             Failed Sessions Alert
           </h2>
@@ -211,7 +228,7 @@ export default function Home() {
             </div>
 
             {failedAlert.alert ? (
-              <span className="px-4 py-2 rounded-full bg-red-600/20 text-red-400 font-semibold text-sm">
+              <span className="px-4 py-2 rounded-full bg-red-600/20 text-red-400 font-semibold text-sm animate-pulse">
                 ALERT
               </span>
             ) : (
@@ -228,14 +245,14 @@ export default function Home() {
       )}
 
       {/* CPU */}
-      <div className="bg-[#121A33] border border-[#1E2A45] rounded-xl p-6">
+      <div className="bg-[#121A33] border border-[#1E2A45] rounded-xl p-6 shadow-lg">
         <h2 className="text-lg font-semibold mb-4 text-white">
           CPU Load (%)
         </h2>
 
         {cpuData.length === 0 ? (
-          <div className="text-gray-400 text-sm">
-            Нет данных по CPU
+          <div className="text-gray-400 text-sm h-[260px] flex items-center justify-center">
+            Нет данных по CPU или сервер недоступен
           </div>
         ) : (
           <ResponsiveContainer width="100%" height={260}>
@@ -245,11 +262,15 @@ export default function Home() {
                 dataKey="value"
                 stroke="#3BE3FD"
                 strokeWidth={2}
+                dot={false}
               />
-              <CartesianGrid stroke="#1E2A45" />
-              <XAxis dataKey="label" stroke="#9CA3AF" />
-              <YAxis stroke="#9CA3AF" />
-              <Tooltip />
+              <CartesianGrid stroke="#1E2A45" strokeDasharray="3 3" />
+              <XAxis dataKey="label" stroke="#9CA3AF" tick={{fontSize: 12}} />
+              <YAxis stroke="#9CA3AF" tick={{fontSize: 12}} domain={[0, 100]} />
+              <Tooltip 
+                contentStyle={{ backgroundColor: '#1A243F', borderColor: '#1E2A45', color: '#fff' }}
+                itemStyle={{ color: '#3BE3FD' }}
+              />
             </LineChart>
           </ResponsiveContainer>
         )}
@@ -264,7 +285,7 @@ export default function Home() {
 
 function KpiCard({ title, value }: { title: string; value: number }) {
   return (
-    <div className="bg-[#121A33] border border-[#1E2A45] rounded-xl p-6">
+    <div className="bg-[#121A33] border border-[#1E2A45] rounded-xl p-6 shadow-lg hover:border-[#0052FF]/50 transition duration-300">
       <p className="text-gray-400 text-sm">{title}</p>
       <p className="text-4xl font-bold text-[#3BE3FD] mt-2">
         {value}
@@ -277,7 +298,7 @@ function StatusCard({ title, status }: { title: string; status: string }) {
   return (
     <div className="bg-[#1A243F] border border-[#1E2A45] rounded-lg p-4">
       <p className="text-gray-400 text-sm">{title}</p>
-      <p className="text-white font-semibold">{status}</p>
+      <p className="text-white font-semibold mt-1">{status}</p>
     </div>
   );
 }
@@ -295,11 +316,11 @@ function QuickAction({
     <button
       onClick={onClick}
       className="
-        text-left p-4 rounded-lg
+        text-left p-4 rounded-lg w-full
         bg-[#1A243F]
         border border-[#1E2A45]
-        hover:border-[#3BE3FD]
-        transition
+        hover:border-[#3BE3FD] hover:bg-[#232d4b]
+        transition duration-200
       "
     >
       <p className="font-semibold text-white">{title}</p>

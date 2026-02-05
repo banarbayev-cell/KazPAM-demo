@@ -1,99 +1,100 @@
 // src/api/settings.ts
 import { API_URL } from "./config";
 
-function getAuthHeaders() {
+/* =======================
+   TYPES
+======================= */
+
+export interface Settings {
+  system_name: string;
+  language: string;
+  environment: string;
+  timezone: string;
+
+  mfa_required: boolean;
+  password_rotation_days: number;
+  lockout_attempts: number;
+  session_limit_default: number;
+
+  ad_enabled: boolean;
+  ad_host: string;
+  ad_port: number;
+  ad_base_dn: string;
+  ad_bind_dn: string;
+  ad_use_ssl: boolean;
+
+  siem_webhook_url: string;
+  radius_enabled: boolean;
+  radius_secret?: string;
+}
+
+/* =======================
+   API CLIENT
+======================= */
+
+// Вспомогательная функция для заголовков (чтобы каждый раз не писать)
+const getHeaders = () => {
   const token = localStorage.getItem("access_token");
   return {
     "Content-Type": "application/json",
-    Authorization: token ? `Bearer ${token}` : "",
+    "Authorization": token ? `Bearer ${token}` : "",
   };
-}
+};
 
-async function handleResponse(res: Response) {
-  const text = await res.text();
-  const data = text ? JSON.parse(text) : null;
+export const settingsApi = {
+  // Получить все настройки
+  get: async (): Promise<Settings> => {
+    const res = await fetch(`${API_URL}/settings`, {
+      method: "GET",
+      headers: getHeaders(),
+    });
+    if (!res.ok) throw new Error("Не удалось загрузить настройки");
+    return res.json();
+  },
 
-  if (!res.ok) {
-    const message =
-      data?.detail ||
-      data?.message ||
-      `Request failed with status ${res.status}`;
-    throw new Error(message);
-  }
+  // Обновить общие настройки
+  updateGeneral: async (data: Partial<Settings>) => {
+    const res = await fetch(`${API_URL}/settings/general`, {
+      method: "PATCH",
+      headers: getHeaders(),
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error("Ошибка обновления общих настроек");
+    return res.json();
+  },
 
-  return data;
-}
+  // Обновить безопасность
+  updateSecurity: async (data: Partial<Settings>) => {
+    const res = await fetch(`${API_URL}/settings/security`, {
+      method: "PATCH",
+      headers: getHeaders(),
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error("Ошибка обновления безопасности");
+    return res.json();
+  },
 
-// =========================
-// Types
-// =========================
+  // Обновить интеграции
+  updateIntegrations: async (data: Partial<Settings>) => {
+    const res = await fetch(`${API_URL}/settings/integrations`, {
+      method: "PATCH",
+      headers: getHeaders(),
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error("Ошибка обновления интеграций");
+    return res.json();
+  },
 
-export interface Settings {
-  general: {
-    system_name: string;
-    environment: string;
-    timezone: string;
-  };
-
-  security: {
-    mfa_required: boolean;
-    session_limit_default: number;
-  };
-
-  integrations: {
-    ad_enabled: boolean;
-    ad_host: string;
-    ad_port: number;
-    ad_base_dn: string;
-    ad_bind_dn: string;
-    ad_use_ssl: boolean;
-  };
-}
-
-// =========================
-// API
-// =========================
-
-export async function getSettings(): Promise<Settings> {
-  const res = await fetch(`${API_URL}/settings`, {
-    headers: getAuthHeaders(),
-  });
-  return handleResponse(res);
-}
-
-export async function updateGeneralSettings(payload: Settings["general"]) {
-  const res = await fetch(`${API_URL}/settings/general`, {
-    method: "PATCH",
-    headers: getAuthHeaders(),
-    body: JSON.stringify(payload),
-  });
-  return handleResponse(res);
-}
-
-export async function updateSecuritySettings(payload: Settings["security"]) {
-  const res = await fetch(`${API_URL}/settings/security`, {
-    method: "PATCH",
-    headers: getAuthHeaders(),
-    body: JSON.stringify(payload),
-  });
-  return handleResponse(res);
-}
-
-export async function updateIntegrationsSettings(
-  payload: Settings["integrations"]
-) {
-  const res = await fetch(`${API_URL}/settings/integrations`, {
-    method: "PATCH",
-    headers: getAuthHeaders(),
-    body: JSON.stringify(payload),
-  });
-  return handleResponse(res);
-}
-
-export async function testAdConnection() {
-  const res = await fetch(`${API_URL}/settings/integrations/ad/test`, {
-    method: "POST",
-    headers: getAuthHeaders(),
-  });
-  return handleResponse(res);
-}
+  // Тест подключения к AD
+  testAd: async (data: any) => {
+    const res = await fetch(`${API_URL}/settings/integrations/ad/test`, {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify(data),
+    });
+    
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.detail || "Ошибка соединения с AD");
+    return json;
+  },
+};

@@ -17,6 +17,8 @@ import Access from "../components/Access";
 
 import Recordings from "../pages/Recordings";
 import SessionReplay from "../pages/SessionReplay";
+import Policies from "../pages/Policies";
+
 
 const router = createBrowserRouter([
   { path: "/login", element: <Login /> },
@@ -29,6 +31,7 @@ const router = createBrowserRouter([
         children: [
           { path: "/", element: <Navigate to="/dashboard" replace /> },
           { path: "/dashboard", element: <Home /> },
+          { path: "/policies", element: <Policies /> },
           { path: "/soc", element: <SocDashboard /> },
           { path: "/sessions", element: <Sessions /> },
           { path: "/audit", element: <Audit /> },

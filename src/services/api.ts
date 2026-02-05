@@ -52,9 +52,10 @@ export async function apiFetch(
   }
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
-    headers,
-  });
+  ...options,
+  headers,
+});
+
 
   // === AUTH ERRORS ===
   if (response.status === 401) {

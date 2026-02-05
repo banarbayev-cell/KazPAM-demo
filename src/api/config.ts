@@ -1,3 +1,3 @@
-// src/api/config.ts
-export const API_URL =
-  import.meta.env.VITE_API_URL || "https://server.kazpam.kz/api";
+// Мы используем относительный путь /api.
+// Vite Proxy (из шага 1) перехватит его и отправит на server.kazpam.kz
+export const API_URL = "/api";

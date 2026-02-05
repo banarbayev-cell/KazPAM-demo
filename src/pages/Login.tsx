@@ -9,6 +9,9 @@ export default function Login() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  // 1. Добавляем состояние для видимости пароля
+  const [showPassword, setShowPassword] = useState(false);
+  
   const [loading, setLoading] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [resetMessage, setResetMessage] = useState<string | null>(null);
@@ -110,14 +113,32 @@ export default function Login() {
           onChange={(e) => setEmail(e.target.value)}
         />
 
+        {/* 2. Изменили type="password" на условие */}
         <input
-          type="password"
+          type={showPassword ? "text" : "password"}
           placeholder="Пароль"
           required
-          className="w-full p-3 bg-white/10 border border-white/20 rounded-lg text-white mb-4"
+          className="w-full p-3 bg-white/10 border border-white/20 rounded-lg text-white mb-2" // уменьшил mb-4 до mb-2
           value={password}
           onChange={(e) => setPassword(e.target.value)}
         />
+
+        {/* 3. Добавили чекбокс "Показать пароль" */}
+        <div className="flex items-center mb-6 pl-1">
+          <input
+            id="show-pass"
+            type="checkbox"
+            checked={showPassword}
+            onChange={() => setShowPassword((prev) => !prev)}
+            className="w-4 h-4 cursor-pointer accent-[#0052FF]"
+          />
+          <label 
+            htmlFor="show-pass" 
+            className="ml-2 text-sm text-white/80 cursor-pointer select-none hover:text-white"
+          >
+            Показать пароль
+          </label>
+        </div>
 
         <button
           disabled={loading}

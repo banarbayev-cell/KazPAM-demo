@@ -298,7 +298,7 @@ export default function Policies() {
         open={createOpen}
         onClose={() => setCreateOpen(false)}
         onCreate={async (name, type) => {
-          await api.post("/policies", { name, type, status: "active" });
+          await api.post("/policies/", { name, type, status: "active" });
           toast.success("Политика создана");
           setCreateOpen(false);
           loadPolicies();

@@ -75,6 +75,12 @@ export default function Login() {
     setLoginError(null);
     setResetMessage(null);
 
+    // Проверка на валидность email перед отправкой
+    if (!email || !email.includes("@")) {
+      setLoginError("Пожалуйста, введите корректный Email");
+      return;
+    }
+
     try {
       const res = await fetch(`${API_URL}/auth/password-reset/request`, {
         method: "POST",
@@ -84,13 +90,22 @@ export default function Login() {
         body: JSON.stringify({ email }),
       });
 
-      if (!res.ok) throw new Error();
+      // Сначала пробуем получить ответ от сервера
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        // Если сервер вернул ошибку, берем её текст, если есть
+        const errorDetail = data?.detail || "Не удалось отправить запрос";
+        throw new Error(errorDetail);
+      }
 
       setResetMessage(
-        "Если такой email существует, инструкция для восстановления доступа отправлена"
+        "Если такой email существует, инструкция отправлена. Проверьте папку Спам."
       );
-    } catch {
-      setLoginError("Ошибка восстановления пароля");
+    } catch (err: any) {
+      console.error("Reset Password Error:", err); // Важно для отладки
+      // Показываем пользователю понятную ошибку или заглушку
+      setLoginError(err.message || "Ошибка соединения с сервером");
     }
   };
 

@@ -3,6 +3,13 @@ import { API_URL } from "../api/config";
 
 const API_BASE_URL = API_URL;
 
+let authSessionInvalidated = false;
+
+export function invalidateAuthSession() {
+  authSessionInvalidated = true;
+}
+
+
 /**
  * =====================================================
  * TOKEN HELPERS
@@ -18,13 +25,13 @@ function getToken(): string | null {
  * =====================================================
  */
 
-// Generic overload (используется api.get<T>, api.post<T> и т.д.)
+// Generic overload
 export async function apiFetch<T>(
   path: string,
   options?: RequestInit
 ): Promise<T>;
 
-// Non-generic overload (используется Forgot / Reset)
+// Non-generic overload
 export async function apiFetch(
   path: string,
   options?: RequestInit
@@ -39,6 +46,12 @@ export async function apiFetch(
   path: string,
   options: RequestInit = {}
 ): Promise<any> {
+
+  // 🔴 HARD STOP AFTER PASSWORD ROTATION
+  if (authSessionInvalidated) {
+    throw new Error("AUTH_SESSION_INVALIDATED");
+  }
+
   const token =
     localStorage.getItem("access_token") ??
     localStorage.getItem("token");
@@ -52,10 +65,9 @@ export async function apiFetch(
   }
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
-  ...options,
-  headers,
-});
-
+    ...options,
+    headers,
+  });
 
   // === AUTH ERRORS ===
   if (response.status === 401) {
@@ -82,6 +94,7 @@ export async function apiFetch(
     return undefined;
   }
 }
+
 
 /**
  * =====================================================

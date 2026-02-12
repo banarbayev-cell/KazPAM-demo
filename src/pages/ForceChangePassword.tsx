@@ -2,6 +2,7 @@ import { FormEvent, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../store/auth";
 import { api } from "../services/api";
+import { invalidateAuthSession } from "../services/api";
 
 export default function ForceChangePassword() {
   const navigate = useNavigate();
@@ -45,19 +46,21 @@ export default function ForceChangePassword() {
   new_password: newPassword,
 });
 
+// 1️⃣ Мгновенно убиваем API
+invalidateAuthSession();
 
-      /**
-       * После смены пароля:
-       * — токен становится небезопасным
-       * — делаем logout
-       * — отправляем на login
-       */
-      logout();
+// 2️⃣ Чистим storage
+localStorage.removeItem("access_token");
+localStorage.removeItem("refresh_token");
 
-      navigate("/login", {
-        replace: true,
-        state: { passwordChanged: true },
-      });
+// 3️⃣ Zustand
+logout();
+
+// 4️⃣ Без history — только replace
+window.location.replace("/login?passwordChanged=1");
+
+
+
     } catch (e: any) {
       setError(e?.message || "Не удалось изменить пароль");
     } finally {

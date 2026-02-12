@@ -10,6 +10,7 @@ export default function ForceChangePassword() {
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [confirm, setConfirm] = useState("");
 
   const [loading, setLoading] = useState(false);
@@ -39,10 +40,11 @@ export default function ForceChangePassword() {
        * POST /users/{user_id}/reset-password
        * ResetPasswordRequest
        */
-      await api.post(`/users/${user.id}/reset-password`, {
-        current_password: currentPassword,
-        new_password: newPassword,
-      });
+      await api.post(`/auth/change-password`, {
+  current_password: currentPassword,
+  new_password: newPassword,
+});
+
 
       /**
        * После смены пароля:
@@ -79,8 +81,13 @@ export default function ForceChangePassword() {
           Установите новый безопасный пароль.
         </p>
 
+        <p className="text-center text-[#3BE3FD] text-xs mb-6">
+          Используйте временный пароль, полученный в письме
+        </p>
+ 
+
         <input
-          type="password"
+          type={showPassword ? "text" : "password"}
           placeholder="Текущий (временный) пароль"
           className="w-full p-3 bg-white/10 border border-white/20 rounded-lg text-white mb-4 focus:outline-none focus:border-[#3BE3FD]"
           value={currentPassword}
@@ -89,7 +96,7 @@ export default function ForceChangePassword() {
         />
 
         <input
-          type="password"
+          type={showPassword ? "text" : "password"}
           placeholder="Новый пароль"
           className="w-full p-3 bg-white/10 border border-white/20 rounded-lg text-white mb-4 focus:outline-none focus:border-[#3BE3FD]"
           value={newPassword}
@@ -98,7 +105,7 @@ export default function ForceChangePassword() {
         />
 
         <input
-          type="password"
+          type={showPassword ? "text" : "password"}
           placeholder="Повторите новый пароль"
           className="w-full p-3 bg-white/10 border border-white/20 rounded-lg text-white mb-6 focus:outline-none focus:border-[#3BE3FD]"
           value={confirm}
@@ -106,6 +113,19 @@ export default function ForceChangePassword() {
           required
         />
 
+        <div className="flex items-center mb-6 pl-1">
+  <input
+    type="checkbox"
+    checked={showPassword}
+    onChange={() => setShowPassword(prev => !prev)}
+    className="w-4 h-4 cursor-pointer accent-[#0052FF]"
+  />
+  <label className="ml-2 text-sm text-white/80 cursor-pointer select-none hover:text-white">
+    Показать пароль
+  </label>
+</div>
+
+       
         {error && (
           <div className="mb-4 text-red-400 text-sm text-center">{error}</div>
         )}

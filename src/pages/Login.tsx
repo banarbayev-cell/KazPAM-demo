@@ -2,20 +2,24 @@ import { FormEvent, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../store/auth";
 import { API_URL } from "../api/config";
+import PasswordResetModal from "../components/modals/PasswordResetModal";
 
 export default function Login() {
   const navigate = useNavigate();
+
   const login = useAuth((state) => state.login);
+  const mustChangePassword = useAuth((state) => state.mustChangePassword);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  // 1. Добавляем состояние для видимости пароля
   const [showPassword, setShowPassword] = useState(false);
-  
+
   const [loading, setLoading] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [resetMessage, setResetMessage] = useState<string | null>(null);
+  const [resetOpen, setResetOpen] = useState(false);
 
+  // ================= LOGIN =================
   const handleLogin = async (e: FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -41,7 +45,7 @@ export default function Login() {
           message = "Неверный логин или пароль";
         } else if (response.status === 403) {
           message =
-            "Доступ запрещён. Проверьте политики безопасности или MFA.";
+            "Доступ ограничен политиками безопасности или требуется MFA";
         } else {
           try {
             const err = await response.json();
@@ -57,27 +61,40 @@ export default function Login() {
       const data = await response.json();
 
       if (!data.access_token) {
-        setLoginError("Токен не получен от сервера");
+        setLoginError("Сервер не выдал токен доступа");
         setLoading(false);
         return;
       }
 
-      login(data.access_token);
-      navigate("/dashboard", { replace: true });
+      /**
+       * 🔐 ВАЖНО
+       * login() кладёт mustChangePassword в store
+       */
+      await login(data.access_token);
+
+      /**
+       * PAM LOGIC
+       */
+      if (useAuth.getState().mustChangePassword) {
+        navigate("/force-change-password", { replace: true });
+      } else {
+        navigate("/dashboard", { replace: true });
+      }
+
     } catch (err: any) {
-      setLoginError(err.message || "Ошибка авторизации");
+      setLoginError(err.message || "Ошибка соединения");
     } finally {
       setLoading(false);
     }
   };
 
+  // ================= RESET =================
   const handlePasswordReset = async () => {
     setLoginError(null);
     setResetMessage(null);
 
-    // Проверка на валидность email перед отправкой
     if (!email || !email.includes("@")) {
-      setLoginError("Пожалуйста, введите корректный Email");
+      setResetOpen(true);
       return;
     }
 
@@ -90,22 +107,13 @@ export default function Login() {
         body: JSON.stringify({ email }),
       });
 
-      // Сначала пробуем получить ответ от сервера
-      const data = await res.json().catch(() => null);
-
-      if (!res.ok) {
-        // Если сервер вернул ошибку, берем её текст, если есть
-        const errorDetail = data?.detail || "Не удалось отправить запрос";
-        throw new Error(errorDetail);
-      }
+      await res.json().catch(() => null);
 
       setResetMessage(
-        "Если такой email существует, инструкция отправлена. Проверьте папку Спам."
+        "Если аккаунт существует, инструкции отправлены на почту"
       );
-    } catch (err: any) {
-      console.error("Reset Password Error:", err); // Важно для отладки
-      // Показываем пользователю понятную ошибку или заглушку
-      setLoginError(err.message || "Ошибка соединения с сервером");
+    } catch {
+      setLoginError("Сервер временно недоступен");
     }
   };
 
@@ -115,30 +123,32 @@ export default function Login() {
         onSubmit={handleLogin}
         className="relative z-10 w-[420px] p-10 rounded-2xl bg-white/5 backdrop-blur-xl border border-white/10"
       >
-        <h1 className="text-4xl font-extrabold text-center text-white mb-6">
+        <h1 className="text-4xl font-extrabold text-center text-white mb-1">
           Kaz<span className="text-[#0052FF]">PAM</span>
         </h1>
+
+        <p className="text-center text-xs text-white/50 mb-6 tracking-wide">
+          Privileged Access Management · Made in Kazakhstan
+        </p>
 
         <input
           type="email"
           placeholder="E-mail"
           required
-          className="w-full p-3 bg-white/10 border border-white/20 rounded-lg text-white mb-4"
+          className="w-full p-3 bg-white/10 border border-white/20 rounded-lg text-white mb-4 focus:outline-none focus:border-[#3BE3FD]"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
         />
 
-        {/* 2. Изменили type="password" на условие */}
         <input
           type={showPassword ? "text" : "password"}
           placeholder="Пароль"
           required
-          className="w-full p-3 bg-white/10 border border-white/20 rounded-lg text-white mb-2" // уменьшил mb-4 до mb-2
+          className="w-full p-3 bg-white/10 border border-white/20 rounded-lg text-white mb-2 focus:outline-none focus:border-[#3BE3FD]"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
         />
 
-        {/* 3. Добавили чекбокс "Показать пароль" */}
         <div className="flex items-center mb-6 pl-1">
           <input
             id="show-pass"
@@ -147,8 +157,8 @@ export default function Login() {
             onChange={() => setShowPassword((prev) => !prev)}
             className="w-4 h-4 cursor-pointer accent-[#0052FF]"
           />
-          <label 
-            htmlFor="show-pass" 
+          <label
+            htmlFor="show-pass"
             className="ml-2 text-sm text-white/80 cursor-pointer select-none hover:text-white"
           >
             Показать пароль
@@ -157,16 +167,15 @@ export default function Login() {
 
         <button
           disabled={loading}
-          className="w-full py-3 bg-[#0052FF] rounded-lg text-white font-semibold disabled:opacity-50"
+          className="w-full py-3 bg-[#0052FF] rounded-lg text-white font-semibold disabled:opacity-50 hover:bg-[#1f6bff] transition"
         >
-          {loading ? "Вход..." : "Войти"}
+          {loading ? "Авторизация..." : "Войти"}
         </button>
 
         <button
           type="button"
-          disabled={!email}
           onClick={handlePasswordReset}
-          className="mt-4 w-full text-sm text-[#3BE3FD] disabled:opacity-50"
+          className="mt-4 w-full text-sm text-[#3BE3FD] hover:text-white transition"
         >
           Забыли пароль?
         </button>
@@ -182,7 +191,16 @@ export default function Login() {
             {resetMessage}
           </p>
         )}
+
+        <p className="mt-6 text-center text-[11px] text-white/40">
+          Secure Access Gateway · Zero Trust Architecture
+        </p>
       </form>
+
+      <PasswordResetModal
+        isOpen={resetOpen}
+        onClose={() => setResetOpen(false)}
+      />
     </div>
   );
 }

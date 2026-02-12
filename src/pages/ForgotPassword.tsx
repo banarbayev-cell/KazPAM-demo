@@ -16,13 +16,14 @@ export default function ForgotPassword() {
     setLoading(true);
 
     try {
-      await apiFetch("/auth/forgot-password", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: new URLSearchParams({ email }),
-      });
+      await apiFetch("/auth/password-reset/request", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({ email }),
+});
+
 
       setSent(true);
     } catch (err: any) {

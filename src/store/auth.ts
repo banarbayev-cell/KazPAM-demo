@@ -6,13 +6,18 @@ import { api } from "../services/api";
  * =====================================================
  * JWT TOKEN
  * =====================================================
- * ⚠️ ОСТАВЛЯЕМ permissions и role — для backward compatibility
  */
 interface DecodedToken {
   sub: string;
   role?: string;
   permissions?: any;
   exp: number;
+
+  /**
+   * PAM security state
+   * true = пользователь обязан сменить пароль
+   */
+  pwd_reset_required?: boolean;
 }
 
 /**
@@ -31,10 +36,6 @@ interface UserProfile {
     name: string;
   }>;
 
-  /**
-   * ⬇️ НЕОБЯЗАТЕЛЬНО
-   * backend может начать отдавать permissions позже
-   */
   permissions?: string[];
 }
 
@@ -57,6 +58,12 @@ interface AuthState {
   user: AuthUser | null;
   isInitialized: boolean;
 
+  /**
+   * ⛔ PAM режим безопасности
+   * если true — доступ только к странице смены пароля
+   */
+  mustChangePassword: boolean;
+
   login: (token: string) => Promise<void>;
   logout: () => void;
   loadFromStorage: () => Promise<void>;
@@ -72,6 +79,7 @@ export const useAuth = create<AuthState>((set, get) => ({
   token: null,
   user: null,
   isInitialized: false,
+  mustChangePassword: false,
 
   /**
    * =====================================================
@@ -94,12 +102,14 @@ export const useAuth = create<AuthState>((set, get) => ({
       ? decoded.permissions
       : [];
 
+    const mustChangePassword = decoded.pwd_reset_required === true;
+
     /**
-     * 1️⃣ Кладём минимального user (JWT fallback)
-     *    — это сохраняет текущую логику Access(permission)
+     * 1️⃣ минимальный пользователь из JWT
      */
     set({
       token,
+      mustChangePassword,
       user: {
         email: decoded.sub,
         permissions: safePermissions,
@@ -108,9 +118,13 @@ export const useAuth = create<AuthState>((set, get) => ({
     });
 
     /**
-     * 2️⃣ ДОгружаем профиль
+     * 2️⃣ ВАЖНО:
+     * если требуется смена пароля —
+     * backend специально блокирует /users/me
      */
-    await get().fetchMe();
+    if (!mustChangePassword) {
+      await get().fetchMe();
+    }
   },
 
   /**
@@ -120,18 +134,25 @@ export const useAuth = create<AuthState>((set, get) => ({
    */
   logout: () => {
     localStorage.removeItem("access_token");
-    set({ token: null, user: null, isInitialized: true });
+    set({
+      token: null,
+      user: null,
+      mustChangePassword: false,
+      isInitialized: true,
+    });
   },
 
   /**
    * =====================================================
    * FETCH PROFILE (/users/me)
    * =====================================================
-   * ⚠️ НИЧЕГО НЕ ЛОМАЕМ:
-   * - если permissions пришли — используем их
-   * - если нет — оставляем JWT permissions
    */
   fetchMe: async () => {
+    if (get().mustChangePassword) {
+      // PAM режим — профиль намеренно недоступен
+      return;
+    }
+
     try {
       const me = await api.get<UserProfile>("/users/me");
 
@@ -149,13 +170,13 @@ export const useAuth = create<AuthState>((set, get) => ({
       });
     } catch (e) {
       console.error("❌ fetchMe failed", e);
-      // ⚠️ logout НЕ делаем — мягкая деградация
+      // мягкая деградация — logout НЕ делаем
     }
   },
 
   /**
    * =====================================================
-   * LOAD FROM STORAGE (APP INIT)
+   * LOAD FROM STORAGE (APP INIT / F5)
    * =====================================================
    */
   loadFromStorage: async () => {
@@ -170,7 +191,7 @@ export const useAuth = create<AuthState>((set, get) => ({
       const decoded = jwtDecode<DecodedToken>(token);
 
       /**
-       * ⛔ Проверка exp (УСИЛЕНИЕ)
+       * Проверка срока
        */
       if (decoded.exp * 1000 < Date.now()) {
         throw new Error("Token expired");
@@ -180,11 +201,14 @@ export const useAuth = create<AuthState>((set, get) => ({
         ? decoded.permissions
         : [];
 
+      const mustChangePassword = decoded.pwd_reset_required === true;
+
       /**
-       * 1️⃣ Восстанавливаем JWT-состояние
+       * Восстанавливаем состояние
        */
       set({
         token,
+        mustChangePassword,
         user: {
           email: decoded.sub,
           permissions: safePermissions,
@@ -193,12 +217,20 @@ export const useAuth = create<AuthState>((set, get) => ({
       });
 
       /**
-       * 2️⃣ ДОгружаем профиль
+       * Если это нормальный пользователь —
+       * подгружаем профиль
        */
-      await get().fetchMe();
+      if (!mustChangePassword) {
+        await get().fetchMe();
+      }
     } catch {
       localStorage.removeItem("access_token");
-      set({ token: null, user: null, isInitialized: true });
+      set({
+        token: null,
+        user: null,
+        mustChangePassword: false,
+        isInitialized: true,
+      });
     }
   },
 }));

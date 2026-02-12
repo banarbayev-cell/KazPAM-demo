@@ -22,6 +22,10 @@ import { useAuth } from "./store/auth";
 import ProtectedRoute from "./components/ProtectedRoute";
 import ForgotPassword from "@/pages/ForgotPassword";
 import ResetPassword from "@/pages/ResetPassword";
+import ForceChangePassword from "@/pages/ForceChangePassword";
+
+
+
 
 export default function App() {
   const loadFromStorage = useAuth((s) => s.loadFromStorage);
@@ -40,6 +44,18 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ResetPassword />} />
+        <Route path="/force-change-password" element={<ForceChangePassword />} />
+
+        {/* Force password change (special protected) */}
+<Route
+  path="/force-change-password"
+  element={
+    <ProtectedRoute>
+      <ForceChangePassword />
+    </ProtectedRoute>
+  }
+/>
+
 
         {/* Protected layout */}
         <Route

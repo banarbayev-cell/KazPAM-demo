@@ -7,13 +7,14 @@ export default function ProtectedRoute({
   children: JSX.Element;
 }) {
   const location = useLocation();
-  const { token, isInitialized } = useAuth();
+  const { token, isInitialized, mustChangePassword } = useAuth();
 
-  // ⏳ Ждём инициализации
+  // ⏳ Ждём восстановления auth из localStorage
   if (!isInitialized) {
-    return null; // или loader
+    return null;
   }
 
+  // 🚫 Не авторизован
   if (!token) {
     return (
       <Navigate
@@ -22,6 +23,16 @@ export default function ProtectedRoute({
         state={{ from: location.pathname }}
       />
     );
+  }
+
+  /**
+   * 🔐 PAM SECURITY MODE
+   * Вошёл по временному паролю
+   * — доступ только к смене пароля
+   * — остальная система закрыта
+   */
+  if (mustChangePassword && location.pathname !== "/force-change-password") {
+    return <Navigate to="/force-change-password" replace />;
   }
 
   return children;

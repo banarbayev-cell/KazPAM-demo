@@ -78,6 +78,9 @@ export default function Policies() {
   const [selected, setSelected] = useState<Policy | null>(null);
   const [action, setAction] =
     useState<"delete" | "disable" | "activate" | null>(null);
+  const [riskUsage, setRiskUsage] = useState<any | null>(null);
+  const [riskOpen, setRiskOpen] = useState(false);
+
 
   /* =========================
      Load policies list
@@ -172,28 +175,37 @@ export default function Policies() {
      Actions
   ========================= */
   const confirmAction = async () => {
-    if (!selected || !action) return;
+  if (!selected || !action) return;
 
-    try {
-      if (action === "delete") {
-        await api.delete(`/policies/${selected.id}`);
-      }
-      if (action === "disable") {
-        await api.patch(`/policies/${selected.id}`, { status: "disabled" });
-      }
-      if (action === "activate") {
-        await api.patch(`/policies/${selected.id}`, { status: "active" });
-      }
+  const act = action;
+  const policyId = selected.id;
 
-      toast.success("Операция выполнена");
-      loadPolicies();
-    } catch {
-      toast.error("Ошибка операции");
-    } finally {
-      setAction(null);
-      setSelected(null);
+  // блокируем повторный вызов
+  setAction(null);
+
+  try {
+    if (act === "delete") {
+      await api.delete(`/policies/${policyId}`);
     }
-  };
+
+    if (act === "disable") {
+      await api.patch(`/policies/${policyId}`, { status: "disabled" });
+    }
+
+    if (act === "activate") {
+      await api.patch(`/policies/${policyId}`, { status: "active" });
+    }
+
+    toast.success("Операция выполнена");
+    loadPolicies();
+
+  } catch {
+    toast.error("Ошибка операции");
+  } finally {
+    setSelected(null);
+  }
+};
+
 
   /* =========================
      Derived
@@ -201,11 +213,49 @@ export default function Policies() {
   const filtered = policies.filter((p) =>
     p.name.toLowerCase().includes(search.toLowerCase())
   );
-
+  
   const activeCount = filtered.filter((p) => p.status === "active").length;
   const disabledCount = filtered.filter((p) => p.status === "disabled").length;
 
   if (loading) return <div className="p-6">Загрузка…</div>;
+  
+  const handleRiskAction = async (
+  policy: Policy,
+  act: "delete" | "disable" | "activate"
+) => {
+  try {
+    setSelected(policy);
+
+    const usage = await api.get(`/policies/${policy.id}/usage`);
+
+    const roles = usage?.roles ?? [];
+    const users = usage?.users ?? [];
+    const sessions = usage?.active_sessions ?? 0;
+
+    const hasImpact =
+      roles.length > 0 ||
+      users.length > 0 ||
+      sessions > 0;
+
+    if (hasImpact) {
+      setRiskUsage({
+        roles,
+        users,
+        active_sessions: sessions,
+      });
+
+      setAction(act);
+      setRiskOpen(true);
+      return;
+    }
+
+    // безопасно → обычный confirm
+    setAction(act);
+
+  } catch {
+    toast.error("Не удалось проверить влияние политики");
+  }
+};
 
   /* =========================
      UI
@@ -265,18 +315,9 @@ export default function Policies() {
                       setSelected(p);
                       setEditOpen(true);
                     }}
-                    onDisable={() => {
-                      setSelected(p);
-                      setAction("disable");
-                    }}
-                    onActivate={() => {
-                      setSelected(p);
-                      setAction("activate");
-                    }}
-                    onDelete={() => {
-                      setSelected(p);
-                      setAction("delete");
-                    }}
+                    onDisable={() => handleRiskAction(p, "disable")}
+                    onActivate={() => handleRiskAction(p, "activate")}
+                    onDelete={() => handleRiskAction(p, "delete")}
                   />
                 </td>
               </tr>
@@ -286,13 +327,36 @@ export default function Policies() {
       </div>
 
       <ConfirmModal
-        open={!!action}
+        open={!!action && !riskOpen}
         title="Подтверждение"
         message="Вы уверены?"
         confirmText="Да"
         onConfirm={confirmAction}
         onClose={() => setAction(null)}
       />
+       
+      <ConfirmModal
+  open={riskOpen}
+  title="⚠️ Влияние политики"
+  message={
+    riskUsage
+      ? `Политика используется:
+Ролей: ${riskUsage.roles.length}
+Пользователей: ${riskUsage.users.length}
+Активных сессий: ${riskUsage.active_sessions}
+
+Это может изменить доступы прямо сейчас. Продолжить?`
+      : ""
+  }
+  confirmText="Продолжить"
+  onConfirm={async () => {
+  setRiskOpen(false);
+  await confirmAction();
+}}
+
+  onClose={() => setRiskOpen(false)}
+/>
+
 
       <CreatePolicyModal
         open={createOpen}

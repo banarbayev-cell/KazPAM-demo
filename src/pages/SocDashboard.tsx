@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import ThreatCard from "../components/ThreatCard";
 import InvestigationModal from "../components/modals/InvestigationModal";
 import { fetchAuditLogs, AuditLog } from "../api/audit";
-import { calculateRiskScore } from "../utils/riskScore";
+import { calculateRiskScore, type RiskLevel } from "../utils/riskScore";
 import { Incident } from "../utils/incident";
 import { sanitizeText } from "../utils/sanitizeText";
 import { API_URL } from "../api/config";
@@ -12,8 +12,8 @@ import SourceTooltip from "../components/ui/SourceTooltip";
 import { buildEffectivePermissions } from "../utils/effectivePermissions";
 import { useAuth } from "../store/auth";
 import { parseUserAgent } from "../utils/parseUserAgent";
-
-
+import { fetchSocSummary } from "../api/socSummary";
+import type { SocSummaryResponse } from "../api/socSummary";
 
 import {
   blockUser,
@@ -22,6 +22,43 @@ import {
   exportSocSiemJson,
 } from "../api/socActions";
 
+function mapBackendIncidentToUi(b: any): Incident {
+  let createdIso: string;
+
+  try {
+    if (b.created_at) {
+      const d = new Date(String(b.created_at).replace(" ", "T") + "Z");
+      createdIso = isNaN(d.getTime())
+        ? new Date().toISOString()
+        : d.toISOString();
+    } else {
+      createdIso = new Date().toISOString();
+    }
+  } catch {
+    createdIso = new Date().toISOString();
+  }
+
+  return {
+    id: String(b.incident_id ?? b.id ?? crypto.randomUUID()),
+    backendId: b.incident_id ?? b.id,
+    status: (b.status ?? "OPEN") as any,
+    createdAt: createdIso,
+    closedAt: b.closed_at ?? undefined,
+    lastAction: null,
+    actions: [],
+    comments: [],
+  };
+}
+
+function normalizeRiskLevel(level?: string): RiskLevel {
+  const v = (level || "").toUpperCase();
+
+  if (v === "CRITICAL") return "CRITICAL";
+  if (v === "HIGH") return "HIGH";
+  if (v === "MEDIUM") return "MEDIUM";
+  return "LOW";
+}
+
 /**
  * SAFE DATE PARSER
  * Усиление: корректно обрабатывает формат KazPAM
@@ -29,39 +66,48 @@ import {
  * Ничего не ломает — при ошибке просто возвращает исходную строку
  */
 function safeTime(value?: string) {
-  // если вообще нет значения — не придумываем "сегодня"
-  if (!value || value.trim() === "") {
-    return "";
-  }
+  if (!value || value.trim() === "") return "";
 
-  // формат KazPAM: "DD.MM.YYYY HH:MM:SS" или "DD.MM.YYYY HH:MM"
-  if (value.includes(" ")) {
-    const [datePart, timePart] = value.split(" ");
-    const [day, month, year] = datePart.split(".").map(Number);
+  try {
+    const v = value.trim();
 
-    const timeParts = timePart.split(":").map(Number);
-    const hour = timeParts[0];
-    const minute = timeParts[1] ?? 0;
+    // ISO с таймзоной
+    const hasIsoTz = /T.*(Z|[+-]\d{2}:\d{2})$/.test(v);
 
-    if (day && month && year && hour !== undefined && minute !== undefined) {
-      const d = new Date(year, month - 1, day, hour, minute);
+    let d: Date;
 
-      if (!isNaN(d.getTime())) {
-        const hh = hour.toString().padStart(2, "0");
-        const mm = minute.toString().padStart(2, "0");
-        return `${datePart} ${hh}:${mm}`;
-      }
+    if (hasIsoTz) {
+      d = new Date(v);
     }
-  }
+    // backend "YYYY-MM-DD HH:MM:SS" → UTC
+    else if (v.includes(" ") && v.includes("-")) {
+      d = new Date(v.replace(" ", "T") + "Z");
+    }
+    // legacy KazPAM "DD.MM.YYYY HH:MM"
+    else if (/^\d{2}\.\d{2}\.\d{4}\s\d{2}:\d{2}/.test(v)) {
+      const [datePart, timePart] = v.split(" ");
+      const [day, month, year] = datePart.split(".").map(Number);
+      const [hour, minute] = timePart.split(":").map(Number);
+      d = new Date(Date.UTC(year, month - 1, day, hour, minute));
+    }
+    else {
+      d = new Date(v);
+    }
 
-  // формат: "DD.MM.YYYY" (без времени)
-  if (/^\d{2}\.\d{2}\.\d{4}$/.test(value)) {
-    return `${value} 00:00`;
-  }
+    if (isNaN(d.getTime())) return value;
 
-  // fallback — ничего не ломаем
-  return value;
+    const dd = String(d.getDate()).padStart(2, "0");
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const yyyy = d.getFullYear();
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mi = String(d.getMinutes()).padStart(2, "0");
+
+    return `${dd}.${mm}.${yyyy} ${hh}:${mi}`;
+  } catch {
+    return value;
+  }
 }
+
 
 type RbacError =
   | {
@@ -90,6 +136,7 @@ const roles = auth.user?.roles ?? [];
 
   // INCIDENT STATE
   const [incident, setIncident] = useState<Incident | null>(null);
+  const [summary, setSummary] = useState<SocSummaryResponse | null>(null);
 
   // RBAC ERROR (STRUCTURED)
   const [rbacError, setRbacError] = useState<RbacError>(null);
@@ -111,6 +158,17 @@ const roles = auth.user?.roles ?? [];
       .catch((err) => console.error("Audit load error:", err))
       .finally(() => setLoading(false));
   }, []);
+
+  // ============================
+// LOAD SOC SUMMARY (SOURCE OF TRUTH)
+// ============================
+useEffect(() => {
+  if (!token) return;
+
+  fetchSocSummary()
+    .then(setSummary)
+    .catch((e) => console.error("SOC summary load error:", e));
+}, [token]);
 
   // ============================
   // RESTORE INCIDENT AFTER RELOAD (NO REGRESSIONS)
@@ -143,10 +201,7 @@ const roles = auth.user?.roles ?? [];
 
         const data = await r.json();
 
-        setIncident({
-  ...data,
-  backendId: data.id,
-});
+        setIncident(mapBackendIncidentToUi(data));
 
 // 🔒 UX-GATE: автооткрываем ТОЛЬКО 1 РАЗ за сессию
 const alreadyRestoredThisSession = sessionStorage.getItem(
@@ -204,9 +259,9 @@ if (!alreadyRestoredThisSession) {
 
     return {
       user: first?.user || "unknown",
-      ip: details?.source_ip || "unknown",
+      ip: details?.source_ip || details?.source?.ip || "unknown",
       location: details?.location || "Unknown",
-      device: parseUserAgent(details?.device),
+      device: parseUserAgent(details?.device || details?.source?.user_agent),
 
       // ВАЖНО: используем timestamp (как вы фиксировали)
       events: suspiciousLogs.map((e) =>
@@ -219,13 +274,36 @@ if (!alreadyRestoredThisSession) {
   // RISK SCORE
   // ============================
   const risk = useMemo(() => calculateRiskScore(suspiciousLogs), [suspiciousLogs]);
+  
+  // ============================
+  // DISPLAYED CREATED AT (backend first)
+  // ============================
+  const displayedCreatedAt = useMemo(() => {
+    if (summary?.incident?.created_at) {
+     return safeTime(summary.incident.created_at);
+  }
+     return "";
+  }, [summary]);
+
+  // ============================
+// DISPLAYED RISK (backend first)
+// ============================
+  const displayedRisk = useMemo(() => {
+  if (summary?.has_incident && summary.incident) {
+    return {
+      score: summary.incident.risk_score,
+      level: normalizeRiskLevel(summary.incident.severity),
+    };
+  }
+  return risk;
+}, [summary, risk]);
 
   // ============================
   // SOC EFFECTIVE PERMISSIONS (for tooltips / explainability)
   // ============================
   const socEffectivePermissions = useMemo(() => {
     if (!roles.length) return [];
-    return buildEffectivePermissions({ roles });
+     return buildEffectivePermissions({ roles });
   }, [roles]);
 
   const deniedSocPermission = useMemo(() => {
@@ -244,8 +322,16 @@ if (!alreadyRestoredThisSession) {
   // ============================
   // OPEN INVESTIGATION
   // ============================
+
+
   const handleInvestigate = async () => {
     setRbacError(null);
+
+    if (summary?.incident) {
+  setIncident(mapBackendIncidentToUi(summary.incident));
+  setInvestigationOpen(true);
+  return;
+}
 
     // если токена нет — не пытаемся ходить в API (иначе 401)
     if (!token) {
@@ -327,8 +413,13 @@ if (!alreadyRestoredThisSession) {
   return (
     <div className="p-8 space-y-8">
       <ThreatCard
-        level={risk.level === "CRITICAL" || risk.level === "HIGH" ? "high" : "medium"}
+        level={
+          displayedRisk.level === "CRITICAL" || displayedRisk.level === "HIGH"
+            ? "high"
+            : "medium"
+}
         incidents={record.events.slice(0, 4)}
+        createdAt={displayedCreatedAt}   // ✅ ВОТ ЭТО ДОБАВЬ
         onInvestigate={handleInvestigate}
       />
 
@@ -336,7 +427,7 @@ if (!alreadyRestoredThisSession) {
         isOpen={investigationOpen}
         onClose={() => setInvestigationOpen(false)}
         record={record}
-        risk={risk}
+        risk={displayedRisk}
         incident={incident}
 
         // ===== BLOCK USER (RBAC SAFE) =====

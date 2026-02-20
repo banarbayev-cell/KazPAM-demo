@@ -7,14 +7,23 @@ export function calculateRiskScore(logs: AuditLog[]) {
   let score = 0;
 
   logs.forEach((log) => {
-    const action = (log.action || "").toUpperCase();
+  const action = (log.action || "").toUpperCase();
 
-    if (action.includes("FAILED")) score += 15;
-    if (action.includes("IP") || action.includes("UNKNOWN")) score += 20;
-    if (action.includes("DENY") || action.includes("FORBIDDEN")) score += 15;
-    if (action.includes("PRIVILEGE")) score += 30;
-    if (action.includes("COMMAND")) score += 10;
-  });
+  // ✅ FAIL burst (твой основной кейс)
+  if (action.includes("FAIL")) score += 15;
+
+  // ✅ неизвестный источник
+  if (action.includes("UNKNOWN")) score += 20;
+
+  // ✅ deny / forbidden
+  if (action.includes("DENY") || action.includes("FORBIDDEN")) score += 15;
+
+  // ✅ privilege escalation
+  if (action.includes("PRIVILEGE")) score += 30;
+
+  // ✅ suspicious commands
+  if (action.includes("COMMAND")) score += 10;
+});
 
   if (score > 100) score = 100;
 

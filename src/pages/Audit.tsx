@@ -236,7 +236,7 @@ export default function Audit(){
   return (
     <div className="p-6 w-full bg-gray-100 min-h-screen text-gray-900 flex flex-col">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold text-[#121A33]">Журнал Аудита</h1>
+        <h1 className="text-3xl font-bold text-[#121A33]">Журнал аудита</h1>
         <button onClick={fetchData} className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 rounded-lg shadow-sm transition text-sm font-medium">
            <RefreshCw size={16}/> Обновить
         </button>

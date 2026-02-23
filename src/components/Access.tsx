@@ -4,9 +4,14 @@ import { useAuth } from "../store/auth";
 interface AccessProps {
   permission: string;
   children: ReactNode;
+  fallback?: ReactNode;
 }
 
-export default function Access({ permission, children }: AccessProps) {
+export default function Access({
+  permission,
+  children,
+  fallback,
+}: AccessProps) {
   const user = useAuth((s) => s.user);
 
   if (!user) return null;
@@ -15,9 +20,22 @@ export default function Access({ permission, children }: AccessProps) {
     ? user.permissions
     : [];
 
-  if (userPermissions.includes(permission)) {
-    return <>{children}</>;
+  const allowed = userPermissions.includes(permission);
+
+  if (!allowed) {
+    return (
+      fallback ?? (
+        <div className="rounded-2xl border border-[#1E2A45] bg-[#121A33] p-6 text-center">
+          <div className="text-lg font-semibold text-gray-100">
+            Доступ запрещён
+          </div>
+          <div className="mt-1 text-sm text-gray-400">
+            Недостаточно прав для просмотра этого раздела
+          </div>
+        </div>
+      )
+    );
   }
 
-  return null;
+  return <>{children}</>;
 }

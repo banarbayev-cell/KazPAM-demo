@@ -23,8 +23,8 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import ForgotPassword from "@/pages/ForgotPassword";
 import ResetPassword from "@/pages/ResetPassword";
 import ForceChangePassword from "@/pages/ForceChangePassword";
-
-
+import License from "./pages/License";
+import Access from "./components/Access";
 
 
 export default function App() {
@@ -81,6 +81,11 @@ export default function App() {
           <Route path="settings" element={<Settings />} />
           <Route path="roles" element={<Roles />} />
           <Route path="permissions" element={<Permissions />} />
+          <Route path="license" element={ <Access permission="view_settings">
+        <License />
+      </Access>
+    }
+  />
         </Route>
 
         {/* fallback */}

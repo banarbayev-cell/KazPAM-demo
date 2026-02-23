@@ -79,6 +79,12 @@ export default function Sidebar() {
         <NavLink to="/settings" className={navClass}>
           Настройки
         </NavLink>
+
+        <Access permission="view_settings">
+        <NavLink to="/license" className={navClass}>
+          Лицензия
+        </NavLink>
+        </Access>
       </nav>
 
       {/* FOOTER */}

@@ -66,33 +66,46 @@ export default function License() {
     load();
   }, [load]);
 
-  const { level, usage, isExpiringSoon } = useMemo(() => {
-    if (!data)
+  const {
+    level,
+    usage,
+    isExpiringSoon,
+    isExpiringCritical,
+    daysToExpire,
+  } = useMemo(() => {
+    if (!data) {
       return {
         level: "ok" as UiLevel,
         usage: { pct: 0, used: 0, max: 0 },
         isExpiringSoon: false,
+        isExpiringCritical: false,
+        daysToExpire: null as number | null,
       };
+    }
 
     const max = data.max_users || 0;
     const used = data.used_users || 0;
-    const pct = max > 0 ? Math.min(100, Math.max(0, (used / max) * 100)) : 0;
+    const pct =
+      max > 0 ? Math.min(100, Math.max(0, (used / max) * 100)) : 0;
 
-    const daysToExpire = Math.ceil(
-      (new Date(data.expires_at).getTime() - Date.now()) /
-        (1000 * 60 * 60 * 24)
-    );
+    const days =
+      Math.ceil(
+        (new Date(data.expires_at).getTime() - Date.now()) /
+          (1000 * 60 * 60 * 24)
+      ) ?? null;
 
-    const expSoon = !data.expired && daysToExpire <= 30 && daysToExpire >= 0;
+    const expSoon = !data.expired && days <= 30 && days >= 0;
+    const expCritical = !data.expired && days <= 7 && days >= 0;
 
     return {
       level: getLevel(data),
       usage: { pct, used, max },
       isExpiringSoon: expSoon,
+      isExpiringCritical: expCritical,
+      daysToExpire: days,
     };
   }, [data]);
 
-  // Цвета
   const getStatusColor = () => {
     if (level === "ok") return "bg-green-500";
     if (level === "warn") return "bg-yellow-500";
@@ -115,25 +128,25 @@ export default function License() {
             Параметры лицензирования системы
           </p>
         </div>
-
         <button
           onClick={() => load(true)}
           disabled={loading || refreshing}
           className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 rounded-lg shadow-sm transition text-sm font-medium disabled:opacity-50"
         >
-          <RefreshCw size={16} className={refreshing ? "animate-spin" : ""} />
+          <RefreshCw
+            size={16}
+            className={refreshing ? "animate-spin" : ""}
+          />
           {refreshing ? "Обновление..." : "Обновить"}
         </button>
       </div>
 
-      {/* Loading */}
       {loading && !refreshing && (
         <div className="p-10 text-center text-gray-400 animate-pulse bg-[#121A33] rounded-xl border border-[#1E2A45] shadow-lg">
           Загрузка конфигурации лицензии...
         </div>
       )}
 
-      {/* Error */}
       {err && (
         <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-xl shadow-sm mb-6 flex items-start gap-3">
           <AlertTriangle size={24} className="text-red-500" />
@@ -146,10 +159,61 @@ export default function License() {
         </div>
       )}
 
-      {/* Content */}
       {data && !loading && (
         <>
-          {/* KPI cards */}
+          {/* ===== LICENSE BANNERS ===== */}
+
+          {data.expired && (
+            <div className="mb-6 rounded-xl border border-red-500/40 bg-red-500/10 p-4 flex items-start gap-3">
+              <XCircle className="text-red-400 mt-0.5" size={22} />
+              <div>
+                <div className="font-semibold text-red-300">
+                  Срок действия лицензии истёк
+                </div>
+                <div className="text-sm text-red-200/80 mt-1">
+                  Добавление пользователей и часть функций могут быть
+                  ограничены. Обратитесь к партнёру для продления лицензии.
+                </div>
+              </div>
+            </div>
+          )}
+
+          {!data.expired && isExpiringCritical && (
+            <div className="mb-6 rounded-xl border border-red-500/40 bg-red-500/10 p-4 flex items-start gap-3">
+              <AlertTriangle className="text-red-400 mt-0.5" size={22} />
+              <div>
+                <div className="font-semibold text-red-300">
+                  Лицензия скоро истекает ({daysToExpire} дн.)
+                </div>
+                <div className="text-sm text-red-200/80 mt-1">
+                  Рекомендуется заранее продлить лицензию.
+                </div>
+              </div>
+            </div>
+          )}
+
+          {!data.expired &&
+            !isExpiringCritical &&
+            isExpiringSoon && (
+              <div className="mb-6 rounded-xl border border-yellow-500/40 bg-yellow-500/10 p-4 flex items-start gap-3">
+                <AlertTriangle
+                  className="text-yellow-400 mt-0.5"
+                  size={22}
+                />
+                <div>
+                  <div className="font-semibold text-yellow-300">
+                    Срок действия лицензии подходит к завершению (
+                    {daysToExpire} дн.)
+                  </div>
+                  <div className="text-sm text-yellow-200/80 mt-1">
+                    При необходимости заранее обратитесь к партнёру.
+                  </div>
+                </div>
+              </div>
+            )}
+
+          {/* ===== KPI CARDS ===== */}
+
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
             <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex flex-col items-start justify-center px-6">
               <span className="text-gray-500 text-xs uppercase font-bold tracking-wider mb-1 flex items-center gap-2">
@@ -193,7 +257,7 @@ export default function License() {
               className={`bg-white p-4 rounded-xl shadow-sm border-l-4 flex items-center justify-between px-6 ${
                 data.expired
                   ? "border-l-red-500"
-                  : isExpiringSoon
+                  : isExpiringCritical
                   ? "border-l-yellow-500"
                   : "border-l-green-500"
               }`}
@@ -206,37 +270,34 @@ export default function License() {
                   className={`text-xl font-bold ${
                     data.expired
                       ? "text-red-600"
-                      : isExpiringSoon
+                      : isExpiringCritical
                       ? "text-yellow-600"
                       : "text-green-600"
                   }`}
                 >
                   {data.expired
                     ? "Истекла"
-                    : isExpiringSoon
+                    : isExpiringCritical
                     ? "Скоро истекает"
                     : "Активна"}
                 </span>
               </div>
-
               {data.expired ? (
                 <XCircle size={32} className="text-red-100" />
-              ) : isExpiringSoon ? (
-                <AlertTriangle size={32} className="text-yellow-100" />
               ) : (
                 <CheckCircle2 size={32} className="text-green-100" />
               )}
             </div>
           </div>
 
-          {/* Dark block */}
+          {/* ===== DARK PANEL ===== */}
+
           <div className="flex-grow rounded-xl border border-[#1E2A45] shadow-lg bg-[#121A33] p-6 text-white flex flex-col">
             <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
               <Shield size={20} className="text-blue-400" />
               Детализация использования
             </h2>
 
-            {/* Progress */}
             <div className="bg-[#1A243F] p-5 rounded-lg border border-[#2A3455] mb-6">
               <div className="flex justify-between items-end mb-2">
                 <span className="text-gray-400 text-sm">
@@ -260,17 +321,16 @@ export default function License() {
 
               <div className="mt-3 text-xs text-gray-500 flex gap-4">
                 <span className="flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-yellow-500" />
+                  <span className="w-2 h-2 rounded-full bg-yellow-500"></span>
                   Порог предупреждения: 80%
                 </span>
                 <span className="flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-red-500" />
+                  <span className="w-2 h-2 rounded-full bg-red-500"></span>
                   Лимит: 95%
                 </span>
               </div>
             </div>
 
-            {/* Details grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="bg-[#1A243F] p-4 rounded-lg border border-[#2A3455]">
                 <div className="text-gray-400 text-xs mb-1 uppercase tracking-wider font-semibold">
@@ -291,11 +351,10 @@ export default function License() {
               </div>
             </div>
 
-            {/* Info */}
             <div className="mt-6 p-4 bg-blue-900/20 border border-blue-900/50 rounded-lg">
               <p className="text-sm text-blue-200/70">
-                Система контролирует использование лицензии в реальном времени.
-                Для расширения лимитов обратитесь к партнеру.
+                Система контролирует использование лицензии в реальном
+                времени. Для расширения лимитов обратитесь к партнёру.
               </p>
             </div>
           </div>

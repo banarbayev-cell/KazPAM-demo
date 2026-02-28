@@ -24,7 +24,7 @@ export function useNotificationsSocket() {
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        if (data?.type === "notification") {
+        if (data?.type === "notification:new" || data?.type === "notification") {
           refreshRef.current();
         }
       } catch {

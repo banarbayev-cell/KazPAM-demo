@@ -4,6 +4,8 @@ import { ChevronDown, User, LogOut } from "lucide-react";
 import NotificationsDropdown from "./Notifications/NotificationsDropdown";
 import ProfileModal from "./modals/ProfileModal";
 import { useAuth } from "../store/auth";
+import { Key } from "lucide-react";
+import ChangePasswordModal from "./modals/ChangePasswordModal";
 
 export default function Header() {
   const logout = useAuth((s) => s.logout);
@@ -11,6 +13,7 @@ export default function Header() {
 
   const [open, setOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [passwordOpen, setPasswordOpen] = useState(false);
 
   const displayName =
     user?.email || user?.username || "user";
@@ -68,6 +71,18 @@ export default function Header() {
                 Профиль
               </button>
 
+
+              <button
+                onClick={() => {
+                  setPasswordOpen(true);
+                  setOpen(false);
+                }}
+               className="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-[#0F1931] text-[var(--text-secondary)]"
+              >
+              <Key size={18} />
+              Сменить пароль
+              </button>
+
               <button
                 onClick={logout}
                 className="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-red-900/30 text-red-500 font-semibold"
@@ -86,6 +101,10 @@ export default function Header() {
         onClose={() => setProfileOpen(false)}
         user={user}
       />
-    </header>
-  );
+      <ChangePasswordModal
+        open={passwordOpen}
+        onClose={() => setPasswordOpen(false)}
+      />
+      </header>
+);
 }

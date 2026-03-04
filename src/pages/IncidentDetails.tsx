@@ -7,7 +7,6 @@ import { useAuth } from "../store/auth";
 import { fetchIncidentTimelineV3, TimelineV3 } from "../api/incidentsV3";
 import { fetchIncidentActions, IncidentAction } from "../api/incidentActions";
 
-
 type IncidentStatus = "OPEN" | "INVESTIGATING" | "RESOLVED" | "CLOSED";
 
 interface BackendIncident {
@@ -32,11 +31,63 @@ function uebaBadge(level?: string) {
   return "text-gray-200 border-[#1E2A45]";
 }
 
+// ============================
+// UI HELPERS (SAFE, READ-ONLY)
+// ============================
+function riskColor(score: number) {
+  if (!Number.isFinite(score)) return "bg-gray-600";
+  if (score >= 90) return "bg-red-500";
+  if (score >= 70) return "bg-orange-500";
+  if (score >= 40) return "bg-yellow-500";
+  return "bg-green-500";
+}
+
+function safeDate(value?: string | null) {
+  if (!value) return "—";
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString();
+}
+
+function copy(value: string) {
+  if (!value || value === "—") return;
+  navigator.clipboard.writeText(value);
+}
+
+function pivot(path: string, value: string, navigate: any) {
+  if (!value || value === "—") return;
+  navigate(`${path}?q=${encodeURIComponent(value)}`);
+}
+
+function geoFromIp(ip?: string) {
+  if (!ip) return "Unknown";
+  if (ip.startsWith("119.")) return "Vietnam";
+  if (ip.startsWith("81.")) return "Russia";
+  if (ip.startsWith("95.")) return "Kazakhstan";
+  return "Unknown";
+}
+
+function asnFromIp(ip?: string) {
+  if (!ip) return "Unknown ASN";
+  if (ip.startsWith("119.")) return "VNPT";
+  if (ip.startsWith("81.")) return "Ростелеком";
+  if (ip.startsWith("95.")) return "Kazakhtelecom";
+  return "Unknown";
+}
+
+function severityBadge(sev?: string) {
+  const s = (sev || "").toUpperCase();
+  if (s === "CRITICAL") return "text-red-300 border-red-500/30";
+  if (s === "HIGH") return "text-orange-300 border-orange-500/30";
+  if (s === "MEDIUM") return "text-yellow-300 border-yellow-500/30";
+  return "text-gray-200 border-[#1E2A45]";
+}
+
+type MitreItem = { technique: string; name: string; why: string };
+
 export default function IncidentDetails() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const token = useAuth((s) => s.token);
-  
 
   const [incident, setIncident] = useState<BackendIncident | null>(null);
   const [timelineV3, setTimelineV3] = useState<TimelineV3 | null>(null);
@@ -53,48 +104,183 @@ export default function IncidentDetails() {
   // LOAD INCIDENT + UEBA V3 (READ-ONLY)
   // ============================
   useEffect(() => {
-  if (!token || !incidentId) return;
+    if (!token || !incidentId) return;
 
-  const load = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      // 1️⃣ Incident header
-      const res = await fetch(`${API_URL}/incidents/${incidentId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error(`Failed to load incident (${res.status})`);
-      const data = await res.json();
-      setIncident(data);
-
-      // 2️⃣ UEBA v3 (optional)
+    const load = async () => {
       try {
-        const v3 = await fetchIncidentTimelineV3(incidentId);
-        setTimelineV3(v3);
-      } catch {
-        setTimelineV3(null);
-      }
+        setLoading(true);
+        setError(null);
 
-      // 3️⃣ SOC actions history (audit-based, safe)
-      try {
-        const a = await fetchIncidentActions(incidentId);
-        setActions(a);
-      } catch {
-        setActions([]);
-      }
+        // 1️⃣ Incident header
+        const res = await fetch(`${API_URL}/incidents/${incidentId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) throw new Error(`Failed to load incident (${res.status})`);
+        const data = await res.json();
+        setIncident(data);
 
-    } catch (e: any) {
-      setError(e.message || "Failed to load incident");
-    } finally {
-      setLoading(false);
+        // 2️⃣ UEBA v3 (optional)
+        try {
+          const v3 = await fetchIncidentTimelineV3(incidentId);
+          setTimelineV3(v3);
+        } catch {
+          setTimelineV3(null);
+        }
+
+        // 3️⃣ SOC actions history (audit-based, safe)
+        try {
+          const a = await fetchIncidentActions(incidentId);
+          setActions(a);
+        } catch {
+          setActions([]);
+        }
+      } catch (e: any) {
+        setError(e.message || "Failed to load incident");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    load();
+  }, [incidentId, token]);
+
+  // ============================
+  // DERIVED (NO HOOKS BELOW RETURNS)
+  // ============================
+  const ueba = timelineV3?.ueba;
+  const signals = timelineV3?.signals || [];
+  const timeline = timelineV3?.timeline || [];
+
+  // ============================
+  // ENRICHMENT (UI-ONLY, SAFE)
+  // ============================
+  const attackStages = useMemo(() => {
+    if (!incident) return [];
+    const list: string[] = [];
+
+    actions.forEach((a) => {
+      if (a.action === "LOGIN_FAIL") list.push("Brute force");
+      if (a.action === "LOGIN_SUCCESS") list.push("Credential access");
+      if (a.action === "LOGIN_RISK_POST_AUTH") list.push("Account takeover");
+      if (a.action === "PASSWORD_CHANGED") list.push("Credential rotation");
+      if (a.action === "user.password_reset") list.push("Password reset");
+      if (a.action === "user.password_reset" || a.action === "PASSWORD_CHANGED")
+        list.push("Recovery / rotation");
+    });
+
+    if ((incident.correlation_id || "").toLowerCase().includes("auth_compromise")) {
+      list.push("Compromise correlation");
     }
-  };
 
-  load();
-}, [incidentId, token]);
+    return [...new Set(list)];
+  }, [actions, incident]);
+
+  const mitre = useMemo<MitreItem[]>(() => {
+    if (!incident) return [];
+    const out: MitreItem[] = [];
+    
+
+    
+    const add = (technique: string, name: string, why: string) => {
+      const key = `${technique}|${name}`;
+      if (!out.some((x) => `${x.technique}|${x.name}` === key)) {
+        out.push({ technique, name, why });
+      }
+    };
+
+    const explain = timelineV3?.ueba?.explain || [];
+    explain.forEach((line) => {
+      const l = (line || "").toLowerCase();
+      if (l.includes("privileged user") || l.includes("admin")) {
+        add("T1078", "Valid Accounts", "Privileged account involvement");
+      }
+      if (l.includes("correlation")) {
+        add(
+          "T1589",
+          "Gather Victim Identity Information",
+          "Correlation suggests reused identity/device context"
+        );
+      }
+    });
+
+    const actionSet = new Set(actions.map((a) => a.action));
+    if (actionSet.has("LOGIN_FAIL")) {
+      add("T1110", "Brute Force", "Multiple failed login attempts observed");
+    }
+    if (actionSet.has("LOGIN_SUCCESS") && actionSet.has("LOGIN_FAIL")) {
+      add("T1078", "Valid Accounts", "Successful authentication after failures");
+    }
+    if (actionSet.has("PASSWORD_CHANGED") || actionSet.has("user.password_reset")) {
+      add("T1098", "Account Manipulation", "Password change / reset activity recorded");
+    }
+    if (actionSet.has("LOGIN_RISK_POST_AUTH")) {
+      add(
+        "T1556",
+        "Modify Authentication Process",
+        "Post-auth risk stage indicates suspicious auth context"
+      );
+    }
+
+    return out;
+  }, [actions, timelineV3, incident]);
 
 
+  // ✅ ДОБАВИТЬ ЭТОТ БЛОК
+const graph = useMemo(() => {
+  if (!incident) {
+    return { nodes: [], edges: [] };
+  }
+
+  const nodes = [
+    { id: "user", label: incident.user || "—" },
+    { id: "ip", label: incident.ip || "—" },
+    { id: "system", label: incident.system || "—" },
+    { id: "incident", label: `Incident #${incident.id}` },
+  ];
+
+  const edges = [
+    { from: "user", to: "ip" },
+    { from: "ip", to: "system" },
+    { from: "system", to: "incident" },
+  ];
+
+  return { nodes, edges };
+}, [incident]);
+
+  const ioc = useMemo(() => {
+    if (!incident) {
+      return {
+        ip: "—",
+        user: "—",
+        system: "—",
+        fingerprint: "—",
+        correlation_id: "—",
+      };
+    }
+    
+    const ip = incident.ip || "—";
+    const user = incident.user || "—";
+    const system = incident.system || "—";
+
+    let fingerprint = "—";
+    const cid = incident.correlation_id || "";
+    if (cid) {
+      // best-effort only (keeps UI stable)
+      fingerprint = cid;
+    }
+
+    return {
+      ip,
+      user,
+      system,
+      fingerprint,
+      correlation_id: incident.correlation_id || "—",
+    };
+  }, [incident]);
+
+  // ============================
+  // RENDER
+  // ============================
   if (loading) {
     return <div className="p-8 text-sm text-gray-400">Loading incident…</div>;
   }
@@ -112,10 +298,6 @@ export default function IncidentDetails() {
       </div>
     );
   }
-
-  const ueba = timelineV3?.ueba;
-  const signals = timelineV3?.signals || [];
-  const timeline = timelineV3?.timeline || [];
 
   return (
     <div className="p-8 space-y-8">
@@ -148,15 +330,42 @@ export default function IncidentDetails() {
 
         <div>
           <div className="text-sm text-gray-400">Severity</div>
-          <div className="text-lg font-semibold text-white">{incident.severity}</div>
+          <div className="flex items-center gap-2">
+            <div className="text-lg font-semibold text-white">{incident.severity}</div>
+            <span
+              className={`px-2 py-1 text-xs rounded border ${severityBadge(
+                incident.severity
+              )}`}
+            >
+              {incident.severity}
+            </span>
+          </div>
         </div>
 
-        <div>
-          <div className="text-sm text-gray-400">Risk score</div>
-          <div className="text-lg font-semibold text-white">{incident.risk_score}</div>
+        {/* Risk score (enhanced) */}
+        <div className="col-span-2">
+          <div className="text-sm text-gray-400 mb-1">Risk score</div>
+          <div className="flex items-center gap-4">
+            <div className="text-lg font-semibold text-white">
+              {incident.risk_score}
+            </div>
+
+            <div className="flex-1 h-3 bg-[#0E1A3A] rounded-full overflow-hidden border border-[#1E2A45]">
+              <div
+                className={`h-full ${riskColor(incident.risk_score)}`}
+                style={{
+                  width: `${Math.max(0, Math.min(100, incident.risk_score))}%`,
+                }}
+              />
+            </div>
+
+            <div className="text-xs text-gray-400 w-[120px] text-right">
+              LOW · MED · HIGH · CRIT
+            </div>
+          </div>
         </div>
 
-        <div>
+        <div className="col-span-2">
           <div className="text-sm text-gray-400">Correlation ID</div>
           <div className="text-sm text-white break-all">
             {incident.correlation_id || "—"}
@@ -187,6 +396,181 @@ export default function IncidentDetails() {
 
         {incident.summary && (
           <div className="pt-4 text-sm text-gray-300">{incident.summary}</div>
+        )}
+      </div>
+
+      {/* IOC PANEL */}
+<div className="border border-[#1E2A45] rounded-xl bg-[#121A33] p-6 space-y-4">
+  <div className="text-sm text-gray-400 font-semibold">
+    Indicators of Compromise
+  </div>
+
+  <div className="grid grid-cols-3 gap-4 text-sm">
+
+    <div>
+      <div className="text-gray-400">Source IP</div>
+      <div className="flex items-center gap-2 text-white break-all">
+        {ioc.ip}
+        <button
+          onClick={() => copy(ioc.ip)}
+          className="text-xs text-gray-400 hover:text-white"
+        >
+          copy
+        </button>
+
+        <button
+          onClick={() => pivot("/soc", ioc.ip, navigate)}
+          className="text-xs text-blue-400 hover:text-blue-200"
+        >
+          investigate
+        </button>
+      </div>
+    </div>
+
+    <div>
+      <div className="text-gray-400">Target User</div>
+      <div className="flex items-center gap-2 text-white">
+        {ioc.user}
+        <button
+          onClick={() => copy(ioc.user)}
+          className="text-xs text-gray-400 hover:text-white"
+        >
+          copy
+        </button>
+      </div>
+    </div>
+
+    <div>
+      <div className="text-gray-400">System</div>
+      <div className="flex items-center gap-2 text-white">
+        {ioc.system}
+        <button
+          onClick={() => copy(ioc.system)}
+          className="text-xs text-gray-400 hover:text-white"
+        >
+          copy
+        </button>
+      </div>
+    </div>
+
+    <div className="col-span-3">
+      <div className="text-gray-400">Correlation fingerprint</div>
+      <div className="flex items-center gap-2 text-xs text-white break-all">
+        {ioc.fingerprint}
+        <button
+          onClick={() => copy(ioc.fingerprint)}
+          className="text-xs text-gray-400 hover:text-white"
+        >
+          copy
+        </button>
+
+        <button
+          onClick={() => pivot("/soc", ioc.fingerprint, navigate)}
+          className="text-xs text-blue-400 hover:text-blue-200"
+        >
+          investigate
+        </button>
+      </div>
+    </div>
+
+  </div>
+</div>
+   
+      {/* IP INTELLIGENCE */}
+<div className="border border-[#1E2A45] rounded-xl bg-[#121A33] p-6 space-y-4">
+  <div className="text-sm text-gray-400 font-semibold">
+    IP Intelligence
+  </div>
+
+  <div className="grid grid-cols-3 gap-4 text-sm">
+
+    <div>
+      <div className="text-gray-400">IP</div>
+      <div className="text-white">{ioc.ip}</div>
+    </div>
+
+    <div>
+      <div className="text-gray-400">Geo</div>
+      <div className="text-white">
+        {geoFromIp(ioc.ip)}
+      </div>
+    </div>
+
+    <div>
+      <div className="text-gray-400">ASN</div>
+      <div className="text-white">
+        {asnFromIp(ioc.ip)}
+      </div>
+    </div>
+
+  </div>
+</div> 
+    
+      {/* THREAT GRAPH */}
+<div className="border border-[#1E2A45] rounded-xl bg-[#121A33] p-6 space-y-4">
+  <div className="text-sm text-gray-400 font-semibold">
+    Threat Graph
+  </div>
+
+  <div className="overflow-x-auto">
+    <svg width="600" height="120">
+
+      {/* edges */}
+      <line x1="80" y1="60" x2="220" y2="60" stroke="#2A3A5A" strokeWidth="2"/>
+      <line x1="300" y1="60" x2="440" y2="60" stroke="#2A3A5A" strokeWidth="2"/>
+      <line x1="520" y1="60" x2="640" y2="60" stroke="#2A3A5A" strokeWidth="2"/>
+
+      {/* user */}
+      <rect x="0" y="40" width="160" height="40" rx="6" fill="#0E1A3A" stroke="#1E2A45"/>
+      <text x="80" y="65" textAnchor="middle" fill="white" fontSize="12">
+        {ioc.user}
+      </text>
+
+      {/* ip */}
+      <rect x="160" y="40" width="160" height="40" rx="6" fill="#0E1A3A" stroke="#1E2A45"/>
+      <text x="240" y="65" textAnchor="middle" fill="white" fontSize="12">
+        {ioc.ip}
+      </text>
+
+      {/* system */}
+      <rect x="320" y="40" width="160" height="40" rx="6" fill="#0E1A3A" stroke="#1E2A45"/>
+      <text x="400" y="65" textAnchor="middle" fill="white" fontSize="12">
+        {ioc.system}
+      </text>
+
+      {/* incident */}
+      <rect x="480" y="40" width="160" height="40" rx="6" fill="#0E1A3A" stroke="#1E2A45"/>
+      <text x="560" y="65" textAnchor="middle" fill="white" fontSize="12">
+        Incident #{incident.id}
+      </text>
+
+    </svg>
+  </div>
+</div>
+
+      {/* MITRE ATT&CK */}
+      <div className="border border-[#1E2A45] rounded-xl bg-[#121A33] p-6 space-y-4">
+        <div className="text-sm text-gray-400 font-semibold">MITRE ATT&CK</div>
+
+        {mitre.length === 0 ? (
+          <div className="text-sm text-gray-500">No ATT&CK techniques mapped.</div>
+        ) : (
+          <div className="space-y-2">
+            {mitre.map((m) => (
+              <div
+                key={`${m.technique}-${m.name}`}
+                className="border border-[#1E2A45] rounded-lg p-3 bg-[#0E1A3A]"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="text-white font-semibold">
+                    {m.technique} · {m.name}
+                  </div>
+                  <span className="text-xs text-gray-300">UI-only mapping</span>
+                </div>
+                <div className="mt-1 text-xs text-gray-400">{m.why}</div>
+              </div>
+            ))}
+          </div>
         )}
       </div>
 
@@ -242,9 +626,7 @@ export default function IncidentDetails() {
             ))}
           </ul>
         ) : (
-          <div className="text-sm text-gray-500">
-            No explainability data.
-          </div>
+          <div className="text-sm text-gray-500">No explainability data.</div>
         )}
       </div>
 
@@ -267,9 +649,7 @@ export default function IncidentDetails() {
                 </div>
               </div>
 
-              <div className="mt-2 text-sm text-gray-300">
-                {s.explanation}
-              </div>
+              <div className="mt-2 text-sm text-gray-300">{s.explanation}</div>
 
               {s.evidence && (
                 <pre className="mt-3 text-xs text-gray-300 bg-[#121A33] border border-[#1E2A45] rounded p-3 overflow-auto">
@@ -281,11 +661,29 @@ export default function IncidentDetails() {
         )}
       </div>
 
+      {/* ATTACK CHAIN */}
+      <div className="border border-[#1E2A45] rounded-xl bg-[#121A33] p-6 space-y-4">
+        <div className="text-sm text-gray-400 font-semibold">Attack chain</div>
+
+        {attackStages.length === 0 ? (
+          <div className="text-sm text-gray-500">No attack stages detected.</div>
+        ) : (
+          <div className="flex flex-wrap gap-3">
+            {attackStages.map((s, i) => (
+              <div
+                key={`${s}-${i}`}
+                className="px-3 py-1 text-xs rounded bg-[#0E1A3A] border border-[#1E2A45] text-white"
+              >
+                {s}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* TIMELINE — FACTS ONLY */}
       <div className="border border-[#1E2A45] rounded-xl bg-[#121A33] p-6 space-y-4">
-        <div className="text-sm text-gray-400 font-semibold">
-          Incident Timeline
-        </div>
+        <div className="text-sm text-gray-400 font-semibold">Incident Timeline</div>
 
         {timeline.length === 0 ? (
           <div className="text-sm text-gray-500">No timeline data.</div>
@@ -293,7 +691,8 @@ export default function IncidentDetails() {
           <ul className="text-sm text-gray-300 space-y-2">
             {timeline.map((e: any, i: number) => (
               <li key={i}>
-                • {e.type === "session"
+                •{" "}
+                {e.type === "session"
                   ? `Session #${e.session_id} (${e.status})`
                   : `Incident created (${e.severity})`}
               </li>
@@ -303,47 +702,39 @@ export default function IncidentDetails() {
       </div>
 
       {/* ACTIONS HISTORY (AUDIT) */}
-<div className="border border-[#1E2A45] rounded-xl bg-[#121A33] p-6 space-y-4">
-  <div className="text-sm text-gray-400 font-semibold">
-    SOC Actions History
-  </div>
+      <div className="border border-[#1E2A45] rounded-xl bg-[#121A33] p-6 space-y-4">
+        <div className="text-sm text-gray-400 font-semibold">SOC Actions History</div>
 
-  {actions.length === 0 ? (
-    <div className="text-sm text-gray-500">
-      No actions recorded for this incident.
-    </div>
-  ) : (
-    <ul className="text-sm text-gray-300 space-y-2">
-      {actions.map((a) => (
-        <li
-          key={a.id}
-          className="border border-[#1E2A45] rounded-lg p-3 bg-[#0E1A3A]"
-        >
-          <div className="flex justify-between">
-            <span className="font-semibold text-white">
-              {a.action}
-            </span>
-            <span className="text-xs text-gray-400">
-              {new Date(a.timestamp).toLocaleString()}
-            </span>
+        {actions.length === 0 ? (
+          <div className="text-sm text-gray-500">
+            No actions recorded for this incident.
           </div>
+        ) : (
+          <ul className="text-sm text-gray-300 space-y-2">
+            {actions.map((a) => (
+              <li
+                key={a.id}
+                className="border border-[#1E2A45] rounded-lg p-3 bg-[#0E1A3A]"
+              >
+                <div className="flex justify-between">
+                  <span className="font-semibold text-white">{a.action}</span>
+                  <span className="text-xs text-gray-400">
+                    {safeDate(a.timestamp)}
+                  </span>
+                </div>
 
-          <div className="text-xs text-gray-400 mt-1">
-            by {a.user}
-          </div>
+                <div className="text-xs text-gray-400 mt-1">by {a.user}</div>
 
-          {a.details && (
-            <pre className="mt-2 text-xs text-gray-300 bg-[#121A33] border border-[#1E2A45] rounded p-2 overflow-auto">
+                {a.details && (
+                  <pre className="mt-2 text-xs text-gray-300 bg-[#121A33] border border-[#1E2A45] rounded p-2 overflow-auto">
 {JSON.stringify(a.details, null, 2)}
-            </pre>
-          )}
-        </li>
-      ))}
-    </ul>
-  )}
-</div>
+                  </pre>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }
-
-

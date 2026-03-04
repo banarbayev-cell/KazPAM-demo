@@ -1,6 +1,7 @@
 // C:\Users\user\Documents\KazPAM-dashboard\src\pages\SocDashboard.tsx
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import ThreatCard from "../components/ThreatCard";
 import InvestigationModal from "../components/modals/InvestigationModal";
 import { fetchAuditLogs, AuditLog } from "../api/audit";
@@ -14,6 +15,7 @@ import { useAuth } from "../store/auth";
 import { parseUserAgent } from "../utils/parseUserAgent";
 import { fetchSocSummary } from "../api/socSummary";
 import type { SocSummaryResponse } from "../api/socSummary";
+import { useNavigate } from "react-router-dom";
 
 import {
   blockUser,
@@ -123,12 +125,16 @@ const SOC_INCIDENT_SESSION_KEY = "kazpam_soc_incident_restored";
 
 export default function SocDashboard() {
   // 🔐 Каноничный источник токена + ролей. ВАЖНО: один раз, в самом верху.
+
+  const navigate = useNavigate();
   const auth = useAuth();
 
-const token = auth.token;
-const roles = auth.user?.roles ?? [];
+  const token = auth.token;
+  const roles = auth.user?.roles ?? [];
 
-
+  // 🔎 Investigation query
+  const [searchParams] = useSearchParams();
+  const q = searchParams.get("q");
 
   const [investigationOpen, setInvestigationOpen] = useState(false);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
@@ -137,6 +143,23 @@ const roles = auth.user?.roles ?? [];
   // INCIDENT STATE
   const [incident, setIncident] = useState<Incident | null>(null);
   const [summary, setSummary] = useState<SocSummaryResponse | null>(null);
+  
+  const filteredIncidents = useMemo(() => {
+  if (!summary?.incident) return [];
+
+  const list = [summary.incident];
+
+  if (!q) return list;
+
+  const s = q.toLowerCase();
+
+  return list.filter((i: any) =>
+    (i.ip || "").toLowerCase().includes(s) ||
+    (i.user || "").toLowerCase().includes(s) ||
+    (i.system || "").toLowerCase().includes(s) ||
+    (i.correlation_id || "").toLowerCase().includes(s)
+  );
+}, [summary, q]);
 
   // RBAC ERROR (STRUCTURED)
   const [rbacError, setRbacError] = useState<RbacError>(null);
@@ -420,8 +443,17 @@ if (!alreadyRestoredThisSession) {
 }
         incidents={record.events.slice(0, 4)}
         createdAt={displayedCreatedAt}   // ✅ ВОТ ЭТО ДОБАВЬ
-        onInvestigate={handleInvestigate}
-      />
+        investigationQuery={summary?.incident?.ip}
+        onInvestigate={(q) => {
+          if (q && window.location.pathname !== "/soc") {
+            navigate(`/soc?q=${encodeURIComponent(q)}`);
+            return;
+          }
+
+          handleInvestigate();
+
+        }} 
+/> 
 
       <InvestigationModal
         isOpen={investigationOpen}

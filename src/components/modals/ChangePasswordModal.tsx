@@ -25,13 +25,23 @@ export default function ChangePasswordModal({ open, onClose }: Props) {
   const [showNew, setShowNew] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
+  // 🔐 password policy
+  const passwordRules = {
+    length: newPassword.length >= 8,
+    uppercase: /[A-Z]/.test(newPassword),
+    number: /[0-9]/.test(newPassword),
+    special: /[^A-Za-z0-9]/.test(newPassword),
+  };
+
+  const passwordScore =
+    Object.values(passwordRules).filter(Boolean).length;
+
   if (!open) return null;
 
   const resetForm = () => {
     setOldPassword("");
     setNewPassword("");
     setConfirm("");
-    setMessage(null);
     setError(null);
   };
 
@@ -39,13 +49,18 @@ export default function ChangePasswordModal({ open, onClose }: Props) {
     setError(null);
     setMessage(null);
 
-    if (!oldPassword || !newPassword) {
+    if (!oldPassword || !newPassword || !confirm) {
       setError("Заполните все поля");
       return;
     }
 
     if (newPassword !== confirm) {
       setError("Пароли не совпадают");
+      return;
+    }
+
+    if (passwordScore < 3) {
+      setError("Пароль слишком слабый");
       return;
     }
 
@@ -56,7 +71,7 @@ export default function ChangePasswordModal({ open, onClose }: Props) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-           Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           current_password: oldPassword,
@@ -67,31 +82,30 @@ export default function ChangePasswordModal({ open, onClose }: Props) {
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        let message = "Не удалось сменить пароль";
+        let msg = "Не удалось сменить пароль";
 
         if (Array.isArray(data?.detail)) {
-          message = data.detail.map((e: any) => e.msg).join(", ");
+          msg = data.detail.map((e: any) => e.msg).join(", ");
         } else if (typeof data?.detail === "string") {
-          message = data.detail;
+          msg = data.detail;
         }
 
-        setError(message);
+        setError(msg);
         return;
       }
 
+      // ✅ SUCCESS
       setMessage("Пароль успешно изменён");
 
-      resetForm();
+      setOldPassword("");
+      setNewPassword("");
+      setConfirm("");
 
-      /**
-       * PAM Best Practice
-       * После смены пароля — разлогинить пользователя
-       * чтобы обновить токен
-       */
+      // logout через 2 секунды
       setTimeout(() => {
         logout();
         window.location.href = "/login";
-      }, 1500);
+      }, 2000);
 
     } catch {
       setError("Сервер недоступен");
@@ -102,13 +116,14 @@ export default function ChangePasswordModal({ open, onClose }: Props) {
 
   return (
     <div className="fixed inset-0 z-[100000] flex items-center justify-center bg-black/60">
+
       <div className="w-[420px] bg-[#121A33] border border-[#1E2A45] rounded-2xl p-6">
 
         <h2 className="text-xl font-bold text-white mb-4">
           Смена пароля
         </h2>
 
-        {/* OLD PASSWORD */}
+        {/* CURRENT PASSWORD */}
         <input
           type={showOld ? "text" : "password"}
           placeholder="Текущий пароль"
@@ -126,6 +141,7 @@ export default function ChangePasswordModal({ open, onClose }: Props) {
           Показать пароль
         </label>
 
+
         {/* NEW PASSWORD */}
         <input
           type={showNew ? "text" : "password"}
@@ -135,7 +151,7 @@ export default function ChangePasswordModal({ open, onClose }: Props) {
           className="w-full mb-2 p-3 bg-[#0E1A3A] border border-[#1E2A45] rounded-lg text-white"
         />
 
-        <label className="flex items-center gap-2 text-xs text-gray-400 mb-3">
+        <label className="flex items-center gap-2 text-xs text-gray-400 mb-2">
           <input
             type="checkbox"
             checked={showNew}
@@ -143,6 +159,42 @@ export default function ChangePasswordModal({ open, onClose }: Props) {
           />
           Показать пароль
         </label>
+
+        {/* PASSWORD STRENGTH */}
+        <div className="mb-3">
+
+          <div className="flex gap-1 mb-2">
+            {[1,2,3,4].map(i => (
+              <div
+                key={i}
+                className={`h-2 flex-1 rounded 
+                ${passwordScore >= i ? "bg-green-500" : "bg-gray-700"}`}
+              />
+            ))}
+          </div>
+
+          <div className="text-xs text-gray-400 space-y-1">
+
+            <div className={passwordRules.length ? "text-green-400" : ""}>
+              • минимум 8 символов
+            </div>
+
+            <div className={passwordRules.uppercase ? "text-green-400" : ""}>
+              • заглавная буква
+            </div>
+
+            <div className={passwordRules.number ? "text-green-400" : ""}>
+              • цифра
+            </div>
+
+            <div className={passwordRules.special ? "text-green-400" : ""}>
+              • спецсимвол
+            </div>
+
+          </div>
+
+        </div>
+
 
         {/* CONFIRM PASSWORD */}
         <input
@@ -162,6 +214,7 @@ export default function ChangePasswordModal({ open, onClose }: Props) {
           Показать пароль
         </label>
 
+
         {/* ERROR */}
         {error && (
           <div className="text-red-400 text-sm mb-2">{error}</div>
@@ -169,8 +222,11 @@ export default function ChangePasswordModal({ open, onClose }: Props) {
 
         {/* SUCCESS */}
         {message && (
-          <div className="text-green-400 text-sm mb-2">{message}</div>
+          <div className="bg-green-900/40 border border-green-600 text-green-300 text-sm px-3 py-2 rounded-lg mb-3">
+            ✓ {message}
+          </div>
         )}
+
 
         {/* BUTTONS */}
         <div className="flex justify-end gap-2 mt-4">
@@ -186,7 +242,11 @@ export default function ChangePasswordModal({ open, onClose }: Props) {
           </button>
 
           <button
-            disabled={loading}
+            disabled={
+              loading ||
+              passwordScore < 3 ||
+              newPassword !== confirm
+            }
             onClick={handleSubmit}
             className="px-4 py-2 rounded-lg bg-[#0052FF] text-white disabled:opacity-50 hover:bg-[#1f6bff] transition"
           >
@@ -194,7 +254,9 @@ export default function ChangePasswordModal({ open, onClose }: Props) {
           </button>
 
         </div>
+
       </div>
+
     </div>
   );
 }

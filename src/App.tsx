@@ -25,7 +25,7 @@ import ResetPassword from "@/pages/ResetPassword";
 import ForceChangePassword from "@/pages/ForceChangePassword";
 import License from "./pages/License";
 import Access from "./components/Access";
-
+import IncidentDetails from "./pages/IncidentDetails";
 
 export default function App() {
   const loadFromStorage = useAuth((s) => s.loadFromStorage);
@@ -72,6 +72,7 @@ export default function App() {
           {/* dashboard routes */}
           <Route path="dashboard" element={<Home />} />
           <Route path="soc" element={<SocDashboard />} />
+          <Route path="soc/incidents/:id" element={<IncidentDetails />} />
           <Route path="users" element={<Users />} />
           <Route path="sessions" element={<Sessions />} />
           <Route path="vault" element={<Vault />} />

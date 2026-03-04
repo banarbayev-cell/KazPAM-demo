@@ -182,7 +182,7 @@ export default function InvestigationModal({
               {/* ✅ ВОТ ОНА */}
         {incident.backendId && (
           <button
-            onClick={() => navigate(`/incidents/${incident.backendId}`)}
+            onClick={() => navigate(`/soc/incidents/${incident.backendId}`)}
             className="px-3 py-1 text-xs rounded bg-[#0052FF] text-white hover:opacity-90"
           >
             Открыть инцидент

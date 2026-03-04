@@ -56,10 +56,10 @@ export default function ChangePasswordModal({ open, onClose }: Props) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
+           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          old_password: oldPassword,
+          current_password: oldPassword,
           new_password: newPassword,
         }),
       });

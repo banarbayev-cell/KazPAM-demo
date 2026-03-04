@@ -15,8 +15,7 @@ export default function Header() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [passwordOpen, setPasswordOpen] = useState(false);
 
-  const displayName =
-    user?.email || user?.username || "user";
+  const displayName = user?.email || "user";
 
   const avatar =
     displayName?.[0]?.toUpperCase() || "U";
@@ -59,7 +58,7 @@ export default function Header() {
 
           {/* Dropdown */}
           {open && (
-            <div className="absolute top-16 right-0 w-56 bg-[var(--bg-card)] border border-[var(--border)] rounded-xl shadow-xl p-2 animate-fadeIn z-50">
+            <div className="absolute top-16 right-0 w-56 bg-[var(--bg-card)] border border-[var(--border)] rounded-xl shadow-xl p-2 animate-fadeIn z-[9999]">
               <button
                 onClick={() => {
                   setProfileOpen(true);

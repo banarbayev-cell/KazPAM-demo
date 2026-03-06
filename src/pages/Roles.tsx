@@ -120,7 +120,7 @@ export default function Roles() {
   const createRole = async (name: string) => {
     setCreateLoading(true);
     try {
-      await api.post("/roles", { name });
+      await api.post("/roles/", { name });
 
       toast.success("Роль создана");
       setCreateOpen(false);

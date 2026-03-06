@@ -63,11 +63,11 @@ export default function VaultRequests() {
   navigate(`/vault${qs}`);
 };
 
-function renderExpires(validUntil?: string | null) {
-  if (!validUntil) return "—";
+function renderExpires(expiresAt?: string | null) {
+  if (!expiresAt) return "—";
 
   const now = Date.now();
-  const end = new Date(validUntil).getTime();
+  const end = new Date(expiresAt).getTime();
 
   const diff = end - now;
 
@@ -333,7 +333,7 @@ function renderExpires(validUntil?: string | null) {
                   </td>
                   
                   <td className="px-4 py-3 text-gray-200">
-                    {renderExpires(r.valid_until)}
+                    {renderExpires(r.expires_at)}
                   </td>
 
                   <td className="px-4 py-3 text-right space-x-2">

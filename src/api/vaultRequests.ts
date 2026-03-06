@@ -4,6 +4,7 @@
 
 import { api } from "../services/api";
 
+
 /**
  * =====================================================
  * TYPES (минимум, строго под backend)
@@ -25,7 +26,7 @@ export interface VaultRequest {
   created_at?: string;
   approved_by?: string | null;
   approved_at?: string | null;
-  valid_until?: string | null;
+  expires_at?: string | null;
 }
 
 /**

@@ -271,6 +271,7 @@ function renderExpires(expiresAt?: string | null) {
               <th className="px-4 py-3 text-left">Запросил</th>
               <th className="px-4 py-3 text-left">Статус</th>
               <th className="px-4 py-3 text-left">Создан</th>
+              <th className="p-3 text-left">Тип доступа</th>
               <th className="px-4 py-3 text-left">Истекает через</th>
               <th className="px-4 py-3 text-right">Действия</th>
             </tr>
@@ -279,7 +280,7 @@ function renderExpires(expiresAt?: string | null) {
           <tbody>
             {loading && (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-gray-300">
+                <td colSpan={8} className="px-4 py-8 text-center text-gray-300">
                   Загрузка…
                 </td>
               </tr>
@@ -287,7 +288,7 @@ function renderExpires(expiresAt?: string | null) {
 
             {!loading && currentRows.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-gray-300">
+                <td colSpan={8} className="px-4 py-8 text-center text-gray-300">
                   Нет запросов
                 </td>
               </tr>
@@ -332,6 +333,16 @@ function renderExpires(expiresAt?: string | null) {
                     {r.created_at ? new Date(r.created_at).toLocaleString() : "—"}
                   </td>
                   
+                  <td className="px-4 py-3">
+                    {r.status === "APPROVED" ? (
+                      <span className="inline-flex rounded-full px-2 py-1 text-xs font-medium bg-[#0E1A3A] text-[#3BE3FD] border border-[#1E2A45]">
+                        Single-Use
+                    </span>
+                  ) : (
+                    <span className="text-gray-400">—</span>
+                  )}
+                  </td>
+
                   <td className="px-4 py-3 text-gray-200">
                     {r.status === "APPROVED"
                       ? renderExpires(r.expires_at)

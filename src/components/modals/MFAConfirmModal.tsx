@@ -3,32 +3,12 @@ import React, { useEffect, useMemo, useState } from "react";
 interface MFAConfirmProps {
   open: boolean;
   onClose: () => void;
-
-  /**
-   * Усиление: теперь onSuccess получает введённый код.
-   * Это не ломает текущую архитектуру — просто добавляет возможность
-   * использовать backend-проверку и/или follow-up действия (reveal/copy).
-   */
   onSuccess: (code: string) => void;
-
-  /**
-   * Усиление: режим проверки MFA.
-   * - "backend" (по умолчанию): вызывает POST /mfa/verify
-   * - "local": оставлен для fallback/демо (как раньше)
-   */
   verifyMode?: "backend" | "local";
-
-  /**
-   * Если твой backend требует поле типа (TOTP/Email/SMS),
-   * можно будет прокинуть. Сейчас оставляем опционально.
-   */
   mfaType?: string;
+  defaultMethod?: "totp" | "email";
 }
 
-/**
- * Пытаемся достать JWT максимально безопасно.
- * Не ломаем существующий store: просто пытаемся найти типовые ключи.
- */
 function getAuthToken(): string | null {
   const keys = ["token", "access_token", "jwt", "auth_token"];
   for (const k of keys) {
@@ -36,7 +16,6 @@ function getAuthToken(): string | null {
     if (v && v.trim()) return v;
   }
 
-  // Иногда токен лежит JSON-объектом (например, auth store)
   const jsonKeys = ["auth", "authStore", "kazpam_auth", "session"];
   for (const k of jsonKeys) {
     const raw = localStorage.getItem(k);
@@ -44,7 +23,11 @@ function getAuthToken(): string | null {
     try {
       const obj = JSON.parse(raw);
       const possible =
-        obj?.token || obj?.access_token || obj?.jwt || obj?.state?.token || obj?.state?.access_token;
+        obj?.token ||
+        obj?.access_token ||
+        obj?.jwt ||
+        obj?.state?.token ||
+        obj?.state?.access_token;
       if (possible && String(possible).trim()) return String(possible);
     } catch {
       // ignore
@@ -54,18 +37,14 @@ function getAuthToken(): string | null {
   return null;
 }
 
-async function verifyMfaBackend(code: string, mfaType?: string): Promise<void> {
+async function verifyMfaBackend(
+  code: string,
+  method: "totp" | "email"
+): Promise<void> {
   const token = getAuthToken();
   if (!token) {
-    // В PAM-системе MFA verify без auth не имеет смысла
     throw new Error("JWT не найден. Войдите в систему и повторите попытку.");
   }
-
-  // OpenAPI: POST /mfa/verify
-  // Схема MFACode в твоём списке. Обычно это { code: "123456" }.
-  // Добавляем mfa_type опционально (если backend не принимает — проигнорит либо вернёт 422).
-  const payload: any = { code };
-  if (mfaType) payload.mfa_type = mfaType;
 
   const res = await fetch("/api/mfa/verify", {
     method: "POST",
@@ -73,11 +52,40 @@ async function verifyMfaBackend(code: string, mfaType?: string): Promise<void> {
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({
+      code,
+      method,
+    }),
   });
 
   if (!res.ok) {
     let msg = `Ошибка MFA verify (${res.status})`;
+    try {
+      const data = await res.json();
+      msg = data?.detail || data?.message || msg;
+    } catch {
+      // ignore
+    }
+    throw new Error(msg);
+  }
+}
+
+async function sendEmailMfaCode(): Promise<void> {
+  const token = getAuthToken();
+  if (!token) {
+    throw new Error("JWT не найден. Войдите в систему и повторите попытку.");
+  }
+
+  const res = await fetch("/api/mfa/email/send", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!res.ok) {
+    let msg = `Ошибка отправки email MFA (${res.status})`;
     try {
       const data = await res.json();
       msg = data?.detail || data?.message || msg;
@@ -93,23 +101,41 @@ export default function MFAConfirmModal({
   onClose,
   onSuccess,
   verifyMode = "backend",
-  mfaType,
+  defaultMethod = "totp",
 }: MFAConfirmProps) {
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [method, setMethod] = useState<"totp" | "email">(defaultMethod);
+  const [emailSent, setEmailSent] = useState(false);
 
   useEffect(() => {
     if (open) {
       setCode("");
       setErr(null);
       setLoading(false);
+      setMethod(defaultMethod);
+      setEmailSent(false);
     }
-  }, [open]);
+  }, [open, defaultMethod]);
 
   const canSubmit = useMemo(() => code.trim().length >= 6 && !loading, [code, loading]);
 
   if (!open) return null;
+
+  const handleSendEmailCode = async () => {
+    setErr(null);
+    setLoading(true);
+
+    try {
+      await sendEmailMfaCode();
+      setEmailSent(true);
+    } catch (e: any) {
+      setErr(e?.message || "Не удалось отправить код на email");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleVerify = async () => {
     const trimmed = code.trim();
@@ -123,15 +149,13 @@ export default function MFAConfirmModal({
 
     try {
       if (verifyMode === "backend") {
-        await verifyMfaBackend(trimmed, mfaType);
+        await verifyMfaBackend(trimmed, method);
       } else {
-        // Fallback demo режим: оставляем прежнюю заглушку, но не как основной путь.
         if (trimmed !== "123456") {
           throw new Error("Неверный код");
         }
       }
 
-      // Важно: onSuccess вызываем ДО onClose, чтобы родитель мог выполнить reveal/copy.
       onSuccess(trimmed);
       onClose();
     } catch (e: any) {
@@ -145,13 +169,76 @@ export default function MFAConfirmModal({
     <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-[9999]">
       <div className="bg-white rounded-xl shadow-2xl w-[420px] p-6 border border-gray-200">
         <h2 className="text-2xl font-bold text-gray-900 mb-3">Подтверждение личности</h2>
-        <p className="text-gray-600 mb-5">Введите одноразовый код подтверждения для просмотра секрета.</p>
+        <p className="text-gray-600 mb-5">
+          Выберите способ подтверждения и введите одноразовый код.
+        </p>
+
+        <div className="mb-4">
+          <div className="text-sm font-medium text-gray-700 mb-2">
+            Выберите метод подтверждения
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="radio"
+                name="mfa_method"
+                value="totp"
+                checked={method === "totp"}
+                onChange={() => {
+                  setMethod("totp");
+                  setErr(null);
+                }}
+                disabled={loading}
+              />
+              Google Authenticator
+            </label>
+
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="radio"
+                name="mfa_method"
+                value="email"
+                checked={method === "email"}
+                onChange={() => {
+                  setMethod("email");
+                  setErr(null);
+                }}
+                disabled={loading}
+              />
+              Email код
+            </label>
+          </div>
+        </div>
+
+        {method === "email" && (
+          <div className="mb-4">
+            <button
+              type="button"
+              onClick={handleSendEmailCode}
+              className="px-4 py-2 bg-gray-200 rounded-lg font-medium hover:bg-gray-300 disabled:opacity-60"
+              disabled={loading}
+            >
+              {emailSent ? "Отправить код повторно" : "Отправить код на email"}
+            </button>
+
+            {emailSent && (
+              <div className="text-sm text-green-600 mt-2">
+                Код отправлен на вашу почту.
+              </div>
+            )}
+          </div>
+        )}
 
         <input
           type="text"
           value={code}
           onChange={(e) => setCode(e.target.value)}
-          placeholder="Введите код"
+          placeholder={
+            method === "email"
+              ? "Введите код из email"
+              : "Введите код из Google Authenticator"
+          }
           className="w-full border border-gray-300 rounded-lg p-3 mb-3 text-lg focus:ring-2 focus:ring-blue-500 outline-none"
           disabled={loading}
         />

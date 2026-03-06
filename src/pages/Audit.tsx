@@ -306,9 +306,9 @@ export default function Audit(){
             </thead>
             <tbody className="divide-y divide-[#1E2A45]">
               {loading ? (
-                 <tr><td colSpan={7} className="p-10 text-center text-gray-400 animate-pulse">Загрузка данных...</td></tr>
+                 <tr><td colSpan={8} className="p-10 text-center text-gray-400 animate-pulse">Загрузка данных...</td></tr>
               ) : currentRows.length === 0 ? (
-                 <tr><td colSpan={7} className="p-10 text-center text-gray-400">Событий не найдено</td></tr>
+                 <tr><td colSpan={8} className="p-10 text-center text-gray-400">Событий не найдено</td></tr>
               ) : (
                 currentRows.map(r => (
                   <tr key={r.id} className="hover:bg-[#1E2A45] transition-colors group">

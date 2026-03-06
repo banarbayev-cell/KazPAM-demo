@@ -6,12 +6,14 @@ import {
   approveVaultRequest,
   denyVaultRequest,
   cancelVaultRequest,
+  createVaultRequest,
   VaultRequest,
   VaultRequestStatus,
 } from "@/api/vaultRequests";
 import Access from "@/components/Access";
 import StatusChip from "@/components/StatusChip";
 import { toast } from "sonner";
+import { useAuth } from "@/store/auth";
 
 const STATUS_OPTIONS: VaultRequestStatus[] = [
   "PENDING",
@@ -22,11 +24,20 @@ const STATUS_OPTIONS: VaultRequestStatus[] = [
 
 export default function VaultRequests() {
   const navigate = useNavigate();
+  const user = useAuth((s) => s.user);
+  const isApprover = user?.permissions?.includes("approve_vault_requests");
 
   const [requests, setRequests] = useState<VaultRequest[]>([]);
   const [status, setStatus] = useState<VaultRequestStatus | "ALL">("PENDING");
-  const [mine, setMine] = useState(false);
+  const [mine, setMine] = useState(!isApprover);
+  useEffect(() => {
+  setMine(!isApprover);
+}, [isApprover]);
   const [loading, setLoading] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [secretId, setSecretId] = useState("");
+  const [reason, setReason] = useState("");
+
 
   // search (client-side, safe)
   const [search, setSearch] = useState("");
@@ -34,7 +45,16 @@ export default function VaultRequests() {
   // pagination (client-side, безопасно: backend не трогаем)
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [, setTick] = useState(0);
 
+  useEffect(() => {
+    const t = setInterval(() => {
+      setTick((v) => v + 1);
+    }, 1000);
+
+    return () => clearInterval(t);
+  }, []);
+  
   const goToVault = (secretId: unknown, openHistory?: boolean) => {
   const sid = Number(secretId);
   if (!Number.isFinite(sid)) return;
@@ -42,6 +62,24 @@ export default function VaultRequests() {
   const qs = openHistory ? `?secret_id=${sid}&history=1` : `?secret_id=${sid}`;
   navigate(`/vault${qs}`);
 };
+
+function renderExpires(validUntil?: string | null) {
+  if (!validUntil) return "—";
+
+  const now = Date.now();
+  const end = new Date(validUntil).getTime();
+
+  const diff = end - now;
+
+  if (diff <= 0) return "Expired";
+
+  const seconds = Math.floor(diff / 1000);
+
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+
+  return `${m}m ${s}s`;
+}
 
   async function load() {
     setLoading(true);
@@ -95,6 +133,33 @@ export default function VaultRequests() {
       toast.error(e?.message || "Ошибка отмены");
     }
   }
+  
+  async function onCreateRequest() {
+  const sid = Number(secretId);
+
+  if (!Number.isFinite(sid) || sid <= 0) {
+    toast.error("Введите Secret ID");
+    return;
+  }
+
+  try {
+    await createVaultRequest({
+      secret_id: sid,
+      reason: reason || undefined,
+    });
+
+    toast.success("Запрос отправлен");
+
+    setMine(true);
+    setShowCreateModal(false);
+    setSecretId("");
+    setReason("");
+
+    await load();
+  } catch (e: any) {
+    toast.error(e?.message || "Ошибка создания запроса");
+  }
+}
 
   // ===== search + derived list =====
   const filteredRequests = useMemo(() => {
@@ -138,6 +203,14 @@ export default function VaultRequests() {
             Управление запросами на временный доступ к секретам
           </p>
         </div>
+        <Access permission="request_vault_access">
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="px-4 py-2 rounded bg-[#0052FF] hover:bg-[#0046D8] text-white text-sm"
+        >
+            + Запросить доступ
+          </button>
+        </Access>
       </div>
 
       {/* FILTERS (светлый блок, как общий стиль) */}
@@ -194,10 +267,11 @@ export default function VaultRequests() {
           <thead className="bg-[#1A243F] text-gray-300">
             <tr>
               <th className="px-4 py-3 text-left">ID</th>
-              <th className="px-4 py-3 text-left">Secret</th>
-              <th className="px-4 py-3 text-left">Requester</th>
-              <th className="px-4 py-3 text-left">Status</th>
+              <th className="px-4 py-3 text-left">Секрет</th>
+              <th className="px-4 py-3 text-left">Запросил</th>
+              <th className="px-4 py-3 text-left">Статус</th>
               <th className="px-4 py-3 text-left">Создан</th>
+              <th className="px-4 py-3 text-left">Истекает через</th>
               <th className="px-4 py-3 text-right">Действия</th>
             </tr>
           </thead>
@@ -205,7 +279,7 @@ export default function VaultRequests() {
           <tbody>
             {loading && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-gray-300">
+                <td colSpan={7} className="px-4 py-8 text-center text-gray-300">
                   Загрузка…
                 </td>
               </tr>
@@ -213,7 +287,7 @@ export default function VaultRequests() {
 
             {!loading && currentRows.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-gray-300">
+                <td colSpan={7} className="px-4 py-8 text-center text-gray-300">
                   Нет запросов
                 </td>
               </tr>
@@ -256,6 +330,10 @@ export default function VaultRequests() {
                   </td>
                   <td className="px-4 py-3 text-gray-200">
                     {r.created_at ? new Date(r.created_at).toLocaleString() : "—"}
+                  </td>
+                  
+                  <td className="px-4 py-3 text-gray-200">
+                    {renderExpires(r.valid_until)}
                   </td>
 
                   <td className="px-4 py-3 text-right space-x-2">
@@ -361,6 +439,51 @@ export default function VaultRequests() {
           </button>
         </div>
       </div>
+      {showCreateModal && (
+  <div className="fixed inset-0 flex items-center justify-center bg-black/50 z-50">
+    <div className="bg-[#121A33] p-6 rounded-xl border border-[#1E2A45] w-[420px] space-y-4">
+      <h2 className="text-lg font-semibold text-white">
+        Запросить доступ к секрету
+      </h2>
+
+      <div className="space-y-2">
+        <label className="text-sm text-gray-300">Secret ID</label>
+        <input
+          value={secretId}
+          onChange={(e) => setSecretId(e.target.value)}
+          className="w-full p-2 rounded bg-[#0E1A3A] border border-[#1E2A45] text-white"
+          placeholder="например: 15"
+        />
+      </div>
+
+      <div className="space-y-2">
+        <label className="text-sm text-gray-300">Причина</label>
+        <textarea
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          className="w-full p-2 rounded bg-[#0E1A3A] border border-[#1E2A45] text-white"
+          placeholder="Почему нужен доступ"
+        />
+      </div>
+
+      <div className="flex justify-end gap-2 pt-2">
+        <button
+          onClick={() => setShowCreateModal(false)}
+          className="px-3 py-1 rounded bg-gray-600 hover:bg-gray-700 text-white text-sm"
+        >
+          Отмена
+        </button>
+
+        <button
+          onClick={onCreateRequest}
+          className="px-3 py-1 rounded bg-[#0052FF] hover:bg-[#0046D8] text-white text-sm"
+        >
+          Отправить
+        </button>
+      </div>
+    </div>
+  </div>
+)}
     </div>
   );
 }

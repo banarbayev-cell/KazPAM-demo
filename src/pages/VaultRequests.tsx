@@ -333,7 +333,9 @@ function renderExpires(expiresAt?: string | null) {
                   </td>
                   
                   <td className="px-4 py-3 text-gray-200">
-                    {renderExpires(r.expires_at)}
+                    {r.status === "APPROVED"
+                      ? renderExpires(r.expires_at)
+                      : "—"}
                   </td>
 
                   <td className="px-4 py-3 text-right space-x-2">

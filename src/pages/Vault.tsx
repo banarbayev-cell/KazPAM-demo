@@ -127,6 +127,10 @@ async function vaultCreateRequest(secretId: number, reason: string): Promise<any
   return api.post(`/vault/requests/`, { secret_id: secretId, reason });
 }
 
+async function checkGrant(secretId: number): Promise<{ has_grant: boolean }> {
+  return api.get(`/vault/requests/secrets/${secretId}/grant`);
+}
+
 async function vaultRestrictSecret(secretId: number, reason: string): Promise<any> {
     return api.post(`/vault/secrets/${secretId}/restrict`, { reason });
 }
@@ -268,34 +272,41 @@ export default function Vault() {
   }, [queryOpenHistory, focusedSecretId, secretsList, openHistoryPanel]);
 
   // Actions
-  const handleRevealOrRequest = async (item: SecretRecord, mode: "reveal" | "copy") => {
-    // 0. Check Restriction
-    if (item.restricted) {
-        toast.error("ДОСТУП ЗАБЛОКИРОВАН SOC. Обратитесь к администратору безопасности.");
-        return;
-    }
+  const handleRevealOrRequest = async (
+  item: SecretRecord,
+  mode: "reveal" | "copy"
+) => {
 
-    // 1. Reveal (Direct)
-    if (hasPermission("reveal_vault_secret") || hasPermission("reveal_vault_approved")) {
+  if (item.restricted) {
+    toast.error("ДОСТУП ЗАБЛОКИРОВАН SOC");
+    return;
+  }
+
+  try {
+
+    const grant = await checkGrant(item.id);
+
+    // если есть grant → reveal
+    if (grant?.has_grant) {
       setSelectedItem(item);
       setPendingAction(mode);
       setOpenMFA(true);
       return;
     }
 
-    // 2. Request
+    // если нет grant → request
     if (hasPermission("request_vault_access")) {
-      try {
-        await vaultCreateRequest(item.id, "Требуется доступ для задачи");
-        toast.success("Запрос отправлен на согласование");
-      } catch (e: any) {
-        toast.error(e?.message || "Ошибка запроса");
-      }
+      await vaultCreateRequest(item.id, "Требуется доступ для задачи");
+      toast.success("Запрос отправлен на согласование");
       return;
     }
 
-    toast.error("Недостаточно прав");
-  };
+    toast.error("Нет доступа");
+
+  } catch (e: any) {
+    toast.error(e?.message || "Ошибка проверки доступа");
+  }
+};
 
   const handleCreateSecret = async (newData: any) => {
     try {

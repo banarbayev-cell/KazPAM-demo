@@ -270,43 +270,67 @@ export default function Vault() {
         if (item && !openHistory) openHistoryPanel(item);
     }
   }, [queryOpenHistory, focusedSecretId, secretsList, openHistoryPanel]);
+  
+  const startJitSession = async (secretId: number) => {
+  try {
+    const res = await api.post("/vault/requests/secrets/" + secretId + "/jit-session")
 
-  // Actions
+    toast.success("PAM сессия запущена")
+
+    console.log("JIT session started", res)
+
+  } catch (err: any) {
+
+    console.error("JIT error", err)
+
+    toast.error(err?.message || "Нет активного approval доступа")
+
+  }
+}
+
+
   const handleRevealOrRequest = async (
   item: SecretRecord,
   mode: "reveal" | "copy"
 ) => {
-
-  if (item.restricted) {
-    toast.error("ДОСТУП ЗАБЛОКИРОВАН SOC");
-    return;
-  }
-
   try {
 
-    const grant = await checkGrant(item.id);
-
-    // если есть grant → reveal
-    if (grant?.has_grant) {
-      setSelectedItem(item);
-      setPendingAction(mode);
-      setOpenMFA(true);
-      return;
+    // ADMIN → direct reveal через MFA
+    if (hasPermission("reveal_vault_secret")) {
+      setSelectedItem(item)
+      setPendingAction(mode)
+      setOpenMFA(true)
+      return
     }
 
-    // если нет grant → request
+    // Проверяем approval grant
+    const grant = await checkGrant(item.id)
+
+    if (grant?.has_grant && hasPermission("reveal_vault_approved")) {
+      setSelectedItem(item)
+      setPendingAction(mode)
+      setOpenMFA(true)
+      return
+    }
+
+    // Нет grant → создаём request
     if (hasPermission("request_vault_access")) {
-      await vaultCreateRequest(item.id, "Требуется доступ для задачи");
-      toast.success("Запрос отправлен на согласование");
-      return;
+
+      await vaultCreateRequest(item.id, "Vault access request")
+
+      toast.success("Запрос доступа отправлен")
+      return
     }
 
-    toast.error("Нет доступа");
+    toast.error("Нет прав доступа")
 
-  } catch (e: any) {
-    toast.error(e?.message || "Ошибка проверки доступа");
+  } catch (err: any) {
+
+    console.error("Vault error", err)
+    toast.error(err?.message || "Ошибка доступа к секрету")
+
   }
-};
+}
 
   const handleCreateSecret = async (newData: any) => {
     try {
@@ -408,17 +432,45 @@ export default function Vault() {
                     <td className="p-3">{item.login}</td>
                     <td className="p-3">{item.updated}</td>
                     <td className="p-3">{item.type}</td>
-                    <td className="p-3 flex gap-2">
-                      <button disabled={item.restricted} className={`px-3 py-1 rounded text-white ${item.restricted ? "bg-gray-600 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"}`} onClick={() => handleRevealOrRequest(item, "reveal")}>
-                        Показать
-                      </button>
-                      <button disabled={item.restricted} className={`px-3 py-1 rounded text-white ${item.restricted ? "bg-gray-600 cursor-not-allowed" : "bg-gray-600 hover:bg-gray-700"}`} onClick={() => handleRevealOrRequest(item, "copy")}>
-                        Скопировать
-                      </button>
-                      <button className="px-3 py-1 bg-gray-600 rounded hover:bg-gray-700 text-white" onClick={() => openHistoryPanel(item)}>
-                        Подробнее →
-                      </button>
-                    </td>
+                    <td className="p-3 flex gap-2 items-center">
+                      <button
+disabled={item.restricted}
+className={`px-3 py-1 rounded text-white ${
+item.restricted ? "bg-gray-600 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"
+}`}
+onClick={() => handleRevealOrRequest(item, "reveal")}
+>
+Показать
+</button>
+
+<button
+disabled={item.restricted}
+className={`px-3 py-1 rounded text-white ${
+item.restricted ? "bg-gray-600 cursor-not-allowed" : "bg-gray-600 hover:bg-gray-700"
+}`}
+onClick={() => handleRevealOrRequest(item, "copy")}
+>
+Скопировать
+</button>
+
+{["password","ssh_key"].includes(item.type) && (
+<Button
+disabled={item.restricted}
+className="bg-emerald-600 hover:bg-emerald-700 text-white"
+onClick={() => startJitSession(item.id)}
+>
+Подключиться
+</Button>
+)}
+
+<button
+className="px-3 py-1 bg-gray-600 rounded hover:bg-gray-700 text-white"
+onClick={() => openHistoryPanel(item)}
+>
+Подробнее →
+</button>
+
+</td>
                   </tr>
                 );
             })}

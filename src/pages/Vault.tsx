@@ -271,23 +271,38 @@ export default function Vault() {
     }
   }, [queryOpenHistory, focusedSecretId, secretsList, openHistoryPanel]);
   
-  const startJitSession = async (secretId: number) => {
+  const handleConnect = async (item: SecretRecord) => {
   try {
-    const res = await api.post("/vault/requests/secrets/" + secretId + "/jit-session")
 
-    toast.success("PAM сессия запущена")
+    const grant = await checkGrant(item.id)
 
-    console.log("JIT session started", res)
+    if (grant?.has_grant) {
 
-  } catch (err: any) {
+      await api.post(`/vault/requests/secrets/${item.id}/jit-session`)
 
-    console.error("JIT error", err)
+      toast.success("PAM сессия запущена")
 
-    toast.error(err?.message || "Нет активного approval доступа")
+      return
+    }
+
+    if (hasPermission("request_vault_access")) {
+
+      await vaultCreateRequest(item.id, "JIT session request")
+
+      toast.success("Запрос доступа отправлен")
+
+      return
+    }
+
+    toast.error("Нет доступа")
+
+  } catch (err:any) {
+
+    console.error(err)
+    toast.error(err?.message || "Ошибка запуска сессии")
 
   }
 }
-
 
   const handleRevealOrRequest = async (
   item: SecretRecord,

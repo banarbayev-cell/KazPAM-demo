@@ -8,6 +8,7 @@ import DashboardLayout from "./layouts/dashboard-layout";
 
 import Home from "./pages/Home";
 import SocDashboard from "./pages/SocDashboard";
+import SocCommands from "./pages/SocCommands";
 import Users from "./pages/Users";
 import Sessions from "./pages/Sessions";
 import Audit from "./pages/Audit";
@@ -26,6 +27,7 @@ import ForceChangePassword from "@/pages/ForceChangePassword";
 import License from "./pages/License";
 import Access from "./components/Access";
 import IncidentDetails from "./pages/IncidentDetails";
+
 
 export default function App() {
   const loadFromStorage = useAuth((s) => s.loadFromStorage);
@@ -72,6 +74,7 @@ export default function App() {
           {/* dashboard routes */}
           <Route path="dashboard" element={<Home />} />
           <Route path="soc" element={<SocDashboard />} />
+          <Route path="soc/commands" element={<SocCommands />} />
           <Route path="soc/incidents/:id" element={<IncidentDetails />} />
           <Route path="users" element={<Users />} />
           <Route path="sessions" element={<Sessions />} />

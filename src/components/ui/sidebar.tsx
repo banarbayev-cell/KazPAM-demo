@@ -11,6 +11,7 @@ export default function Sidebar() {
 
       {/* NAV */}
       <nav className="flex-1 flex flex-col space-y-1">
+
         {/* Основное */}
         <NavLink to="/dashboard" className={navClass}>
           Главная
@@ -19,6 +20,13 @@ export default function Sidebar() {
         <Access permission="view_soc">
           <NavLink to="/soc" className={navClass}>
             SOC
+          </NavLink>
+        </Access>
+
+        {/* NEW */}
+        <Access permission="view_soc">
+          <NavLink to="/soc/commands" className={navClass}>
+            Команды сессий
           </NavLink>
         </Access>
 
@@ -55,11 +63,10 @@ export default function Sidebar() {
         </Access>
 
         <Access permission="view_vault_requests">
-  <NavLink to="/vault/requests" className={navClass}>
-    Запросы доступа
-  </NavLink>
-</Access>
-
+          <NavLink to="/vault/requests" className={navClass}>
+            Запросы доступа
+          </NavLink>
+        </Access>
 
         <Access permission="manage_policies">
           <NavLink to="/policies" className={navClass}>
@@ -81,10 +88,11 @@ export default function Sidebar() {
         </NavLink>
 
         <Access permission="view_settings">
-        <NavLink to="/license" className={navClass}>
-          Лицензия
-        </NavLink>
+          <NavLink to="/license" className={navClass}>
+            Лицензия
+          </NavLink>
         </Access>
+
       </nav>
 
       {/* FOOTER */}

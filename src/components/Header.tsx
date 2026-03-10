@@ -92,8 +92,8 @@ export default function Header() {
 
         const data = await res.json();
 
-        if (typeof data.active_sessions === "number") {
-          setActiveSessions(data.active_sessions);
+        if (typeof data.active === "number") {
+          setActiveSessions(data.active ?? 0);
         }
       } catch {}
     };

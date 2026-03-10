@@ -716,6 +716,17 @@ if (!alreadyRestoredThisSession) {
           </div>
         </div>
       )}
+      
+      {/* LIVE SESSION COMMANDS */}
+      <div className="mt-8 bg-[#121A33] border border-[#1E2A45] rounded-xl p-4">
+        <div className="text-sm text-gray-400 mb-2">Live Session Commands</div>
+
+        {liveCommands.map((c, i) => (
+          <div key={i} className="text-xs text-green-400 font-mono">
+      {c.command}
+    </div>
+  ))}
+</div>
 
       {loading && <div className="text-sm text-gray-400">Загрузка audit-данных…</div>}
     </div>

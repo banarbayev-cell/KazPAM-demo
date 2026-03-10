@@ -213,7 +213,7 @@ export default function SocDashboard() {
   useEffect(() => {
     if (!token) return;
 
-  const ws = new WebSocket(`wss://server.kazpam.kz/ws/soc/commands`);
+  const ws = new WebSocket(`wss://server.kazpam.kz/api/soc/ws/commands`);
 
   ws.onopen = () => {
     console.log("SOC command stream connected");

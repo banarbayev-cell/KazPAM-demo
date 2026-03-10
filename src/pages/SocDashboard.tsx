@@ -144,6 +144,19 @@ export default function SocDashboard() {
   const [incident, setIncident] = useState<Incident | null>(null);
   const [summary, setSummary] = useState<SocSummaryResponse | null>(null);
   
+  // ============================
+  // REALTIME SESSION COMMANDS
+  // ============================
+
+  type SessionCommand = {
+    type: "command";
+    time: string;
+    command: string;
+    recording_id: number;
+  };
+
+  const [liveCommands, setLiveCommands] = useState<SessionCommand[]>([]);
+
   const filteredIncidents = useMemo(() => {
   if (!summary?.incident) return [];
 
@@ -183,14 +196,52 @@ export default function SocDashboard() {
   }, []);
 
   // ============================
-// LOAD SOC SUMMARY (SOURCE OF TRUTH)
-// ============================
-useEffect(() => {
-  if (!token) return;
+  // LOAD SOC SUMMARY (SOURCE OF TRUTH)
+  // ============================
+  useEffect(() => {
+    if (!token) return;
 
-  fetchSocSummary()
-    .then(setSummary)
-    .catch((e) => console.error("SOC summary load error:", e));
+    fetchSocSummary()
+      .then(setSummary)
+      .catch((e) => console.error("SOC summary load error:", e));
+  }, [token]);
+
+  // ============================
+  // SOC LIVE COMMAND STREAM
+  // ============================
+
+  useEffect(() => {
+    if (!token) return;
+
+  const ws = new WebSocket(`wss://server.kazpam.kz/ws/soc/commands`);
+
+  ws.onopen = () => {
+    console.log("SOC command stream connected");
+  };
+
+  ws.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data);
+
+      if (data.type === "command") {
+        setLiveCommands((prev) => [data, ...prev].slice(0, 100));
+      }
+    } catch (err) {
+      console.error("SOC WS parse error:", err);
+    }
+  };
+
+  ws.onerror = (err) => {
+    console.error("SOC WS error:", err);
+  };
+
+  ws.onclose = () => {
+    console.log("SOC command stream closed");
+  };
+
+  return () => {
+    ws.close();
+  };
 }, [token]);
 
   // ============================

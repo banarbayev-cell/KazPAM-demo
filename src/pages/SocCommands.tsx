@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { fetchSocCommands, SocCommand } from "../api/socCommands";
+import { fetchSocCommands, SocCommand, SocCommandSeverity } from "../api/socCommands";
 
 function safeTime(value?: string) {
   if (!value || value.trim() === "") return "—";
@@ -68,12 +68,36 @@ function getCommandChipClass(command: string) {
   return "bg-[#0E1A3A] text-[#C9D1E7] border border-[#24314F]";
 }
 
+function getSeverityChipClass(severity?: SocCommandSeverity) {
+  if (severity === "high") {
+    return "bg-red-500/20 text-red-300 border border-red-500/30";
+  }
+
+  if (severity === "medium") {
+    return "bg-yellow-500/20 text-yellow-300 border border-yellow-500/30";
+  }
+
+  if (severity === "low") {
+    return "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30";
+  }
+
+  return "bg-[#0E1A3A] text-gray-300 border border-[#24314F]";
+}
+
+function getSeverityLabel(severity?: SocCommandSeverity) {
+  if (severity === "high") return "High";
+  if (severity === "medium") return "Medium";
+  if (severity === "low") return "Low";
+  return "—";
+}
+
 export default function SocCommands() {
   const [commands, setCommands] = useState<SocCommand[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [search, setSearch] = useState("");
+  const [severityFilter, setSeverityFilter] = useState<"all" | "low" | "medium" | "high">("all");
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(10);
 
@@ -94,18 +118,25 @@ export default function SocCommands() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
 
-    if (!q) return commands;
-
     return commands.filter((item) => {
+      const matchesSeverity =
+        severityFilter === "all" ? true : item.severity === severityFilter;
+
+      if (!matchesSeverity) return false;
+
+      if (!q) return true;
+
       return (
         String(item.time || "").toLowerCase().includes(q) ||
         String(item.user || "").toLowerCase().includes(q) ||
         String(item.system || "").toLowerCase().includes(q) ||
         String(item.session_id || "").toLowerCase().includes(q) ||
-        String(item.command || "").toLowerCase().includes(q)
+        String(item.command || "").toLowerCase().includes(q) ||
+        String(item.severity || "").toLowerCase().includes(q) ||
+        String(item.risk_reason || "").toLowerCase().includes(q)
       );
     });
-  }, [commands, search]);
+  }, [commands, search, severityFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / rowsPerPage));
   const indexOfLast = currentPage * rowsPerPage;
@@ -122,9 +153,7 @@ export default function SocCommands() {
     <div className="p-6 w-full bg-gray-100 text-black min-h-screen">
       <div className="flex items-start justify-between gap-4 mb-4">
         <div>
-          <h1 className="text-3xl font-bold">
-            SOC · Команды сессий
-          </h1>
+          <h1 className="text-3xl font-bold">SOC · Команды сессий</h1>
 
           {loading && (
             <div className="text-sm text-gray-600 mt-1">Загрузка...</div>
@@ -142,11 +171,10 @@ export default function SocCommands() {
         </div>
       </div>
 
-      {/* Filters */}
       <div className="flex flex-wrap gap-3 items-center mb-6">
         <input
           type="text"
-          placeholder="Поиск по времени, пользователю, системе, сессии или команде"
+          placeholder="Поиск по времени, пользователю, системе, сессии, риску или команде"
           className="w-full max-w-[520px] bg-white text-black border border-gray-300 p-2 rounded-lg"
           value={search}
           onChange={(e) => {
@@ -154,6 +182,20 @@ export default function SocCommands() {
             setCurrentPage(1);
           }}
         />
+
+        <select
+          className="bg-white text-black border border-gray-300 p-2 rounded-lg"
+          value={severityFilter}
+          onChange={(e) => {
+            setSeverityFilter(e.target.value as "all" | "low" | "medium" | "high");
+            setCurrentPage(1);
+          }}
+        >
+          <option value="all">Все риски</option>
+          <option value="low">Low</option>
+          <option value="medium">Medium</option>
+          <option value="high">High</option>
+        </select>
 
         <select
           className="bg-white text-black border border-gray-300 p-2 rounded-lg"
@@ -170,7 +212,6 @@ export default function SocCommands() {
         </select>
       </div>
 
-      {/* Table */}
       <div className="overflow-x-auto rounded-xl border border-[#1E2A45] shadow-lg bg-[#121A33]">
         <table className="w-full text-sm text-white">
           <thead className="bg-[#1A243F] text-gray-300">
@@ -179,6 +220,7 @@ export default function SocCommands() {
               <th className="p-3 text-left">Пользователь</th>
               <th className="p-3 text-left">Система</th>
               <th className="p-3 text-left">Сессия</th>
+              <th className="p-3 text-left">Риск</th>
               <th className="p-3 text-left">Команда</th>
             </tr>
           </thead>
@@ -186,7 +228,7 @@ export default function SocCommands() {
           <tbody>
             {!loading && currentRows.length === 0 && (
               <tr className="border-t border-[#1E2A45]">
-                <td colSpan={5} className="p-6 text-center text-gray-400">
+                <td colSpan={6} className="p-6 text-center text-gray-400">
                   Команды не найдены
                 </td>
               </tr>
@@ -217,7 +259,27 @@ export default function SocCommands() {
                   </td>
 
                   <td className="p-3">
+                    <div className="flex items-center gap-2">
+                      <span
+                        title={c.risk_reason || ""}
+                        className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold ${getSeverityChipClass(
+                          c.severity
+                        )}`}
+                      >
+                        {getSeverityLabel(c.severity)}
+                      </span>
+
+                      {typeof c.risk_score === "number" && (
+                        <span className="text-xs text-gray-400">
+                          {c.risk_score}
+                        </span>
+                      )}
+                    </div>
+                  </td>
+
+                  <td className="p-3">
                     <code
+                      title={c.risk_reason || ""}
                       className={`inline-block px-2.5 py-1 rounded-md text-xs md:text-sm font-mono break-all ${getCommandChipClass(
                         c.command || ""
                       )}`}
@@ -231,7 +293,6 @@ export default function SocCommands() {
         </table>
       </div>
 
-      {/* Pagination */}
       {!loading && filtered.length > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-3 mt-5">
           <div className="text-sm text-gray-600">

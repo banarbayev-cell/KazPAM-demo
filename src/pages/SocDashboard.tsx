@@ -130,6 +130,9 @@ type SessionCommand = {
   session_id?: number;
   user?: string;
   system?: string;
+  severity?: "low" | "medium" | "high";
+  risk_score?: number;
+  risk_reason?: string;
 };
 
 function toSessionCommand(c: SocCommand): SessionCommand {
@@ -141,11 +144,37 @@ function toSessionCommand(c: SocCommand): SessionCommand {
     session_id: c.session_id,
     user: c.user,
     system: c.system,
+    severity: c.severity,
+    risk_score: c.risk_score,
+    risk_reason: c.risk_reason,
   };
 }
 
 const SOC_INCIDENT_STORAGE_KEY = "kazpam_soc_incident_id";
 const SOC_INCIDENT_SESSION_KEY = "kazpam_soc_incident_restored";
+
+function getSeverityBadgeClass(severity?: "low" | "medium" | "high") {
+  if (severity === "high") {
+    return "bg-red-500/20 text-red-300 border border-red-500/30";
+  }
+
+  if (severity === "medium") {
+    return "bg-yellow-500/20 text-yellow-300 border border-yellow-500/30";
+  }
+
+  if (severity === "low") {
+    return "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30";
+  }
+
+  return "bg-[#0E1A3A] text-gray-400 border border-[#24314F]";
+}
+
+function getSeverityLabel(severity?: "low" | "medium" | "high") {
+  if (severity === "high") return "HIGH";
+  if (severity === "medium") return "MEDIUM";
+  if (severity === "low") return "LOW";
+  return "—";
+}
 
 
 export default function SocDashboard() {
@@ -273,6 +302,9 @@ useEffect(() => {
         session_id: data.session_id,
         user: data.user,
         system: data.system,
+        severity: data.severity,
+        risk_score: data.risk_score,
+        risk_reason: data.risk_reason,
       };
 
       console.log("SOC live command received:", next);
@@ -781,9 +813,21 @@ if (!alreadyRestoredThisSession) {
         {liveCommands.map((c, i) => (
           <div 
             key={`${c.recording_id}-${c.time}-${i}`}
-            className="text-xs text-green-400 font-mono"
+            className="text-xs font-mono text-gray-200 flex flex-wrap items-center gap-2 mb-1"
           >
-            [{safeTime(c.time)}] {c.command}
+            <span className="text-gray-400">[{safeTime(c.time)}]</span>
+
+            <span
+              title={c.risk_reason || ""}
+              className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold ${getSeverityBadgeClass(
+                 c.severity
+              )}`}  
+            >
+              {getSeverityLabel(c.severity)}
+              {typeof c.risk_score === "number" ? ` · ${c.risk_score}` : ""}
+            </span>
+          
+            <span className="text-green-400 break-all">{c.command}</span>
           </div>  
       ))}
 </div>

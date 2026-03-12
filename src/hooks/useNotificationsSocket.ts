@@ -1,15 +1,17 @@
 import { useEffect, useRef } from "react";
 import { useNotifications } from "./useNotifications";
 import { useAuth } from "../store/auth";
+import { API_URL } from "../api/config";
 
 export function useNotificationsSocket() {
   const token = useAuth((s) => s.token);
   const { refresh } = useNotifications();
 
+  const wsRef = useRef<WebSocket | null>(null);
   const closingRef = useRef(false);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const refreshRef = useRef(refresh);
 
-  // держим актуальную ссылку на refresh без deps
   useEffect(() => {
     refreshRef.current = refresh;
   }, [refresh]);
@@ -17,38 +19,71 @@ export function useNotificationsSocket() {
   useEffect(() => {
     if (!token) return;
 
-    closingRef.current = false;
+    const wsBase = API_URL.replace(/^http/, "ws");
+    const wsUrl = `${wsBase}/ws/notifications?token=${encodeURIComponent(token)}`;
+    let mounted = true;
 
-    const ws = new WebSocket(`${import.meta.env.VITE_API_WS}/ws/notifications?token=${token}`);
+    const connect = () => {
+      if (!mounted) return;
 
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data?.type === "notification:new" || data?.type === "notification") {
-          refreshRef.current();
+      if (
+        wsRef.current &&
+        (wsRef.current.readyState === WebSocket.OPEN ||
+          wsRef.current.readyState === WebSocket.CONNECTING)
+      ) {
+        return;
+      }
+
+      closingRef.current = false;
+
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data?.type === "notification:new" || data?.type === "notification") {
+            refreshRef.current();
+          }
+        } catch {
+          // ignore parse errors
         }
-      } catch {
-        // ignore
-      }
-    };
+      };
 
-    ws.onerror = () => {
-      // в dev StrictMode сокет может закрыться в cleanup до коннекта — это не авария
-      if (!closingRef.current) {
+      ws.onerror = () => {
+        if (!mounted || closingRef.current) return;
         console.warn("Notifications WS error");
-      }
+      };
+
+      ws.onclose = () => {
+        if (!mounted || closingRef.current) return;
+
+        console.log("Notifications WS closed");
+
+        reconnectTimerRef.current = setTimeout(() => {
+          connect();
+        }, 3000);
+      };
     };
 
-    ws.onclose = () => {
-      // можно оставить пустым; главное — не шуметь как ошибкой при cleanup
-    };
+    connect();
 
     return () => {
+      mounted = false;
       closingRef.current = true;
-      try {
-        ws.close();
-      } catch {
-        // ignore
+
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+
+      if (wsRef.current) {
+        try {
+          wsRef.current.close(1000, "Notifications socket cleanup");
+        } catch {
+          // ignore
+        }
+        wsRef.current = null;
       }
     };
   }, [token]);

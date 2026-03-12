@@ -1,44 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { fetchSocCommands, SocCommand, SocCommandSeverity } from "../api/socCommands";
+import { formatKzDateTime } from "../utils/time";
 
 function safeTime(value?: string) {
-  if (!value || value.trim() === "") return "—";
-
-  try {
-    const v = value.trim();
-    let d: Date;
-
-    // ISO с timezone
-    if (/T.*(Z|[+-]\d{2}:\d{2})$/.test(v)) {
-      d = new Date(v);
-    }
-    // backend "YYYY-MM-DD HH:MM:SS"
-    else if (v.includes(" ") && v.includes("-")) {
-      d = new Date(v.replace(" ", "T") + "Z");
-    }
-    // legacy "DD.MM.YYYY HH:MM(:SS)"
-    else if (/^\d{2}\.\d{2}\.\d{4}\s\d{2}:\d{2}/.test(v)) {
-      const [datePart, timePart] = v.split(" ");
-      const [day, month, year] = datePart.split(".").map(Number);
-      const [hour, minute] = timePart.split(":").map(Number);
-      d = new Date(Date.UTC(year, month - 1, day, hour, minute));
-    } else {
-      d = new Date(v);
-    }
-
-    if (isNaN(d.getTime())) return value;
-
-    const dd = String(d.getDate()).padStart(2, "0");
-    const mm = String(d.getMonth() + 1).padStart(2, "0");
-    const yyyy = d.getFullYear();
-    const hh = String(d.getHours()).padStart(2, "0");
-    const mi = String(d.getMinutes()).padStart(2, "0");
-
-    return `${dd}.${mm}.${yyyy} ${hh}:${mi}`;
-  } catch {
-    return value;
-  }
+  return formatKzDateTime(value, {
+    seconds: false,
+    naiveInput: "utc",
+  });
 }
+
 
 function getCommandChipClass(command: string) {
   const c = command.toLowerCase();

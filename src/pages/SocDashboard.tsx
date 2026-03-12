@@ -1,6 +1,6 @@
 // C:\Users\user\Documents\KazPAM-dashboard\src\pages\SocDashboard.tsx
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import ThreatCard from "../components/ThreatCard";
 import InvestigationModal from "../components/modals/InvestigationModal";
@@ -18,7 +18,7 @@ import type { SocSummaryResponse } from "../api/socSummary";
 import { fetchSocCommands } from "../api/socCommands";
 import type { SocCommand } from "../api/socCommands";
 import { useNavigate, useSearchParams } from "react-router-dom";
-
+import { formatKzDateTime } from "../utils/time";
 
 import {
   blockUser,
@@ -28,27 +28,12 @@ import {
 } from "../api/socActions";
 
 function mapBackendIncidentToUi(b: any): Incident {
-  let createdIso: string;
-
-  try {
-    if (b.created_at) {
-      const d = new Date(String(b.created_at).replace(" ", "T") + "Z");
-      createdIso = isNaN(d.getTime())
-        ? new Date().toISOString()
-        : d.toISOString();
-    } else {
-      createdIso = new Date().toISOString();
-    }
-  } catch {
-    createdIso = new Date().toISOString();
-  }
-
   return {
     id: String(b.incident_id ?? b.id ?? crypto.randomUUID()),
     backendId: b.incident_id ?? b.id,
     status: (b.status ?? "OPEN") as any,
-    createdAt: createdIso,
-    closedAt: b.closed_at ?? undefined,
+    createdAt: String(b.created_at ?? ""),
+    closedAt: b.closed_at ? String(b.closed_at) : undefined,
     lastAction: null,
     actions: [],
     comments: [],
@@ -71,47 +56,12 @@ function normalizeRiskLevel(level?: string): RiskLevel {
  * Ничего не ломает — при ошибке просто возвращает исходную строку
  */
 function safeTime(value?: string) {
-  if (!value || value.trim() === "") return "";
-
-  try {
-    const v = value.trim();
-
-    // ISO с таймзоной
-    const hasIsoTz = /T.*(Z|[+-]\d{2}:\d{2})$/.test(v);
-
-    let d: Date;
-
-    if (hasIsoTz) {
-      d = new Date(v);
-    }
-    // backend "YYYY-MM-DD HH:MM:SS" → UTC
-    else if (v.includes(" ") && v.includes("-")) {
-      d = new Date(v.replace(" ", "T") + "Z");
-    }
-    // legacy KazPAM "DD.MM.YYYY HH:MM"
-    else if (/^\d{2}\.\d{2}\.\d{4}\s\d{2}:\d{2}/.test(v)) {
-      const [datePart, timePart] = v.split(" ");
-      const [day, month, year] = datePart.split(".").map(Number);
-      const [hour, minute] = timePart.split(":").map(Number);
-      d = new Date(Date.UTC(year, month - 1, day, hour, minute));
-    }
-    else {
-      d = new Date(v);
-    }
-
-    if (isNaN(d.getTime())) return value;
-
-    const dd = String(d.getDate()).padStart(2, "0");
-    const mm = String(d.getMonth() + 1).padStart(2, "0");
-    const yyyy = d.getFullYear();
-    const hh = String(d.getHours()).padStart(2, "0");
-    const mi = String(d.getMinutes()).padStart(2, "0");
-
-    return `${dd}.${mm}.${yyyy} ${hh}:${mi}`;
-  } catch {
-    return value;
-  }
+  return formatKzDateTime(value, {
+    seconds: false,
+    naiveInput: "utc",
+  });
 }
+
 
 
 type RbacError =
@@ -185,7 +135,10 @@ export default function SocDashboard() {
 
   const token = auth.token;
   const roles = auth.user?.roles ?? [];
-
+  const wsRef = useRef<WebSocket | null>(null);
+  const wsClosingRef = useRef(false);
+  const initialLoadedRef = useRef(false);
+  
   // 🔎 Investigation query
   const [searchParams] = useSearchParams();
   const q = searchParams.get("q");
@@ -197,6 +150,8 @@ export default function SocDashboard() {
   // INCIDENT STATE
   const [incident, setIncident] = useState<Incident | null>(null);
   const [summary, setSummary] = useState<SocSummaryResponse | null>(null);
+
+  
   
   // ============================
   // LOAD INITIAL COMMANDS
@@ -204,6 +159,9 @@ export default function SocDashboard() {
 
 useEffect(() => {
   if (!token) return;
+  if (initialLoadedRef.current) return;
+
+  initialLoadedRef.current = true;
 
   fetchSocCommands()
     .then((data: SocCommand[]) => {
@@ -217,6 +175,10 @@ useEffect(() => {
       console.error("SOC commands load error:", err);
       setLiveCommands([]);
     });
+
+  return () => {
+    initialLoadedRef.current = false;
+  };
 }, [token]);
 
   // ============================
@@ -279,53 +241,70 @@ useEffect(() => {
   // ============================
 
   useEffect(() => {
-    if (!token) return;
+  if (!token) return;
+
+  if (
+    wsRef.current &&
+    (wsRef.current.readyState === WebSocket.OPEN ||
+      wsRef.current.readyState === WebSocket.CONNECTING)
+  ) {
+    return;
+  }
+
+  wsClosingRef.current = false;
 
   const ws = new WebSocket(`wss://server.kazpam.kz/api/soc/ws/commands`);
+  wsRef.current = ws;
 
   ws.onopen = () => {
     console.log("SOC command stream connected");
   };
 
   ws.onmessage = (event) => {
-  try {
-    const data = JSON.parse(event.data);
+    try {
+      const data = JSON.parse(event.data);
 
-    console.log("SOC WS EVENT:", data);
+      console.log("SOC WS EVENT:", data);
 
-    if (data.type === "command") {
-      const next: SessionCommand = {
-        type: "command",
-        time: data.time,
-        command: data.command,
-        recording_id: data.recording_id,
-        session_id: data.session_id,
-        user: data.user,
-        system: data.system,
-        severity: data.severity,
-        risk_score: data.risk_score,
-        risk_reason: data.risk_reason,
-      };
+      if (data.type === "command") {
+        const next: SessionCommand = {
+          type: "command",
+          time: data.time,
+          command: data.command,
+          recording_id: data.recording_id,
+          session_id: data.session_id,
+          user: data.user,
+          system: data.system,
+          severity: data.severity,
+          risk_score: data.risk_score,
+          risk_reason: data.risk_reason,
+        };
 
-      console.log("SOC live command received:", next);
-
-      setLiveCommands((prev) => [next, ...prev].slice(0, 100));
+        console.log("SOC live command received:", next);
+        setLiveCommands((prev) => [next, ...prev].slice(0, 100));
+      }
+    } catch (err) {
+      console.error("SOC WS parse error:", err);
     }
-  } catch (err) {
-    console.error("SOC WS parse error:", err);
-  }
-};
+  };
 
   ws.onerror = (err) => {
+    if (wsClosingRef.current) return;
     console.error("SOC WS error:", err);
   };
 
   ws.onclose = () => {
+    if (wsClosingRef.current) return;
     console.log("SOC command stream closed");
   };
 
   return () => {
-    ws.close();
+    wsClosingRef.current = true;
+
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
   };
 }, [token]);
 

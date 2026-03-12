@@ -1,7 +1,7 @@
 // C:\Users\user\Documents\KazPAM-dashboard\src\pages\SocDashboard.tsx
 
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+
 import ThreatCard from "../components/ThreatCard";
 import InvestigationModal from "../components/modals/InvestigationModal";
 import { fetchAuditLogs, AuditLog } from "../api/audit";
@@ -15,7 +15,10 @@ import { useAuth } from "../store/auth";
 import { parseUserAgent } from "../utils/parseUserAgent";
 import { fetchSocSummary } from "../api/socSummary";
 import type { SocSummaryResponse } from "../api/socSummary";
-import { useNavigate } from "react-router-dom";
+import { fetchSocCommands } from "../api/socCommands";
+import type { SocCommand } from "../api/socCommands";
+import { useNavigate, useSearchParams } from "react-router-dom";
+
 
 import {
   blockUser,
@@ -119,6 +122,28 @@ type RbacError =
     }
   | null;
 
+type SessionCommand = {
+  type: "command";
+  time: string;
+  command: string;
+  recording_id: number;
+  session_id?: number;
+  user?: string;
+  system?: string;
+};
+
+function toSessionCommand(c: SocCommand): SessionCommand {
+  return {
+    type: "command",
+    time: c.time,
+    command: c.command,
+    recording_id: c.recording_id,
+    session_id: c.session_id,
+    user: c.user,
+    system: c.system,
+  };
+}
+
 const SOC_INCIDENT_STORAGE_KEY = "kazpam_soc_incident_id";
 const SOC_INCIDENT_SESSION_KEY = "kazpam_soc_incident_restored";
 
@@ -145,15 +170,29 @@ export default function SocDashboard() {
   const [summary, setSummary] = useState<SocSummaryResponse | null>(null);
   
   // ============================
-  // REALTIME SESSION COMMANDS
+  // LOAD INITIAL COMMANDS
   // ============================
 
-  type SessionCommand = {
-    type: "command";
-    time: string;
-    command: string;
-    recording_id: number;
-  };
+useEffect(() => {
+  if (!token) return;
+
+  fetchSocCommands()
+    .then((data: SocCommand[]) => {
+      const items = Array.isArray(data) ? data : [];
+      const mapped = items.map(toSessionCommand);
+
+      console.log("SOC initial commands loaded:", mapped.length, mapped);
+      setLiveCommands(mapped.slice(0, 50));
+    })
+    .catch((err) => {
+      console.error("SOC commands load error:", err);
+      setLiveCommands([]);
+    });
+}, [token]);
+
+  // ============================
+  // REALTIME SESSION COMMANDS
+  // ============================
 
   const [liveCommands, setLiveCommands] = useState<SessionCommand[]>([]);
 
@@ -220,16 +259,30 @@ export default function SocDashboard() {
   };
 
   ws.onmessage = (event) => {
-    try {
-      const data = JSON.parse(event.data);
+  try {
+    const data = JSON.parse(event.data);
 
-      if (data.type === "command") {
-        setLiveCommands((prev) => [data, ...prev].slice(0, 100));
-      }
-    } catch (err) {
-      console.error("SOC WS parse error:", err);
+    console.log("SOC WS EVENT:", data);
+
+    if (data.type === "command") {
+      const next: SessionCommand = {
+        type: "command",
+        time: data.time,
+        command: data.command,
+        recording_id: data.recording_id,
+        session_id: data.session_id,
+        user: data.user,
+        system: data.system,
+      };
+
+      console.log("SOC live command received:", next);
+
+      setLiveCommands((prev) => [next, ...prev].slice(0, 100));
     }
-  };
+  } catch (err) {
+    console.error("SOC WS parse error:", err);
+  }
+};
 
   ws.onerror = (err) => {
     console.error("SOC WS error:", err);
@@ -721,11 +774,18 @@ if (!alreadyRestoredThisSession) {
       <div className="mt-8 bg-[#121A33] border border-[#1E2A45] rounded-xl p-4">
         <div className="text-sm text-gray-400 mb-2">Live Session Commands</div>
 
+        {liveCommands.length === 0 && (
+          <div className="text-xs text-gray-500">No commands yet</div>
+      )}
+
         {liveCommands.map((c, i) => (
-          <div key={i} className="text-xs text-green-400 font-mono">
-      {c.command}
-    </div>
-  ))}
+          <div 
+            key={`${c.recording_id}-${c.time}-${i}`}
+            className="text-xs text-green-400 font-mono"
+          >
+            [{safeTime(c.time)}] {c.command}
+          </div>  
+      ))}
 </div>
 
       {loading && <div className="text-sm text-gray-400">Загрузка audit-данных…</div>}

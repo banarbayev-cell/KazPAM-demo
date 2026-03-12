@@ -7,3 +7,7 @@ export async function revealSecretApproved(secretId: number, mfa_code: string): 
   // Если когда-то api станет возвращать AxiosResponse — поменяем в одном месте.
   return api.post<RevealResponse>(`/vault/requests/secrets/${secretId}/reveal-approved`, { mfa_code });
 }
+
+export async function checkGrant(secretId: number) {
+  return api.get(`/vault/requests/secrets/${secretId}/grant`);
+}

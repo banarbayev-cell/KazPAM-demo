@@ -14,6 +14,7 @@ import Access from "@/components/Access";
 import StatusChip from "@/components/StatusChip";
 import { toast } from "sonner";
 import { useAuth } from "@/store/auth";
+import { formatKzDateTime, getBackendTimeMs } from "@/utils/time";
 
 const STATUS_OPTIONS: VaultRequestStatus[] = [
   "PENDING",
@@ -67,7 +68,9 @@ function renderExpires(expiresAt?: string | null) {
   if (!expiresAt) return "—";
 
   const now = Date.now();
-  const end = new Date(expiresAt).getTime();
+  const end = getBackendTimeMs(expiresAt, { naiveInput: "kz" });
+
+  if (end === null) return "—";
 
   const diff = end - now;
 
@@ -116,7 +119,7 @@ function renderExpires(expiresAt?: string | null) {
 
   async function onDeny(id: number) {
     try {
-      await denyVaultRequest(id);
+      await denyVaultRequest(id, { comment: "Denied by approver" });
       toast.success("Запрос отклонён");
       await load();
     } catch (e: any) {
@@ -142,10 +145,15 @@ function renderExpires(expiresAt?: string | null) {
     return;
   }
 
+  if (!reason.trim()) {
+    toast.error("Укажите причину запроса");
+    return;
+  }
+
   try {
     await createVaultRequest({
       secret_id: sid,
-      reason: reason || undefined,
+      reason: reason.trim(),
     });
 
     toast.success("Запрос отправлен");
@@ -330,7 +338,7 @@ function renderExpires(expiresAt?: string | null) {
                     <StatusChip status={r.status} />
                   </td>
                   <td className="px-4 py-3 text-gray-200">
-                    {r.created_at ? new Date(r.created_at).toLocaleString() : "—"}
+                    {formatKzDateTime(r.created_at, { seconds: true, naiveInput: "kz" })}
                   </td>
                   
                   <td className="px-4 py-3">

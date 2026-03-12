@@ -32,19 +32,25 @@ function humanizeAction(actionRaw?: string): string {
 
   // Vault actions (не ломаем: если другое — покажем как есть)
   const map: Record<string, string> = {
-    CREATE: "Создание секрета",
-    UPDATE: "Обновление секрета",
-    ROTATE: "Ротация секрета",
-    REVEAL: "Просмотр секрета",
-    COPY: "Копирование секрета",
-    DELETE: "Удаление секрета",
+  CREATE: "Создание секрета",
+  UPDATE: "Обновление секрета",
+  ROTATE: "Ротация секрета",
+  REVEAL: "Просмотр секрета",
+  COPY: "Копирование секрета",
+  DELETE: "Удаление секрета",
 
-    REQUEST: "Запрос доступа",
-    APPROVE: "Одобрение доступа",
-    DENY: "Отклонение доступа",
-    CANCEL: "Отмена запроса",
-  };
+  REQUEST: "Запрос доступа",
+  APPROVE: "Одобрение доступа",
+  DENY: "Отклонение доступа",
+  CANCEL: "Отмена запроса",
 
+  REQUEST_CREATE: "Создание запроса",
+  REQUEST_APPROVE: "Одобрение запроса",
+  REQUEST_DENY: "Отклонение запроса",
+  REQUEST_CANCEL: "Отмена запроса",
+  GRANT_CREATE: "Выдача grant",
+  REVEAL_APPROVED: "Просмотр по grant",
+};
   return map[a] ?? String(actionRaw);
 }
 

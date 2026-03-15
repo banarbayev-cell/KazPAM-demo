@@ -116,7 +116,11 @@ async function vaultRevealSecretV1(secretId: number, mfa_code: string): Promise<
 }
 
 async function vaultCopySecret(secretId: number): Promise<void> {
-  await api.post(`/vault/secrets/${secretId}/copy`, {});
+  try {
+    await api.post(`/vault/secrets/${secretId}/copy`, {});
+  } catch {
+    // best-effort audit, UX не ломаем  
+  }  
 }
 
 async function vaultCreateSecret(payload: any): Promise<VaultSecretDTO> {
@@ -159,7 +163,7 @@ export default function Vault() {
 
   const [selectedItem, setSelectedItem] = useState<SecretRecord | null>(null);
   const [pendingAction, setPendingAction] = useState<"reveal" | "copy" | null>(null);
-
+  const [revealMode, setRevealMode] = useState<"direct" | "approved" | null>(null);
   const [historyItems, setHistoryItems] = useState<VaultHistoryItemDTO[]>([]);
 
   // filters
@@ -314,36 +318,33 @@ export default function Vault() {
     if (hasPermission("reveal_vault_secret")) {
       setSelectedItem(item)
       setPendingAction(mode)
+      setRevealMode("direct");
       setOpenMFA(true)
       return
     }
 
-    // Проверяем approval grant
+    // Есть approval grant → approved reveal через MFA
     const grant = await checkGrant(item.id)
 
     if (grant?.has_grant && hasPermission("reveal_vault_approved")) {
       setSelectedItem(item)
       setPendingAction(mode)
+      setRevealMode("approved");
       setOpenMFA(true)
       return
     }
 
     // Нет grant → создаём request
     if (hasPermission("request_vault_access")) {
-
       await vaultCreateRequest(item.id, "Vault access request")
-
       toast.success("Запрос доступа отправлен")
       return
     }
 
     toast.error("Нет прав доступа")
-
   } catch (err: any) {
-
     console.error("Vault error", err)
     toast.error(err?.message || "Ошибка доступа к секрету")
-
   }
 }
 
@@ -499,19 +500,22 @@ onClick={() => openHistoryPanel(item)}
         onClose={() => setOpenMFA(false)}
         verifyMode="backend"
         onSuccess={async (mfaCode) => {
-          if (!selectedItem || !pendingAction) return;
+          if (!selectedItem || !pendingAction || !revealMode) return;
+
           try {
              let revealed: VaultRevealDTO;
-             try {
-                revealed = await revealSecretApproved(selectedItem.id, mfaCode);
-             } catch {
+             
+             
+             if (revealMode === "approved") {
+               revealed = await revealSecretApproved(selectedItem.id, mfaCode);
+             } else {
                 revealed = await vaultRevealSecretV1(selectedItem.id, mfaCode);
              }
              
              if (pendingAction === "copy") {
                 await navigator.clipboard.writeText(revealed.value);
                 toast.success("Секрет скопирован");
-                vaultCopySecret(selectedItem.id); // fire & forget audit
+                vaultCopySecret(selectedItem.id); // best-effort audit
              } else {
                 setRevealTitle(selectedItem.system);
                 setRevealSubtitle(`${selectedItem.login}`);
@@ -523,6 +527,7 @@ onClick={() => openHistoryPanel(item)}
           } finally {
              setPendingAction(null);
              setSelectedItem(null);
+             setRevealMode(null);
              setOpenMFA(false);
           }
         }}

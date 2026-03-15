@@ -138,32 +138,30 @@ export default function MFAConfirmModal({
   };
 
   const handleVerify = async () => {
-    const trimmed = code.trim();
-    if (trimmed.length < 6) {
-      setErr("Введите корректный код (минимум 6 символов).");
-      return;
+  const trimmed = code.trim();
+  if (trimmed.length < 6) {
+    setErr("Введите корректный код (минимум 6 символов).");
+    return;
+  }
+
+  setErr(null);
+  setLoading(true);
+
+  try {
+    // Для TOTP можно оставить backend verify,
+    // для email НЕ вызываем /mfa/verify, а передаём код дальше в reveal endpoint
+    if (verifyMode === "backend" && method === "totp") {
+      await verifyMfaBackend(trimmed, method);
     }
 
-    setErr(null);
-    setLoading(true);
-
-    try {
-      if (verifyMode === "backend") {
-        await verifyMfaBackend(trimmed, method);
-      } else {
-        if (trimmed !== "123456") {
-          throw new Error("Неверный код");
-        }
-      }
-
-      onSuccess(trimmed);
-      onClose();
-    } catch (e: any) {
-      setErr(e?.message || "❌ Неверный код");
-    } finally {
-      setLoading(false);
-    }
-  };
+    onSuccess(trimmed);
+    onClose();
+  } catch (e: any) {
+    setErr(e?.message || "❌ Неверный код");
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-[9999]">

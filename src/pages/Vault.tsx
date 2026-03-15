@@ -313,40 +313,39 @@ export default function Vault() {
   mode: "reveal" | "copy"
 ) => {
   try {
+    const grant = await checkGrant(item.id);
 
-    // ADMIN → direct reveal через MFA
-    if (hasPermission("reveal_vault_secret")) {
-      setSelectedItem(item)
-      setPendingAction(mode)
-      setRevealMode("direct");
-      setOpenMFA(true)
-      return
-    }
-
-    // Есть approval grant → approved reveal через MFA
-    const grant = await checkGrant(item.id)
-
+    // 1) Если есть active grant → всегда идём через approved flow
     if (grant?.has_grant && hasPermission("reveal_vault_approved")) {
-      setSelectedItem(item)
-      setPendingAction(mode)
+      setSelectedItem(item);
+      setPendingAction(mode);
       setRevealMode("approved");
-      setOpenMFA(true)
-      return
+      setOpenMFA(true);
+      return;
     }
 
-    // Нет grant → создаём request
+    // 2) Иначе direct reveal, если он реально разрешён
+    if (hasPermission("reveal_vault_secret")) {
+      setSelectedItem(item);
+      setPendingAction(mode);
+      setRevealMode("direct");
+      setOpenMFA(true);
+      return;
+    }
+
+    // 3) Нет grant и нет direct reveal → создаём request
     if (hasPermission("request_vault_access")) {
-      await vaultCreateRequest(item.id, "Vault access request")
-      toast.success("Запрос доступа отправлен")
-      return
+      await vaultCreateRequest(item.id, "Vault access request");
+      toast.success("Запрос доступа отправлен");
+      return;
     }
 
-    toast.error("Нет прав доступа")
+    toast.error("Нет прав доступа");
   } catch (err: any) {
-    console.error("Vault error", err)
-    toast.error(err?.message || "Ошибка доступа к секрету")
+    console.error("Vault error", err);
+    toast.error(err?.message || "Ошибка доступа к секрету");
   }
-}
+};
 
   const handleCreateSecret = async (newData: any) => {
     try {

@@ -23,6 +23,12 @@ export interface Settings {
   ad_bind_dn: string;
   ad_use_ssl: boolean;
 
+  ad_user_search_base?: string;
+  ad_group_search_base?: string;
+  ad_default_role?: string;
+  ad_jit_enabled?: boolean;
+  ad_require_mapped_role?: boolean;
+
   siem_webhook_url: string;
   radius_enabled: boolean;
   radius_secret?: string;

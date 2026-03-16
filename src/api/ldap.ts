@@ -32,12 +32,8 @@ export interface LdapSyncLog {
 }
 
 export const ldapApi = {
-  test: async (payload: Record<string, any> = {}) => {
-    return api.post("/ldap/test", payload);
-  },
-
   listMappings: async (): Promise<LdapRoleMapping[]> => {
-    return api.get("/ldap/mappings");
+    return api.get("/settings/integrations/ad/mappings");
   },
 
   upsertMapping: async (payload: {
@@ -45,22 +41,33 @@ export const ldapApi = {
     role_name: string;
     is_enabled?: boolean;
   }): Promise<LdapRoleMapping> => {
-    return api.post("/ldap/mappings", payload);
+    return api.post("/settings/integrations/ad/mappings", payload);
+  },
+
+  updateMapping: async (
+    id: number,
+    payload: {
+      group_dn?: string;
+      role_name?: string;
+      is_enabled?: boolean;
+    }
+  ): Promise<LdapRoleMapping> => {
+    return api.patch(`/settings/integrations/ad/mappings/${id}`, payload);
   },
 
   deleteMapping: async (id: number) => {
-    return api.delete(`/ldap/mappings/${id}`);
+    return api.delete(`/settings/integrations/ad/mappings/${id}`);
   },
 
   syncUser: async (email: string): Promise<LdapSyncResult> => {
-    return api.post("/ldap/sync/user", { email });
+    return api.post("/settings/integrations/ad/sync", { email });
   },
 
   dryRunSyncUser: async (email: string): Promise<LdapSyncResult> => {
-    return api.post("/ldap/sync/user/dry-run", { email });
+    return api.post("/settings/integrations/ad/dry-run", { email });
   },
 
   listSyncLogs: async (): Promise<LdapSyncLog[]> => {
-    return api.get("/ldap/sync/logs");
+    return api.get("/settings/integrations/ad/sync-history");
   },
 };

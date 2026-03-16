@@ -1,15 +1,10 @@
-// src/api/settings.ts
 import { API_URL } from "./config";
-
-/* =======================
-   TYPES
-======================= */
 
 export interface Settings {
   system_name: string;
   language: string;
-  environment: string;
-  timezone: string;
+  environment?: string;
+  timezone?: string;
 
   mfa_required: boolean;
   password_rotation_days: number;
@@ -17,10 +12,10 @@ export interface Settings {
   session_limit_default: number;
 
   ad_enabled: boolean;
-  ad_host: string;
+  ad_host?: string;
   ad_port: number;
-  ad_base_dn: string;
-  ad_bind_dn: string;
+  ad_base_dn?: string;
+  ad_bind_dn?: string;
   ad_use_ssl: boolean;
 
   ad_user_search_base?: string;
@@ -29,78 +24,120 @@ export interface Settings {
   ad_jit_enabled?: boolean;
   ad_require_mapped_role?: boolean;
 
-  siem_webhook_url: string;
+  ad_bind_password_configured?: boolean;
+
+  siem_webhook_url?: string;
+
   radius_enabled: boolean;
+  radius_secret_configured?: boolean;
+}
+
+export interface SettingsIntegrationsPayload {
+  ad_enabled?: boolean;
+  ad_host?: string;
+  ad_port?: number;
+  ad_base_dn?: string;
+  ad_bind_dn?: string;
+  ad_bind_password?: string;
+  ad_use_ssl?: boolean;
+
+  ad_user_search_base?: string;
+  ad_group_search_base?: string;
+  ad_default_role?: string;
+  ad_jit_enabled?: boolean;
+  ad_require_mapped_role?: boolean;
+
+  siem_webhook_url?: string;
+
+  radius_enabled?: boolean;
   radius_secret?: string;
 }
 
-/* =======================
-   API CLIENT
-======================= */
+export interface ADTestPayload {
+  host?: string;
+  port?: number;
+  bind_dn?: string;
+  bind_password?: string;
+  base_dn?: string;
+  use_ssl?: boolean;
+}
 
-// Вспомогательная функция для заголовков (чтобы каждый раз не писать)
 const getHeaders = () => {
   const token = localStorage.getItem("access_token");
   return {
     "Content-Type": "application/json",
-    "Authorization": token ? `Bearer ${token}` : "",
+    Authorization: token ? `Bearer ${token}` : "",
   };
 };
 
 export const settingsApi = {
-  // Получить все настройки
   get: async (): Promise<Settings> => {
     const res = await fetch(`${API_URL}/settings`, {
       method: "GET",
       headers: getHeaders(),
     });
+
     if (!res.ok) throw new Error("Не удалось загрузить настройки");
     return res.json();
   },
 
-  // Обновить общие настройки
   updateGeneral: async (data: Partial<Settings>) => {
     const res = await fetch(`${API_URL}/settings/general`, {
       method: "PATCH",
       headers: getHeaders(),
       body: JSON.stringify(data),
     });
-    if (!res.ok) throw new Error("Ошибка обновления общих настроек");
-    return res.json();
+
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.detail || "Ошибка обновления общих настроек");
+    return json;
   },
 
-  // Обновить безопасность
   updateSecurity: async (data: Partial<Settings>) => {
     const res = await fetch(`${API_URL}/settings/security`, {
       method: "PATCH",
       headers: getHeaders(),
       body: JSON.stringify(data),
     });
-    if (!res.ok) throw new Error("Ошибка обновления безопасности");
-    return res.json();
+
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.detail || "Ошибка обновления безопасности");
+    return json;
   },
 
-  // Обновить интеграции
-  updateIntegrations: async (data: Partial<Settings>) => {
+  updateIntegrations: async (data: SettingsIntegrationsPayload) => {
     const res = await fetch(`${API_URL}/settings/integrations`, {
       method: "PATCH",
       headers: getHeaders(),
       body: JSON.stringify(data),
     });
-    if (!res.ok) throw new Error("Ошибка обновления интеграций");
-    return res.json();
+
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.detail || "Ошибка обновления интеграций");
+    return json;
   },
 
-  // Тест подключения к AD
-  testAd: async (data: any) => {
+  testAd: async (data: ADTestPayload) => {
     const res = await fetch(`${API_URL}/settings/integrations/ad/test`, {
       method: "POST",
       headers: getHeaders(),
       body: JSON.stringify(data),
     });
-    
+
     const json = await res.json();
     if (!res.ok) throw new Error(json.detail || "Ошибка соединения с AD");
+    return json;
+  },
+
+  testSiem: async (webhook_url?: string) => {
+    const res = await fetch(`${API_URL}/settings/integrations/siem/test`, {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify({ webhook_url }),
+    });
+
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.detail || "Ошибка теста SIEM");
     return json;
   },
 };

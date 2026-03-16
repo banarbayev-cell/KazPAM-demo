@@ -1,36 +1,31 @@
 import { useEffect, useState } from "react";
-import { Settings as SettingsIcon, Shield, Globe, Network, Save, Server, Activity } from "lucide-react";
+import {
+  Settings as SettingsIcon,
+  Shield,
+  Globe,
+  Network,
+  Save,
+  Server,
+  Activity,
+} from "lucide-react";
 import { toast } from "sonner";
-import { settingsApi } from "../api/settings";
-import { ldapApi } from "@/api/ldap";
+
+import { settingsApi, Settings, SettingsIntegrationsPayload, ADTestPayload } from "../api/settings";
 import LdapRoleMappingsCard from "@/components/settings/LdapRoleMappingsCard";
 import LdapSyncCard from "@/components/settings/LdapSyncCard";
 
-interface SettingsData {
-  system_name: string;
-  language: string;
-  environment: string;
-  timezone: string;
-  mfa_required: boolean;
-  password_rotation_days: number;
-  lockout_attempts: number;
-  session_limit_default: number;
-  ad_enabled: boolean;
-  ad_host: string;
-  ad_port: number;
-  ad_base_dn: string;
-  ad_bind_dn: string;
-  ad_use_ssl: boolean;
-  siem_webhook_url: string;
-  radius_enabled: boolean;
+type SettingsFormData = Settings & {
+  ad_bind_password?: string;
   radius_secret?: string;
-}
+};
 
 export default function SettingsPage() {
-  const [data, setData] = useState<SettingsData | null>(null);
+  const [data, setData] = useState<SettingsFormData | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
   const [testingAd, setTestingAd] = useState(false);
+  const [adTestResult, setAdTestResult] = useState<any | null>(null);
+  const [adTestError, setAdTestError] = useState<string | null>(null);
 
   useEffect(() => {
     loadSettings();
@@ -39,8 +34,12 @@ export default function SettingsPage() {
   const loadSettings = async () => {
     try {
       const res = await settingsApi.get();
-      setData(res);
-    } catch (e) {
+      setData({
+        ...res,
+        ad_bind_password: "",
+        radius_secret: "",
+      });
+    } catch {
       toast.error("Ошибка загрузки настроек");
     } finally {
       setLoading(false);
@@ -53,10 +52,11 @@ export default function SettingsPage() {
       if (section === "general") await settingsApi.updateGeneral(payload);
       if (section === "security") await settingsApi.updateSecurity(payload);
       if (section === "integrations") await settingsApi.updateIntegrations(payload);
+
       toast.success("Настройки успешно сохранены");
-      loadSettings();
-    } catch (e) {
-      toast.error("Ошибка сохранения");
+      await loadSettings();
+    } catch (e: any) {
+      toast.error(e?.message || "Ошибка сохранения");
     } finally {
       setSaving(null);
     }
@@ -64,19 +64,70 @@ export default function SettingsPage() {
 
   const handleTestAd = async () => {
     if (!data) return;
+
     setTestingAd(true);
+    setAdTestError(null);
+    setAdTestResult(null);
+
     try {
-      await ldapApi.test({});
-      toast.success(`Соединение с ${data.ad_host} успешно установлено`);
+      const payload: ADTestPayload = {
+        host: data.ad_host,
+        port: data.ad_port,
+        bind_dn: data.ad_bind_dn,
+        base_dn: data.ad_base_dn,
+        use_ssl: data.ad_use_ssl,
+      };
+
+      if (data.ad_bind_password?.trim()) {
+        payload.bind_password = data.ad_bind_password.trim();
+      }
+
+      const res = await settingsApi.testAd(payload);
+      setAdTestResult(res);
+      toast.success(`Соединение с ${data.ad_host || "AD"} успешно проверено`);
     } catch (e: any) {
-      toast.error(e.message || "Ошибка подключения к AD");
+      setAdTestError(e?.message || "Ошибка подключения к AD");
+      toast.error(e?.message || "Ошибка подключения к AD");
     } finally {
       setTestingAd(false);
     }
   };
 
-  const update = (field: keyof SettingsData, value: any) => {
+  const update = (field: keyof SettingsFormData, value: any) => {
     setData((prev) => (prev ? { ...prev, [field]: value } : null));
+  };
+
+  const buildIntegrationsPayload = (): SettingsIntegrationsPayload => {
+    if (!data) return {};
+
+    const payload: SettingsIntegrationsPayload = {
+      ad_enabled: data.ad_enabled,
+      ad_host: data.ad_host,
+      ad_port: data.ad_port,
+      ad_base_dn: data.ad_base_dn,
+      ad_bind_dn: data.ad_bind_dn,
+      ad_use_ssl: data.ad_use_ssl,
+
+      ad_user_search_base: data.ad_user_search_base,
+      ad_group_search_base: data.ad_group_search_base,
+      ad_default_role: data.ad_default_role,
+      ad_jit_enabled: data.ad_jit_enabled,
+      ad_require_mapped_role: data.ad_require_mapped_role,
+
+      siem_webhook_url: data.siem_webhook_url,
+
+      radius_enabled: data.radius_enabled,
+    };
+
+    if (data.ad_bind_password?.trim()) {
+      payload.ad_bind_password = data.ad_bind_password.trim();
+    }
+
+    if (data.radius_secret?.trim()) {
+      payload.radius_secret = data.radius_secret.trim();
+    }
+
+    return payload;
   };
 
   if (loading || !data) {
@@ -91,7 +142,9 @@ export default function SettingsPage() {
         </div>
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Настройки системы</h1>
-          <p className="text-gray-500 mt-1">Управление параметрами ядра, безопасностью и интеграциями</p>
+          <p className="text-gray-500 mt-1">
+            Управление параметрами ядра, безопасностью и интеграциями
+          </p>
         </div>
       </div>
 
@@ -110,14 +163,31 @@ export default function SettingsPage() {
           loading={saving === "general"}
         >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <Input label="Название инсталляции" value={data.system_name} onChange={(v: any) => update("system_name", v)} />
-            <Select label="Язык интерфейса" value={data.language} onChange={(v: any) => update("language", v)}>
+            <Input
+              label="Название инсталляции"
+              value={data.system_name}
+              onChange={(v: any) => update("system_name", v)}
+            />
+            <Select
+              label="Язык интерфейса"
+              value={data.language}
+              onChange={(v: any) => update("language", v)}
+            >
               <option value="ru">Русский</option>
               <option value="en">English</option>
               <option value="kz">Қазақша</option>
             </Select>
-            <Input label="Environment (SRE)" value={data.environment} onChange={(v: any) => update("environment", v)} placeholder="production" />
-            <Input label="Timezone" value={data.timezone} onChange={(v: any) => update("timezone", v)} />
+            <Input
+              label="Environment (SRE)"
+              value={data.environment}
+              onChange={(v: any) => update("environment", v)}
+              placeholder="prod"
+            />
+            <Input
+              label="Timezone"
+              value={data.timezone}
+              onChange={(v: any) => update("timezone", v)}
+            />
           </div>
         </Section>
 
@@ -137,7 +207,9 @@ export default function SettingsPage() {
           <div className="bg-[#0E1A3A]/50 border border-white/10 p-4 rounded-xl mb-6 flex items-center justify-between">
             <div>
               <h4 className="text-white font-medium">Принудительная MFA (2FA)</h4>
-              <p className="text-sm text-gray-400">Требовать второй фактор для всех административных сессий</p>
+              <p className="text-sm text-gray-400">
+                Требовать второй фактор для всех административных сессий
+              </p>
             </div>
             <Toggle checked={data.mfa_required} onChange={(v: any) => update("mfa_required", v)} />
           </div>
@@ -167,19 +239,7 @@ export default function SettingsPage() {
         <Section
           title="Интеграции (Enterprise)"
           icon={<Network className="text-purple-400" />}
-          onSave={() =>
-            save("integrations", {
-              ad_enabled: data.ad_enabled,
-              ad_host: data.ad_host,
-              ad_port: data.ad_port,
-              ad_base_dn: data.ad_base_dn,
-              ad_bind_dn: data.ad_bind_dn,
-              ad_use_ssl: data.ad_use_ssl,
-              siem_webhook_url: data.siem_webhook_url,
-              radius_enabled: data.radius_enabled,
-              radius_secret: data.radius_secret,
-            })
-          }
+          onSave={() => save("integrations", buildIntegrationsPayload())}
           loading={saving === "integrations"}
         >
           <div className="border-b border-white/10 pb-8 mb-8">
@@ -200,26 +260,65 @@ export default function SettingsPage() {
                     onChange={(v: any) => update("ad_host", v)}
                     placeholder="dc01.corp.local"
                   />
+
                   <Input
                     label="Port"
                     type="number"
                     value={data.ad_port}
                     onChange={(v: any) => update("ad_port", Number(v))}
                   />
+
                   <Input
                     label="Base DN"
                     value={data.ad_base_dn}
                     onChange={(v: any) => update("ad_base_dn", v)}
                     placeholder="DC=company,DC=local"
                   />
+
                   <Input
                     label="Bind DN (Service Account)"
                     value={data.ad_bind_dn}
                     onChange={(v: any) => update("ad_bind_dn", v)}
-                    placeholder="CN=svc_kazpam..."
+                    placeholder="CN=svc_kazpam,OU=Service Accounts,DC=company,DC=local"
                   />
 
-                  <div className="md:col-span-2 flex items-center gap-4 mt-2">
+                  <div className="md:col-span-2">
+                    <Input
+                      label="Bind Password"
+                      type="password"
+                      value={data.ad_bind_password}
+                      onChange={(v: any) => update("ad_bind_password", v)}
+                      placeholder="Введите новый пароль только если нужно обновить"
+                    />
+                    {data.ad_bind_password_configured && (
+                      <div className="mt-2 text-xs text-green-300">
+                        Пароль сервисной учётки уже сохранён на backend
+                      </div>
+                    )}
+                  </div>
+
+                  <Input
+                    label="User Search Base"
+                    value={data.ad_user_search_base}
+                    onChange={(v: any) => update("ad_user_search_base", v)}
+                    placeholder="OU=Users,DC=company,DC=local"
+                  />
+
+                  <Input
+                    label="Group Search Base"
+                    value={data.ad_group_search_base}
+                    onChange={(v: any) => update("ad_group_search_base", v)}
+                    placeholder="OU=Groups,DC=company,DC=local"
+                  />
+
+                  <Input
+                    label="Default Role"
+                    value={data.ad_default_role}
+                    onChange={(v: any) => update("ad_default_role", v)}
+                    placeholder="User"
+                  />
+
+                  <div className="md:col-span-2 flex flex-wrap items-center gap-6 mt-2">
                     <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
                       <input
                         type="checkbox"
@@ -229,6 +328,27 @@ export default function SettingsPage() {
                       />
                       Использовать SSL (LDAPS)
                     </label>
+
+                    <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={!!data.ad_jit_enabled}
+                        onChange={(e) => update("ad_jit_enabled", e.target.checked)}
+                        className="accent-blue-500 w-4 h-4"
+                      />
+                      JIT provisioning enabled
+                    </label>
+
+                    <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={!!data.ad_require_mapped_role}
+                        onChange={(e) => update("ad_require_mapped_role", e.target.checked)}
+                        className="accent-blue-500 w-4 h-4"
+                      />
+                      Require mapped role only
+                    </label>
+
                     <button
                       onClick={handleTestAd}
                       disabled={testingAd}
@@ -238,6 +358,20 @@ export default function SettingsPage() {
                     </button>
                   </div>
                 </div>
+
+                {(adTestResult || adTestError) && (
+                  <div className="mt-5 bg-[#121A33] border border-white/10 rounded-xl p-4">
+                    <div className="text-white font-medium mb-2">Результат теста AD</div>
+
+                    {adTestError ? (
+                      <div className="text-red-300 text-sm">{adTestError}</div>
+                    ) : (
+                      <pre className="text-xs text-gray-300 whitespace-pre-wrap break-words">
+                        {JSON.stringify(adTestResult, null, 2)}
+                      </pre>
+                    )}
+                  </div>
+                )}
 
                 <div className="mt-6 grid grid-cols-1 xl:grid-cols-2 gap-6">
                   <LdapRoleMappingsCard />
@@ -266,14 +400,22 @@ export default function SettingsPage() {
                 <h3 className="font-semibold text-white">RADIUS Auth</h3>
                 <Toggle checked={data.radius_enabled} onChange={(v: any) => update("radius_enabled", v)} />
               </div>
+
               {data.radius_enabled && (
-                <Input
-                  label="Shared Secret"
-                  type="password"
-                  value={data.radius_secret}
-                  onChange={(v: any) => update("radius_secret", v)}
-                  placeholder="••••••••"
-                />
+                <>
+                  <Input
+                    label="Shared Secret"
+                    type="password"
+                    value={data.radius_secret}
+                    onChange={(v: any) => update("radius_secret", v)}
+                    placeholder="Введите новый secret только если нужно обновить"
+                  />
+                  {data.radius_secret_configured && (
+                    <div className="mt-2 text-xs text-green-300">
+                      RADIUS secret уже сохранён на backend
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -333,10 +475,14 @@ const Select = ({ label, value, onChange, children }: any) => (
 const Toggle = ({ checked, onChange }: any) => (
   <div
     onClick={() => onChange(!checked)}
-    className={`w-12 h-6 rounded-full p-1 cursor-pointer transition-colors duration-200 ${checked ? "bg-[#0052FF]" : "bg-gray-700"}`}
+    className={`w-12 h-6 rounded-full p-1 cursor-pointer transition-colors duration-200 ${
+      checked ? "bg-[#0052FF]" : "bg-gray-700"
+    }`}
   >
     <div
-      className={`w-4 h-4 bg-white rounded-full shadow-md transform transition-transform duration-200 ${checked ? "translate-x-6" : "translate-x-0"}`}
+      className={`w-4 h-4 bg-white rounded-full shadow-md transform transition-transform duration-200 ${
+        checked ? "translate-x-6" : "translate-x-0"
+      }`}
     />
   </div>
 );

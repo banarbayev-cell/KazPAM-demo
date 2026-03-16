@@ -178,7 +178,7 @@ export default function SettingsPage() {
               <option value="kz">Қазақша</option>
             </Select>
             <Input
-              label="Environment (SRE)"
+              label="Среда (SRE)"
               value={data.environment}
               onChange={(v: any) => update("environment", v)}
               placeholder="prod"
@@ -290,29 +290,25 @@ export default function SettingsPage() {
                       onChange={(v: any) => update("ad_bind_password", v)}
                       placeholder="Введите новый пароль только если нужно обновить"
                     />
-                    {data.ad_bind_password_configured && (
-                      <div className="mt-2 text-xs text-green-300">
-                        Пароль сервисной учётки уже сохранён на backend
-                      </div>
-                    )}
+                  
                   </div>
 
                   <Input
-                    label="User Search Base"
+                    label="База поиска пользователей"
                     value={data.ad_user_search_base}
                     onChange={(v: any) => update("ad_user_search_base", v)}
                     placeholder="OU=Users,DC=company,DC=local"
                   />
 
                   <Input
-                    label="Group Search Base"
+                    label="База поиска групп"
                     value={data.ad_group_search_base}
                     onChange={(v: any) => update("ad_group_search_base", v)}
                     placeholder="OU=Groups,DC=company,DC=local"
                   />
 
                   <Input
-                    label="Default Role"
+                    label="Роль по умолчанию"
                     value={data.ad_default_role}
                     onChange={(v: any) => update("ad_default_role", v)}
                     placeholder="User"
@@ -336,7 +332,7 @@ export default function SettingsPage() {
                         onChange={(e) => update("ad_jit_enabled", e.target.checked)}
                         className="accent-blue-500 w-4 h-4"
                       />
-                      JIT provisioning enabled
+                      JIT - Автоматически создавать пользователя при первом входе
                     </label>
 
                     <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
@@ -346,7 +342,7 @@ export default function SettingsPage() {
                         onChange={(e) => update("ad_require_mapped_role", e.target.checked)}
                         className="accent-blue-500 w-4 h-4"
                       />
-                      Require mapped role only
+                      Разрешать вход только при наличии LDAP-mapping роли
                     </label>
 
                     <button
@@ -354,7 +350,7 @@ export default function SettingsPage() {
                       disabled={testingAd}
                       className="text-xs px-3 py-1.5 bg-blue-600/20 text-blue-300 hover:bg-blue-600/30 rounded border border-blue-500/30 transition"
                     >
-                      {testingAd ? "Проверка..." : "Тест подключения"}
+                      {testingAd ? "Проверка..." : "Проверка доступности контроллера домена и корректность параметров подключения"}
                     </button>
                   </div>
                 </div>
@@ -388,7 +384,7 @@ export default function SettingsPage() {
                 <h3 className="font-semibold text-white">SIEM Log Forwarding</h3>
               </div>
               <Input
-                label="Webhook URL (Splunk/QRadar)"
+                label="Адрес приёма событий SIEM (Splunk/QRadar)"
                 value={data.siem_webhook_url}
                 onChange={(v: any) => update("siem_webhook_url", v)}
                 placeholder="https://siem-collector..."
@@ -397,7 +393,7 @@ export default function SettingsPage() {
 
             <div>
               <div className="flex items-center justify-between mb-3">
-                <h3 className="font-semibold text-white">RADIUS Auth</h3>
+                <h3 className="font-semibold text-white">Аутентификация RADIUS</h3>
                 <Toggle checked={data.radius_enabled} onChange={(v: any) => update("radius_enabled", v)} />
               </div>
 
@@ -410,11 +406,6 @@ export default function SettingsPage() {
                     onChange={(v: any) => update("radius_secret", v)}
                     placeholder="Введите новый secret только если нужно обновить"
                   />
-                  {data.radius_secret_configured && (
-                    <div className="mt-2 text-xs text-green-300">
-                      RADIUS secret уже сохранён на backend
-                    </div>
-                  )}
                 </>
               )}
             </div>

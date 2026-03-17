@@ -18,6 +18,7 @@ import VaultRequests from "./pages/VaultRequests";
 import Policies from "./pages/Policies";
 import Roles from "./pages/Roles";
 import Permissions from "./pages/Permissions";
+import Discovery from "./pages/Discovery";
 
 import { useAuth } from "./store/auth";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -28,12 +29,10 @@ import License from "./pages/License";
 import Access from "./components/Access";
 import IncidentDetails from "./pages/IncidentDetails";
 
-
 export default function App() {
   const loadFromStorage = useAuth((s) => s.loadFromStorage);
 
   useEffect(() => {
-    // safe init: hydrate auth once on app mount
     loadFromStorage();
   }, [loadFromStorage]);
 
@@ -46,18 +45,16 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ResetPassword />} />
-        <Route path="/force-change-password" element={<ForceChangePassword />} />
 
-        {/* Force password change (special protected) */}
-<Route
-  path="/force-change-password"
-  element={
-    <ProtectedRoute>
-      <ForceChangePassword />
-    </ProtectedRoute>
-  }
-/>
-
+        {/* Force password change */}
+        <Route
+          path="/force-change-password"
+          element={
+            <ProtectedRoute>
+              <ForceChangePassword />
+            </ProtectedRoute>
+          }
+        />
 
         {/* Protected layout */}
         <Route
@@ -68,16 +65,15 @@ export default function App() {
             </ProtectedRoute>
           }
         >
-          {/* default protected route */}
           <Route index element={<Navigate to="/dashboard" replace />} />
 
-          {/* dashboard routes */}
           <Route path="dashboard" element={<Home />} />
           <Route path="soc" element={<SocDashboard />} />
           <Route path="soc/commands" element={<SocCommands />} />
           <Route path="soc/incidents/:id" element={<IncidentDetails />} />
           <Route path="users" element={<Users />} />
           <Route path="sessions" element={<Sessions />} />
+          <Route path="discovery" element={<Discovery />} />
           <Route path="vault" element={<Vault />} />
           <Route path="vault/requests" element={<VaultRequests />} />
           <Route path="policies" element={<Policies />} />
@@ -85,14 +81,16 @@ export default function App() {
           <Route path="settings" element={<Settings />} />
           <Route path="roles" element={<Roles />} />
           <Route path="permissions" element={<Permissions />} />
-          <Route path="license" element={ <Access permission="view_settings">
-        <License />
-      </Access>
-    }
-  />
+          <Route
+            path="license"
+            element={
+              <Access permission="view_settings">
+                <License />
+              </Access>
+            }
+          />
         </Route>
 
-        {/* fallback */}
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </>

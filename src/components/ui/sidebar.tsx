@@ -4,15 +4,11 @@ import Access from "../Access";
 export default function Sidebar() {
   return (
     <aside className="w-64 h-screen bg-[#0A0F24] text-white flex flex-col p-6 border-r border-white/10">
-      {/* LOGO */}
       <h1 className="text-3xl font-bold mb-8 select-none">
         Kaz<span className="text-[#0052FF]">PAM</span>
       </h1>
 
-      {/* NAV */}
       <nav className="flex-1 flex flex-col space-y-1">
-
-        {/* Основное */}
         <NavLink to="/dashboard" className={navClass}>
           Главная
         </NavLink>
@@ -23,7 +19,6 @@ export default function Sidebar() {
           </NavLink>
         </Access>
 
-        {/* NEW */}
         <Access permission="view_soc">
           <NavLink to="/soc/commands" className={navClass}>
             Команды сессий
@@ -32,7 +27,6 @@ export default function Sidebar() {
 
         <div className="my-3 border-t border-white/10" />
 
-        {/* Управление */}
         <NavLink to="/users" className={navClass}>
           Пользователи
         </NavLink>
@@ -51,9 +45,12 @@ export default function Sidebar() {
 
         <div className="my-3 border-t border-white/10" />
 
-        {/* Безопасность */}
         <NavLink to="/sessions" className={navClass}>
           Сессии
+        </NavLink>
+
+        <NavLink to="/discovery" className={navClass}>
+          Обнаружение
         </NavLink>
 
         <Access permission="view_vault">
@@ -82,7 +79,6 @@ export default function Sidebar() {
 
         <div className="my-3 border-t border-white/10" />
 
-        {/* Системное */}
         <NavLink to="/settings" className={navClass}>
           Настройки
         </NavLink>
@@ -92,10 +88,8 @@ export default function Sidebar() {
             Лицензия
           </NavLink>
         </Access>
-
       </nav>
 
-      {/* FOOTER */}
       <div className="text-xs text-gray-400 pt-4 border-t border-white/10">
         KazPAM · v1.0.0 MVP
       </div>

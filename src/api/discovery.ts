@@ -1,11 +1,26 @@
 import { api } from "../services/api";
 import type {
   DiscoveredAccount,
+  DiscoveryJob,
   DiscoveryMetadataUpdatePayload,
+  DiscoveryRunRequest,
+  DiscoveryTarget,
 } from "../types/discovery";
 
 export function listDiscoveryAccounts() {
   return api.get<DiscoveredAccount[]>("/discovery/accounts");
+}
+
+export function listDiscoveryTargets() {
+  return api.get<DiscoveryTarget[]>("/discovery/targets");
+}
+
+export function listDiscoveryJobs() {
+  return api.get<DiscoveryJob[]>("/discovery/jobs");
+}
+
+export function runDiscovery(payload: DiscoveryRunRequest) {
+  return api.post<DiscoveryJob>("/discovery/run", payload);
 }
 
 export function updateDiscoveryAccountMetadata(

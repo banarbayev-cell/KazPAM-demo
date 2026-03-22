@@ -1,6 +1,6 @@
 // src/pages/VaultRequests.tsx
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   listVaultRequests,
   approveVaultRequest,
@@ -25,6 +25,7 @@ const STATUS_OPTIONS: VaultRequestStatus[] = [
 
 export default function VaultRequests() {
   const navigate = useNavigate();
+  const location = useLocation();
   const user = useAuth((s) => s.user);
   const isApprover = user?.permissions?.includes("approve_vault_requests");
 
@@ -83,6 +84,34 @@ function renderExpires(expiresAt?: string | null) {
 
   return `${m}m ${s}s`;
 }
+
+useEffect(() => {
+  const params = new URLSearchParams(location.search);
+
+  const openCreate = params.get("open_create") === "1";
+  const secretFromQuery = params.get("secret_id");
+  const targetId = params.get("target_id");
+  const targetName = params.get("target_name");
+
+  if (!openCreate || !secretFromQuery) return;
+
+  setShowCreateModal(true);
+  setSecretId(secretFromQuery);
+  setMine(true);
+
+  if (!reason.trim()) {
+    const prettyTarget = targetName?.trim()
+      ? `RDP access to sensitive target ${targetName}`
+      : targetId
+      ? `RDP access to sensitive target #${targetId}`
+      : "RDP access to sensitive target";
+
+    setReason(prettyTarget);
+  }
+
+  navigate("/vault/requests", { replace: true });
+}, [location.search, navigate]);
+
 
   async function load() {
     setLoading(true);

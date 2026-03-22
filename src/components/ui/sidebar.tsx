@@ -53,6 +53,12 @@ export default function Sidebar() {
           Обнаружение
         </NavLink>
 
+        <Access permission="manage_settings">
+          <NavLink to="/targets" className={navClass}>
+            Целевые системы
+          </NavLink>
+        </Access>
+
         <Access permission="view_vault">
           <NavLink to="/vault" className={navClass}>
             Хранилище

@@ -9,45 +9,20 @@ export function invalidateAuthSession() {
   authSessionInvalidated = true;
 }
 
-
-/**
- * =====================================================
- * TOKEN HELPERS
- * =====================================================
- */
-function getToken(): string | null {
-  return localStorage.getItem("access_token");
-}
-
-/**
- * =====================================================
- * apiFetch — OVERLOADS (ALL EXPORTED)
- * =====================================================
- */
-
-// Generic overload
 export async function apiFetch<T>(
   path: string,
   options?: RequestInit
 ): Promise<T>;
 
-// Non-generic overload
 export async function apiFetch(
   path: string,
   options?: RequestInit
 ): Promise<any>;
 
-/**
- * =====================================================
- * SINGLE IMPLEMENTATION
- * =====================================================
- */
 export async function apiFetch(
   path: string,
   options: RequestInit = {}
 ): Promise<any> {
-
-  // 🔴 HARD STOP AFTER PASSWORD ROTATION
   if (authSessionInvalidated) {
     throw new Error("AUTH_SESSION_INVALIDATED");
   }
@@ -69,7 +44,6 @@ export async function apiFetch(
     headers,
   });
 
-  // === AUTH ERRORS ===
   if (response.status === 401) {
     console.error("❌ API 401 Unauthorized", path);
     throw new Error("Unauthorized");
@@ -84,7 +58,6 @@ export async function apiFetch(
     throw new Error(text || `HTTP error ${response.status}`);
   }
 
-  // === SAFE BODY PARSING ===
   const text = await response.text();
   if (!text) return undefined;
 
@@ -95,15 +68,8 @@ export async function apiFetch(
   }
 }
 
-
-/**
- * =====================================================
- * PUBLIC API OBJECT (НЕ ЛОМАЕМ КОНТРАКТ)
- * =====================================================
- */
 export const api = {
-  get: <T>(path: string) =>
-    apiFetch<T>(path),
+  get: <T>(path: string) => apiFetch<T>(path),
 
   post: <T>(path: string, body?: unknown) =>
     apiFetch<T>(path, {

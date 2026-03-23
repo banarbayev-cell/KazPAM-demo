@@ -48,6 +48,13 @@ export default function Sidebar() {
         <NavLink to="/sessions" className={navClass}>
           Сессии
         </NavLink>
+        
+        <div className="my-3 border-t border-white/10" />
+        <Access permission="view_soc">
+          <NavLink to="/recordings" className={navClass}>
+            Записи сессий
+          </NavLink>
+        </Access>
 
         <NavLink to="/discovery" className={navClass}>
           Обнаружение

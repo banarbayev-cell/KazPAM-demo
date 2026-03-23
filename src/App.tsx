@@ -29,6 +29,8 @@ import License from "./pages/License";
 import Access from "./components/Access";
 import IncidentDetails from "./pages/IncidentDetails";
 import Targets from "./pages/Targets";
+import Recordings from "./pages/Recordings";
+import SessionReplay from "./pages/SessionReplay";
 
 export default function App() {
   const loadFromStorage = useAuth((s) => s.loadFromStorage);
@@ -94,6 +96,8 @@ export default function App() {
         </Route>
 
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/recordings" element={<Recordings />} />
+        <Route path="/recordings/:id" element={<SessionReplay />} />
       </Routes>
     </>
   );

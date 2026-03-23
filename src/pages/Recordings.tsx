@@ -45,26 +45,38 @@ export default function Recordings() {
   const [search, setSearch] = useState("");
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   const navigate = useNavigate();
 
   useEffect(() => {
+    setLoading(true);
+    setError("");
+
     fetchRecordings()
-      .then(setRecordings)
+      .then((data) => {
+        setRecordings(Array.isArray(data) ? data : []);
+      })
+      .catch((err) => {
+        console.error("Failed to load recordings:", err);
+        setRecordings([]);
+        setError("Не удалось загрузить записи сессий");
+      })
       .finally(() => setLoading(false));
   }, []);
 
-  const filtered = useMemo(() => {
+  const filtered = useMemo<Recording[]>(() => {
+    const safeRecordings = Array.isArray(recordings) ? recordings : [];
     const q = search.trim().toLowerCase();
 
-    if (!q) return recordings;
+    if (!q) return safeRecordings;
 
-    return recordings.filter((r) => {
+    return safeRecordings.filter((r) => {
       return (
-        r.user.toLowerCase().includes(q) ||
-        r.protocol.toLowerCase().includes(q) ||
-        r.date.toLowerCase().includes(q) ||
-        r.status.toLowerCase().includes(q)
+        String(r.user ?? "").toLowerCase().includes(q) ||
+        String(r.protocol ?? "").toLowerCase().includes(q) ||
+        String(r.date ?? "").toLowerCase().includes(q) ||
+        String(r.status ?? "").toLowerCase().includes(q)
       );
     });
   }, [recordings, search]);
@@ -93,6 +105,10 @@ export default function Recordings() {
             {loading ? (
               <div className="bg-[#121A33] text-white rounded-xl p-6">
                 Загрузка...
+              </div>
+            ) : error ? (
+              <div className="bg-[#121A33] text-red-300 rounded-xl p-6 border border-red-500/30">
+                {error}
               </div>
             ) : filtered.length === 0 ? (
               <div className="bg-[#121A33] text-gray-300 rounded-xl p-6">
@@ -134,7 +150,7 @@ export default function Recordings() {
                           </span>
                         </td>
                         <td className="p-4">
-                          {r.status === "READY" ? (
+                          {(r.status === "READY" || r.status === "PROCESSING") ? (
                             <button
                               onClick={() => navigate(`/recordings/${r.id}`)}
                               className="px-4 py-2 bg-[#0052FF] hover:bg-blue-700 text-white rounded"

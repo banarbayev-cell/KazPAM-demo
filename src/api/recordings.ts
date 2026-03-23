@@ -30,17 +30,36 @@ export interface RecordingMeta {
 }
 
 export async function fetchRecordings(): Promise<Recording[]> {
-  return api.get("/recordings");
+  const data = await api.get<unknown>("/recordings/");
+  return Array.isArray(data) ? (data as Recording[]) : [];
 }
 
 export async function fetchRecordingEvents(
   recordingId: number
 ): Promise<{ from: string; to: string | null; events: RecordingEvent[] }> {
-  return api.get(`/recordings/${recordingId}/events`);
+  const data = await api.get<any>(`/recordings/${recordingId}/events`);
+
+  return {
+    from: typeof data?.from === "string" ? data.from : "",
+    to: typeof data?.to === "string" || data?.to === null ? data.to : null,
+    events: Array.isArray(data?.events) ? (data.events as RecordingEvent[]) : [],
+  };
 }
 
 export async function fetchRecordingMeta(
   recordingId: number
 ): Promise<RecordingMeta> {
-  return api.get(`/recordings/${recordingId}/meta`);
+  const data = await api.get<any>(`/recordings/${recordingId}/meta`);
+
+  return {
+    id: Number(data?.id ?? 0),
+    session_id: Number(data?.session_id ?? 0),
+    user: String(data?.user ?? ""),
+    protocol: String(data?.protocol ?? ""),
+    start_time: String(data?.start_time ?? ""),
+    end_time: data?.end_time ?? null,
+    duration: Number(data?.duration ?? 0),
+    size: data?.size ?? null,
+    status: (data?.status ?? "PROCESSING") as "READY" | "PROCESSING" | "FAILED",
+  };
 }

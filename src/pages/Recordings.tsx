@@ -4,7 +4,11 @@ import Header from "../components/Header";
 import Sidebar from "../components/ui/sidebar";
 import { fetchRecordings, Recording } from "../api/recordings";
 
-function formatDuration(seconds: number) {
+function formatDuration(seconds: number, status: Recording["status"]) {
+  if (status === "PROCESSING" && (!seconds || seconds <= 0)) {
+    return "Обрабатывается";
+  }
+
   if (!seconds || seconds <= 0) return "—";
 
   const hrs = Math.floor(seconds / 3600);
@@ -16,16 +20,22 @@ function formatDuration(seconds: number) {
   return `${secs}с`;
 }
 
-function formatSize(size: number | null) {
-  if (!size) return "—";
-
-  const mb = size / 1024 / 1024;
-  if (mb >= 1024) {
-    const gb = mb / 1024;
-    return `${gb.toFixed(2)} GB`;
+function formatSize(size: number | null, status: Recording["status"]) {
+  if ((size === null || size === undefined) && status === "PROCESSING") {
+    return "Считается";
   }
 
-  return `${mb.toFixed(1)} MB`;
+  if (size === null || size === undefined) return "—";
+  if (size === 0) return "0 KB";
+
+  const kb = size / 1024;
+  if (kb < 1024) return `${kb.toFixed(1)} KB`;
+
+  const mb = kb / 1024;
+  if (mb < 1024) return `${mb.toFixed(1)} MB`;
+
+  const gb = mb / 1024;
+  return `${gb.toFixed(2)} GB`;
 }
 
 function getStatusClass(status: Recording["status"]) {
@@ -43,13 +53,14 @@ function getStatusClass(status: Recording["status"]) {
 
 export default function Recordings() {
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"ALL" | Recording["status"]>("ALL");
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   const navigate = useNavigate();
 
-  useEffect(() => {
+  const loadRecordings = () => {
     setLoading(true);
     setError("");
 
@@ -63,23 +74,39 @@ export default function Recordings() {
         setError("Не удалось загрузить записи сессий");
       })
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    loadRecordings();
   }, []);
+
+  useEffect(() => {
+    const hasProcessing = recordings.some((r) => r.status === "PROCESSING");
+    if (!hasProcessing) return;
+
+    const t = setInterval(() => {
+      loadRecordings();
+    }, 10000);
+
+    return () => clearInterval(t);
+  }, [recordings]);
 
   const filtered = useMemo<Recording[]>(() => {
     const safeRecordings = Array.isArray(recordings) ? recordings : [];
     const q = search.trim().toLowerCase();
 
-    if (!q) return safeRecordings;
-
     return safeRecordings.filter((r) => {
-      return (
+      const matchesStatus = statusFilter === "ALL" ? true : r.status === statusFilter;
+      const matchesSearch =
+        !q ||
         String(r.user ?? "").toLowerCase().includes(q) ||
         String(r.protocol ?? "").toLowerCase().includes(q) ||
         String(r.date ?? "").toLowerCase().includes(q) ||
-        String(r.status ?? "").toLowerCase().includes(q)
-      );
+        String(r.status ?? "").toLowerCase().includes(q);
+
+      return matchesStatus && matchesSearch;
     });
-  }, [recordings, search]);
+  }, [recordings, search, statusFilter]);
 
   return (
     <div className="flex h-screen bg-gray-100">
@@ -90,17 +117,44 @@ export default function Recordings() {
 
         <main className="p-8 overflow-y-auto">
           <div className="bg-[#EDEEF2] rounded p-6">
-            <h1 className="text-3xl font-bold text-gray-900 mb-6">
-              Записи сессий
-            </h1>
+            <div className="flex items-start justify-between gap-4 mb-6">
+              <div>
+                <h1 className="text-3xl font-bold text-gray-900">Записи сессий</h1>
+                <p className="text-sm text-gray-600 mt-1">
+                  Replay-каталог с живым статусом, длительностью и размером
+                </p>
+              </div>
 
-            <input
-              type="text"
-              placeholder="Поиск по пользователю или протоколу"
-              className="w-full mb-4 p-3 border border-gray-300 rounded bg-white text-gray-900"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
+              <button
+                onClick={loadRecordings}
+                className="px-4 py-2 rounded bg-[#0052FF] hover:bg-[#0046D8] text-white"
+              >
+                Обновить
+              </button>
+            </div>
+
+            <div className="flex gap-3 items-center mb-4">
+              <input
+                type="text"
+                placeholder="Поиск по пользователю или протоколу"
+                className="flex-1 p-3 border border-gray-300 rounded bg-white text-gray-900"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+
+              <select
+                value={statusFilter}
+                onChange={(e) =>
+                  setStatusFilter(e.target.value as "ALL" | Recording["status"])
+                }
+                className="p-3 border border-gray-300 rounded bg-white text-gray-900"
+              >
+                <option value="ALL">Все статусы</option>
+                <option value="READY">READY</option>
+                <option value="PROCESSING">PROCESSING</option>
+                <option value="FAILED">FAILED</option>
+              </select>
+            </div>
 
             {loading ? (
               <div className="bg-[#121A33] text-white rounded-xl p-6">
@@ -138,8 +192,8 @@ export default function Recordings() {
                         <td className="p-4">{r.user}</td>
                         <td className="p-4 uppercase">{r.protocol}</td>
                         <td className="p-4">{r.date}</td>
-                        <td className="p-4">{formatDuration(r.duration)}</td>
-                        <td className="p-4">{formatSize(r.size)}</td>
+                        <td className="p-4">{formatDuration(r.duration, r.status)}</td>
+                        <td className="p-4">{formatSize(r.size, r.status)}</td>
                         <td className="p-4">
                           <span
                             className={`inline-flex px-3 py-1 rounded-lg text-xs font-semibold ${getStatusClass(

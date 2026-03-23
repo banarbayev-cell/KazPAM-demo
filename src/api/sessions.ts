@@ -1,8 +1,7 @@
 import { apiGet, apiPost } from "./client";
 
-
 export const getSessions = () => {
-  return apiGet("/sessions/sessions/");
+  return apiGet("/sessions/");
 };
 
 export const startSession = (params: {
@@ -22,10 +21,9 @@ export const startSession = (params: {
     mfa_passed: String(params.mfa_passed ?? false),
   });
 
-  return apiPost(`/sessions/sessions/start?${query.toString()}`);
+  return apiPost(`/sessions/start?${query.toString()}`);
 };
 
 export const terminateSession = (id: number) => {
-  return apiPost(`/sessions/sessions/terminate/${id}`);
+  return apiPost(`/sessions/terminate/${id}`);
 };
-

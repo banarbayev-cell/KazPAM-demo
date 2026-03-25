@@ -1,3 +1,8 @@
+export type SSHAuthMode =
+  | "gateway_key"
+  | "vault_password"
+  | "vault_private_key";
+
 export interface Target {
   id: number;
   name: string;
@@ -5,10 +10,16 @@ export interface Target {
   port: number;
   os_type: string;
   protocol: string;
+  ssh_auth_mode: SSHAuthMode;
   username?: string | null;
   vault_secret_id?: number | null;
   requires_vault_secret: boolean;
   approval_required: boolean;
+
+  break_glass_enabled: boolean;
+  break_glass_ttl_minutes: number;
+  break_glass_requires_reason: boolean;
+
   gateway_node?: string | null;
   is_active: boolean;
   description?: string | null;
@@ -22,9 +33,15 @@ export interface TargetCreatePayload {
   port: number;
   os_type: string;
   protocol: string;
+  ssh_auth_mode: SSHAuthMode;
   username?: string;
   requires_vault_secret: boolean;
   approval_required: boolean;
+
+  break_glass_enabled: boolean;
+  break_glass_ttl_minutes: number;
+  break_glass_requires_reason: boolean;
+
   gateway_node?: string;
   is_active: boolean;
   description?: string;
@@ -36,9 +53,15 @@ export interface TargetUpdatePayload {
   port?: number;
   os_type?: string;
   protocol?: string;
+  ssh_auth_mode?: SSHAuthMode;
   username?: string;
   requires_vault_secret?: boolean;
   approval_required?: boolean;
+
+  break_glass_enabled?: boolean;
+  break_glass_ttl_minutes?: number;
+  break_glass_requires_reason?: boolean;
+
   gateway_node?: string;
   is_active?: boolean;
   description?: string;
@@ -51,47 +74,4 @@ export interface TargetVaultBindingOut {
   vault_system?: string | null;
   vault_login?: string | null;
   vault_type?: string | null;
-}
-2) Новый файл
-C:\Users\user\Documents\KazPAM-dashboard\src\api\targets.ts
-import { api } from "@/services/api";
-import type {
-  Target,
-  TargetCreatePayload,
-  TargetUpdatePayload,
-  TargetVaultBindingOut,
-} from "@/types/targets";
-
-export async function listTargets(): Promise<Target[]> {
-  return api.get<Target[]>("/targets/");
-}
-
-export async function getTarget(targetId: number): Promise<Target> {
-  return api.get<Target>(`/targets/${targetId}`);
-}
-
-export async function createTarget(payload: TargetCreatePayload): Promise<Target> {
-  return api.post<Target>("/targets/", payload);
-}
-
-export async function updateTarget(
-  targetId: number,
-  payload: TargetUpdatePayload
-): Promise<Target> {
-  return api.patch<Target>(`/targets/${targetId}`, payload);
-}
-
-export async function bindTargetVaultSecret(
-  targetId: number,
-  secretId: number
-): Promise<TargetVaultBindingOut> {
-  return api.post<TargetVaultBindingOut>(`/targets/${targetId}/vault-binding`, {
-    secret_id: secretId,
-  });
-}
-
-export async function unbindTargetVaultSecret(
-  targetId: number
-): Promise<TargetVaultBindingOut> {
-  return api.delete<TargetVaultBindingOut>(`/targets/${targetId}/vault-binding`);
 }

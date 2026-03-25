@@ -12,7 +12,12 @@ import {
   updateTarget,
 } from "@/api/targets";
 import { startRdpSession } from "@/api/rdp";
-import type { Target, TargetCreatePayload, TargetUpdatePayload } from "@/types/targets";
+import type {
+  Target,
+  TargetCreatePayload,
+  TargetUpdatePayload,
+  SSHAuthMode,
+} from "@/types/targets";
 
 type TargetFormState = {
   name: string;
@@ -20,10 +25,14 @@ type TargetFormState = {
   port: string;
   os_type: string;
   protocol: string;
+  ssh_auth_mode: SSHAuthMode;
   username: string;
   vault_secret_id: string;
   requires_vault_secret: boolean;
   approval_required: boolean;
+  break_glass_enabled: boolean;
+  break_glass_ttl_minutes: string;
+  break_glass_requires_reason: boolean;
   gateway_node: string;
   is_active: boolean;
   description: string;
@@ -35,10 +44,14 @@ const emptyForm: TargetFormState = {
   port: "22",
   os_type: "linux",
   protocol: "ssh",
+  ssh_auth_mode: "gateway_key",
   username: "",
   vault_secret_id: "",
   requires_vault_secret: false,
   approval_required: false,
+  break_glass_enabled: false,
+  break_glass_ttl_minutes: "15",
+  break_glass_requires_reason: true,
   gateway_node: "",
   is_active: true,
   description: "",
@@ -60,6 +73,7 @@ function formFromTarget(target: Target): TargetFormState {
     port: String(target.port ?? 22),
     os_type: target.os_type ?? "linux",
     protocol: target.protocol ?? "ssh",
+    ssh_auth_mode: target.ssh_auth_mode ?? "gateway_key",
     username: target.username ?? "",
     vault_secret_id:
       target.vault_secret_id !== null && target.vault_secret_id !== undefined
@@ -67,10 +81,19 @@ function formFromTarget(target: Target): TargetFormState {
         : "",
     requires_vault_secret: Boolean(target.requires_vault_secret),
     approval_required: Boolean(target.approval_required),
+    break_glass_enabled: Boolean(target.break_glass_enabled),
+    break_glass_ttl_minutes: String(target.break_glass_ttl_minutes ?? 15),
+    break_glass_requires_reason: Boolean(target.break_glass_requires_reason),
     gateway_node: target.gateway_node ?? "",
     is_active: Boolean(target.is_active),
     description: target.description ?? "",
   };
+}
+
+function normalizeTtl(raw: string): number {
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return 15;
+  return Math.max(1, Math.min(240, parsed));
 }
 
 function buildPayload(form: TargetFormState): TargetCreatePayload {
@@ -80,9 +103,13 @@ function buildPayload(form: TargetFormState): TargetCreatePayload {
     port: Number(form.port) || (form.protocol === "rdp" ? 3389 : 22),
     os_type: form.os_type.trim() || "linux",
     protocol: form.protocol.trim() || "ssh",
+    ssh_auth_mode: form.ssh_auth_mode,
     username: form.username.trim() || undefined,
     requires_vault_secret: form.requires_vault_secret,
     approval_required: form.approval_required,
+    break_glass_enabled: form.break_glass_enabled,
+    break_glass_ttl_minutes: normalizeTtl(form.break_glass_ttl_minutes),
+    break_glass_requires_reason: form.break_glass_requires_reason,
     gateway_node: form.gateway_node.trim() || undefined,
     is_active: form.is_active,
     description: form.description.trim() || undefined,
@@ -96,16 +123,23 @@ function buildUpdatePayload(form: TargetFormState): TargetUpdatePayload {
     port: Number(form.port) || (form.protocol === "rdp" ? 3389 : 22),
     os_type: form.os_type.trim() || "linux",
     protocol: form.protocol.trim() || "ssh",
+    ssh_auth_mode: form.ssh_auth_mode,
     username: form.username.trim() || undefined,
     requires_vault_secret: form.requires_vault_secret,
     approval_required: form.approval_required,
+    break_glass_enabled: form.break_glass_enabled,
+    break_glass_ttl_minutes: normalizeTtl(form.break_glass_ttl_minutes),
+    break_glass_requires_reason: form.break_glass_requires_reason,
     gateway_node: form.gateway_node.trim() || undefined,
     is_active: form.is_active,
     description: form.description.trim() || undefined,
   };
 }
 
-function securityChip(text: string, tone: "blue" | "cyan" | "green" | "red" | "gray") {
+function securityChip(
+  text: string,
+  tone: "blue" | "cyan" | "green" | "red" | "gray"
+) {
   const map = {
     blue: "bg-[#0E1A3A] text-[#6EA8FF] border-[#1E2A45]",
     cyan: "bg-[#0E1A3A] text-[#3BE3FD] border-[#1E2A45]",
@@ -115,7 +149,9 @@ function securityChip(text: string, tone: "blue" | "cyan" | "green" | "red" | "g
   };
 
   return (
-    <span className={`inline-flex rounded-full border px-2 py-1 text-xs font-medium ${map[tone]}`}>
+    <span
+      className={`inline-flex rounded-full border px-2 py-1 text-xs font-medium ${map[tone]}`}
+    >
       {text}
     </span>
   );
@@ -125,16 +161,22 @@ export default function Targets() {
   const navigate = useNavigate();
   const user = useAuth((s) => s.user);
 
-  const canManageTargets = Boolean(user?.permissions?.includes("manage_settings"));
+  const canManageTargets = Boolean(
+    user?.permissions?.includes("manage_settings")
+  );
   const canStartRdp = Boolean(user?.permissions?.includes("start_rdp_session"));
-  const canRequestVaultAccess = Boolean(user?.permissions?.includes("request_vault_access"));
+  const canRequestVaultAccess = Boolean(
+    user?.permissions?.includes("request_vault_access")
+  );
 
   const [targets, setTargets] = useState<Target[]>([]);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const [search, setSearch] = useState("");
-  const [protocolFilter, setProtocolFilter] = useState<"all" | "ssh" | "rdp">("all");
+  const [protocolFilter, setProtocolFilter] = useState<"all" | "ssh" | "rdp">(
+    "all"
+  );
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [createForm, setCreateForm] = useState<TargetFormState>(emptyForm);
@@ -263,7 +305,9 @@ export default function Targets() {
     } catch (e: any) {
       const message = extractErrorMessage(e);
 
-      if (message.includes("Target requires an active approval grant before launch")) {
+      if (
+        message.includes("Target requires an active approval grant before launch")
+      ) {
         toast.error("Для этого target нужен approval. Нажмите «Запросить approval».");
         return;
       }
@@ -324,7 +368,9 @@ export default function Targets() {
 
           <select
             value={protocolFilter}
-            onChange={(e) => setProtocolFilter(e.target.value as "all" | "ssh" | "rdp")}
+            onChange={(e) =>
+              setProtocolFilter(e.target.value as "all" | "ssh" | "rdp")
+            }
             className="border rounded-md px-3 py-2 text-sm bg-white text-black"
           >
             <option value="all">Все протоколы</option>
@@ -334,8 +380,10 @@ export default function Targets() {
 
           <div className="ml-auto text-sm text-gray-600">
             Targets:{" "}
-            <span className="font-semibold text-gray-900">{filteredTargets.length}</span> из{" "}
-            <span className="font-semibold text-gray-900">{targets.length}</span>
+            <span className="font-semibold text-gray-900">
+              {filteredTargets.length}
+            </span>{" "}
+            из <span className="font-semibold text-gray-900">{targets.length}</span>
           </div>
         </div>
 
@@ -381,12 +429,16 @@ export default function Targets() {
                   >
                     <td className="px-4 py-3">{target.id}</td>
                     <td className="px-4 py-3 font-medium">{target.name}</td>
-                    <td className="px-4 py-3">{target.host}:{target.port}</td>
+                    <td className="px-4 py-3">
+                      {target.host}:{target.port}
+                    </td>
                     <td className="px-4 py-3 uppercase">{target.protocol}</td>
                     <td className="px-4 py-3">{target.username || "—"}</td>
                     <td className="px-4 py-3">
                       {target.vault_secret_id ? (
-                        <span className="text-[#3BE3FD]">Secret #{target.vault_secret_id}</span>
+                        <span className="text-[#3BE3FD]">
+                          Secret #{target.vault_secret_id}
+                        </span>
                       ) : (
                         <span className="text-gray-400">Не привязан</span>
                       )}
@@ -396,9 +448,26 @@ export default function Targets() {
                         {target.requires_vault_secret
                           ? securityChip("Vault required", "cyan")
                           : securityChip("Vault optional", "gray")}
+
                         {target.approval_required
                           ? securityChip("Approval required", "blue")
                           : securityChip("No approval", "gray")}
+
+                        {target.break_glass_enabled
+                          ? securityChip(
+                              `Break-glass ${target.break_glass_ttl_minutes}m`,
+                              "red"
+                            )
+                          : securityChip("No break-glass", "gray")}
+
+                        {target.break_glass_enabled &&
+                        target.break_glass_requires_reason
+                          ? securityChip("Reason required", "red")
+                          : null}
+
+                        {target.protocol === "ssh"
+                          ? securityChip(`SSH ${target.ssh_auth_mode}`, "gray")
+                          : null}
                       </div>
                     </td>
                     <td className="px-4 py-3">
@@ -452,7 +521,9 @@ export default function Targets() {
                   <label className="text-sm text-gray-300">Name</label>
                   <input
                     value={createForm.name}
-                    onChange={(e) => setCreateForm((s) => ({ ...s, name: e.target.value }))}
+                    onChange={(e) =>
+                      setCreateForm((s) => ({ ...s, name: e.target.value }))
+                    }
                     className="w-full p-2 rounded bg-[#0E1A3A] border border-[#1E2A45] text-white"
                     placeholder="rdp-test-1"
                   />
@@ -462,7 +533,9 @@ export default function Targets() {
                   <label className="text-sm text-gray-300">Host</label>
                   <input
                     value={createForm.host}
-                    onChange={(e) => setCreateForm((s) => ({ ...s, host: e.target.value }))}
+                    onChange={(e) =>
+                      setCreateForm((s) => ({ ...s, host: e.target.value }))
+                    }
                     className="w-full p-2 rounded bg-[#0E1A3A] border border-[#1E2A45] text-white"
                     placeholder="10.10.10.20"
                   />
@@ -472,7 +545,9 @@ export default function Targets() {
                   <label className="text-sm text-gray-300">Port</label>
                   <input
                     value={createForm.port}
-                    onChange={(e) => setCreateForm((s) => ({ ...s, port: e.target.value }))}
+                    onChange={(e) =>
+                      setCreateForm((s) => ({ ...s, port: e.target.value }))
+                    }
                     className="w-full p-2 rounded bg-[#0E1A3A] border border-[#1E2A45] text-white"
                     placeholder="3389"
                   />
@@ -482,7 +557,9 @@ export default function Targets() {
                   <label className="text-sm text-gray-300">Username</label>
                   <input
                     value={createForm.username}
-                    onChange={(e) => setCreateForm((s) => ({ ...s, username: e.target.value }))}
+                    onChange={(e) =>
+                      setCreateForm((s) => ({ ...s, username: e.target.value }))
+                    }
                     className="w-full p-2 rounded bg-[#0E1A3A] border border-[#1E2A45] text-white"
                     placeholder="Administrator"
                   />
@@ -492,7 +569,9 @@ export default function Targets() {
                   <label className="text-sm text-gray-300">OS Type</label>
                   <select
                     value={createForm.os_type}
-                    onChange={(e) => setCreateForm((s) => ({ ...s, os_type: e.target.value }))}
+                    onChange={(e) =>
+                      setCreateForm((s) => ({ ...s, os_type: e.target.value }))
+                    }
                     className="w-full p-2 rounded bg-[#0E1A3A] border border-[#1E2A45] text-white"
                   >
                     <option value="linux">linux</option>
@@ -508,7 +587,12 @@ export default function Targets() {
                       setCreateForm((s) => ({
                         ...s,
                         protocol: e.target.value,
-                        port: e.target.value === "rdp" ? "3389" : s.port === "3389" ? "22" : s.port,
+                        port:
+                          e.target.value === "rdp"
+                            ? "3389"
+                            : s.port === "3389"
+                            ? "22"
+                            : s.port,
                       }))
                     }
                     className="w-full p-2 rounded bg-[#0E1A3A] border border-[#1E2A45] text-white"
@@ -518,12 +602,35 @@ export default function Targets() {
                   </select>
                 </div>
 
+                {createForm.protocol === "ssh" && (
+                  <div className="space-y-2">
+                    <label className="text-sm text-gray-300">SSH Auth Mode</label>
+                    <select
+                      value={createForm.ssh_auth_mode}
+                      onChange={(e) =>
+                        setCreateForm((s) => ({
+                          ...s,
+                          ssh_auth_mode: e.target.value as SSHAuthMode,
+                        }))
+                      }
+                      className="w-full p-2 rounded bg-[#0E1A3A] border border-[#1E2A45] text-white"
+                    >
+                      <option value="gateway_key">gateway_key</option>
+                      <option value="vault_password">vault_password</option>
+                      <option value="vault_private_key">vault_private_key</option>
+                    </select>
+                  </div>
+                )}
+
                 <div className="space-y-2">
                   <label className="text-sm text-gray-300">Vault Secret ID</label>
                   <input
                     value={createForm.vault_secret_id}
                     onChange={(e) =>
-                      setCreateForm((s) => ({ ...s, vault_secret_id: e.target.value }))
+                      setCreateForm((s) => ({
+                        ...s,
+                        vault_secret_id: e.target.value,
+                      }))
                     }
                     className="w-full p-2 rounded bg-[#0E1A3A] border border-[#1E2A45] text-white"
                     placeholder="например: 17"
@@ -535,7 +642,10 @@ export default function Targets() {
                   <input
                     value={createForm.gateway_node}
                     onChange={(e) =>
-                      setCreateForm((s) => ({ ...s, gateway_node: e.target.value }))
+                      setCreateForm((s) => ({
+                        ...s,
+                        gateway_node: e.target.value,
+                      }))
                     }
                     className="w-full p-2 rounded bg-[#0E1A3A] border border-[#1E2A45] text-white"
                     placeholder="необязательно"
@@ -547,7 +657,10 @@ export default function Targets() {
                   <textarea
                     value={createForm.description}
                     onChange={(e) =>
-                      setCreateForm((s) => ({ ...s, description: e.target.value }))
+                      setCreateForm((s) => ({
+                        ...s,
+                        description: e.target.value,
+                      }))
                     }
                     className="w-full p-2 rounded bg-[#0E1A3A] border border-[#1E2A45] text-white"
                     placeholder="Описание target"
@@ -599,6 +712,55 @@ export default function Targets() {
                 </label>
               </div>
 
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+                <label className="flex items-center gap-2 text-sm text-gray-200">
+                  <input
+                    type="checkbox"
+                    checked={createForm.break_glass_enabled}
+                    onChange={(e) =>
+                      setCreateForm((s) => ({
+                        ...s,
+                        break_glass_enabled: e.target.checked,
+                      }))
+                    }
+                  />
+                  Break-glass enabled
+                </label>
+
+                <div className="space-y-2">
+                  <label className="text-sm text-gray-300">
+                    Break-glass TTL (minutes)
+                  </label>
+                  <input
+                    value={createForm.break_glass_ttl_minutes}
+                    onChange={(e) =>
+                      setCreateForm((s) => ({
+                        ...s,
+                        break_glass_ttl_minutes: e.target.value,
+                      }))
+                    }
+                    className="w-full p-2 rounded bg-[#0E1A3A] border border-[#1E2A45] text-white"
+                    placeholder="15"
+                    disabled={!createForm.break_glass_enabled}
+                  />
+                </div>
+
+                <label className="flex items-center gap-2 text-sm text-gray-200">
+                  <input
+                    type="checkbox"
+                    checked={createForm.break_glass_requires_reason}
+                    onChange={(e) =>
+                      setCreateForm((s) => ({
+                        ...s,
+                        break_glass_requires_reason: e.target.checked,
+                      }))
+                    }
+                    disabled={!createForm.break_glass_enabled}
+                  />
+                  Reason required
+                </label>
+              </div>
+
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   onClick={() => setShowCreateModal(false)}
@@ -631,7 +793,9 @@ export default function Targets() {
                   <label className="text-sm text-gray-300">Name</label>
                   <input
                     value={editForm.name}
-                    onChange={(e) => setEditForm((s) => ({ ...s, name: e.target.value }))}
+                    onChange={(e) =>
+                      setEditForm((s) => ({ ...s, name: e.target.value }))
+                    }
                     className="w-full p-2 rounded bg-[#0E1A3A] border border-[#1E2A45] text-white"
                   />
                 </div>
@@ -640,7 +804,9 @@ export default function Targets() {
                   <label className="text-sm text-gray-300">Host</label>
                   <input
                     value={editForm.host}
-                    onChange={(e) => setEditForm((s) => ({ ...s, host: e.target.value }))}
+                    onChange={(e) =>
+                      setEditForm((s) => ({ ...s, host: e.target.value }))
+                    }
                     className="w-full p-2 rounded bg-[#0E1A3A] border border-[#1E2A45] text-white"
                   />
                 </div>
@@ -649,7 +815,9 @@ export default function Targets() {
                   <label className="text-sm text-gray-300">Port</label>
                   <input
                     value={editForm.port}
-                    onChange={(e) => setEditForm((s) => ({ ...s, port: e.target.value }))}
+                    onChange={(e) =>
+                      setEditForm((s) => ({ ...s, port: e.target.value }))
+                    }
                     className="w-full p-2 rounded bg-[#0E1A3A] border border-[#1E2A45] text-white"
                   />
                 </div>
@@ -658,7 +826,9 @@ export default function Targets() {
                   <label className="text-sm text-gray-300">Username</label>
                   <input
                     value={editForm.username}
-                    onChange={(e) => setEditForm((s) => ({ ...s, username: e.target.value }))}
+                    onChange={(e) =>
+                      setEditForm((s) => ({ ...s, username: e.target.value }))
+                    }
                     className="w-full p-2 rounded bg-[#0E1A3A] border border-[#1E2A45] text-white"
                   />
                 </div>
@@ -667,7 +837,9 @@ export default function Targets() {
                   <label className="text-sm text-gray-300">OS Type</label>
                   <select
                     value={editForm.os_type}
-                    onChange={(e) => setEditForm((s) => ({ ...s, os_type: e.target.value }))}
+                    onChange={(e) =>
+                      setEditForm((s) => ({ ...s, os_type: e.target.value }))
+                    }
                     className="w-full p-2 rounded bg-[#0E1A3A] border border-[#1E2A45] text-white"
                   >
                     <option value="linux">linux</option>
@@ -679,7 +851,20 @@ export default function Targets() {
                   <label className="text-sm text-gray-300">Protocol</label>
                   <select
                     value={editForm.protocol}
-                    onChange={(e) => setEditForm((s) => ({ ...s, protocol: e.target.value }))}
+                    onChange={(e) =>
+                      setEditForm((s) => ({
+                        ...s,
+                        protocol: e.target.value,
+                        port:
+                          e.target.value === "rdp"
+                            ? s.port === "22"
+                              ? "3389"
+                              : s.port
+                            : s.port === "3389"
+                            ? "22"
+                            : s.port,
+                      }))
+                    }
                     className="w-full p-2 rounded bg-[#0E1A3A] border border-[#1E2A45] text-white"
                   >
                     <option value="ssh">ssh</option>
@@ -687,11 +872,36 @@ export default function Targets() {
                   </select>
                 </div>
 
+                {editForm.protocol === "ssh" && (
+                  <div className="space-y-2">
+                    <label className="text-sm text-gray-300">SSH Auth Mode</label>
+                    <select
+                      value={editForm.ssh_auth_mode}
+                      onChange={(e) =>
+                        setEditForm((s) => ({
+                          ...s,
+                          ssh_auth_mode: e.target.value as SSHAuthMode,
+                        }))
+                      }
+                      className="w-full p-2 rounded bg-[#0E1A3A] border border-[#1E2A45] text-white"
+                    >
+                      <option value="gateway_key">gateway_key</option>
+                      <option value="vault_password">vault_password</option>
+                      <option value="vault_private_key">vault_private_key</option>
+                    </select>
+                  </div>
+                )}
+
                 <div className="space-y-2">
                   <label className="text-sm text-gray-300">Vault Secret ID</label>
                   <input
                     value={editForm.vault_secret_id}
-                    onChange={(e) => setEditForm((s) => ({ ...s, vault_secret_id: e.target.value }))}
+                    onChange={(e) =>
+                      setEditForm((s) => ({
+                        ...s,
+                        vault_secret_id: e.target.value,
+                      }))
+                    }
                     className="w-full p-2 rounded bg-[#0E1A3A] border border-[#1E2A45] text-white"
                     placeholder="например: 17"
                   />
@@ -701,7 +911,12 @@ export default function Targets() {
                   <label className="text-sm text-gray-300">Gateway Node</label>
                   <input
                     value={editForm.gateway_node}
-                    onChange={(e) => setEditForm((s) => ({ ...s, gateway_node: e.target.value }))}
+                    onChange={(e) =>
+                      setEditForm((s) => ({
+                        ...s,
+                        gateway_node: e.target.value,
+                      }))
+                    }
                     className="w-full p-2 rounded bg-[#0E1A3A] border border-[#1E2A45] text-white"
                   />
                 </div>
@@ -710,7 +925,12 @@ export default function Targets() {
                   <label className="text-sm text-gray-300">Description</label>
                   <textarea
                     value={editForm.description}
-                    onChange={(e) => setEditForm((s) => ({ ...s, description: e.target.value }))}
+                    onChange={(e) =>
+                      setEditForm((s) => ({
+                        ...s,
+                        description: e.target.value,
+                      }))
+                    }
                     className="w-full p-2 rounded bg-[#0E1A3A] border border-[#1E2A45] text-white"
                   />
                 </div>
@@ -757,6 +977,55 @@ export default function Targets() {
                     }
                   />
                   Active
+                </label>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+                <label className="flex items-center gap-2 text-sm text-gray-200">
+                  <input
+                    type="checkbox"
+                    checked={editForm.break_glass_enabled}
+                    onChange={(e) =>
+                      setEditForm((s) => ({
+                        ...s,
+                        break_glass_enabled: e.target.checked,
+                      }))
+                    }
+                  />
+                  Break-glass enabled
+                </label>
+
+                <div className="space-y-2">
+                  <label className="text-sm text-gray-300">
+                    Break-glass TTL (minutes)
+                  </label>
+                  <input
+                    value={editForm.break_glass_ttl_minutes}
+                    onChange={(e) =>
+                      setEditForm((s) => ({
+                        ...s,
+                        break_glass_ttl_minutes: e.target.value,
+                      }))
+                    }
+                    className="w-full p-2 rounded bg-[#0E1A3A] border border-[#1E2A45] text-white"
+                    placeholder="15"
+                    disabled={!editForm.break_glass_enabled}
+                  />
+                </div>
+
+                <label className="flex items-center gap-2 text-sm text-gray-200">
+                  <input
+                    type="checkbox"
+                    checked={editForm.break_glass_requires_reason}
+                    onChange={(e) =>
+                      setEditForm((s) => ({
+                        ...s,
+                        break_glass_requires_reason: e.target.checked,
+                      }))
+                    }
+                    disabled={!editForm.break_glass_enabled}
+                  />
+                  Reason required
                 </label>
               </div>
 

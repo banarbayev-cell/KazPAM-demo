@@ -6,9 +6,11 @@ import AssignPermissionsModal from "../components/modals/AssignPermissionsModal"
 import DeleteRoleConfirmModal from "../components/modals/DeleteRoleConfirmModal";
 import EditRoleModal from "../components/modals/EditRoleModal";
 import CreateRoleModal from "../components/modals/CreateRoleModal";
+import AssignInventoryAccessModal from "@/components/modals/AssignInventoryAccessModal";
 import ActionMenuRole from "../components/ActionMenuRole";
 import { toast } from "sonner";
 import { api } from "../services/api";
+import { useAuth } from "@/store/auth";
 
 /* =======================
    Types
@@ -38,7 +40,11 @@ interface Role {
 ======================= */
 
 export default function Roles() {
+  const user = useAuth((s) => s.user);
 
+  const canManageInventoryAccess = Boolean(
+    user?.permissions?.includes("manage_inventory_access")
+  );
 
   const [roles, setRoles] = useState<Role[]>([]);
   const [search, setSearch] = useState("");
@@ -49,6 +55,10 @@ export default function Roles() {
 
   /* ----- Permissions ----- */
   const [selectedRole, setSelectedRole] = useState<Role | null>(null);
+
+  /* ----- Inventory Access ----- */
+  const [inventoryAccessOpen, setInventoryAccessOpen] = useState(false);
+  const [inventoryRole, setInventoryRole] = useState<Role | null>(null);
 
   /* ----- Delete role ----- */
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -71,14 +81,6 @@ export default function Roles() {
   /* =======================
      API helpers
   ======================= */
-
-  const authHeaders = () => {
-    const token = localStorage.getItem("access_token");
-    return {
-      "Content-Type": "application/json",
-      Authorization: token ? `Bearer ${token}` : "",
-    };
-  };
 
   const loadRoles = async () => {
     try {
@@ -134,7 +136,6 @@ export default function Roles() {
 
   const updateRole = async (roleId: number, name: string) => {
     await api.patch(`/roles/${roleId}`, { name });
-
   };
 
   const deleteRole = async () => {
@@ -143,7 +144,6 @@ export default function Roles() {
     setDeleteLoading(true);
     try {
       await api.delete(`/roles/${roleToDelete.id}`);
-
 
       toast.success("Роль удалена");
       setDeleteOpen(false);
@@ -174,7 +174,6 @@ export default function Roles() {
     <div className="p-6 w-full bg-gray-100 text-gray-900">
       <h1 className="text-3xl font-bold mb-4">Роли доступа</h1>
 
-      {/* Search + Create */}
       <div className="flex gap-3 mb-6">
         <Input
           placeholder="Поиск..."
@@ -186,12 +185,9 @@ export default function Roles() {
           }}
         />
 
-        <Button onClick={() => setCreateOpen(true)}>
-          + Создать роль
-        </Button>
+        <Button onClick={() => setCreateOpen(true)}>+ Создать роль</Button>
       </div>
 
-      {/* TABLE */}
       <div className="overflow-y-auto max-h-[550px] bg-[#121A33] border border-[#1E2A45] rounded-xl">
         <table className="w-full text-sm text-white">
           <thead className="bg-[#1A243F] text-gray-300">
@@ -229,6 +225,15 @@ export default function Roles() {
                       setSelectedRoleId(role.id);
                       setAssignPoliciesOpen(true);
                     }}
+                    onPermissions={() => setSelectedRole(role)}
+                    onInventoryAccess={
+                      canManageInventoryAccess
+                        ? () => {
+                            setInventoryRole(role);
+                            setInventoryAccessOpen(true);
+                          }
+                        : undefined
+                    }
                     onEdit={() => {
                       setRoleToEdit(role);
                       setEditOpen(true);
@@ -237,7 +242,6 @@ export default function Roles() {
                       setRoleToDelete(role);
                       setDeleteOpen(true);
                     }}
-                    onPermissions={() => setSelectedRole(role)}
                   />
                 </td>
               </tr>
@@ -246,30 +250,40 @@ export default function Roles() {
         </table>
       </div>
 
-      {/* Modals */}
-
       <AssignPoliciesModal
-  open={assignPoliciesOpen}
-  onClose={() => setAssignPoliciesOpen(false)}
-  roleId={selectedRoleId}
-  roleName={roles.find(r => r.id === selectedRoleId)?.name || ""}
-  assignedPolicies={roles.find(r => r.id === selectedRoleId)?.policies || []}
-  onAssigned={loadRoles}
-/>
+        open={assignPoliciesOpen}
+        onClose={() => setAssignPoliciesOpen(false)}
+        roleId={selectedRoleId}
+        roleName={roles.find((r) => r.id === selectedRoleId)?.name || ""}
+        assignedPolicies={
+          roles.find((r) => r.id === selectedRoleId)?.policies || []
+        }
+        onAssigned={loadRoles}
+      />
 
       {selectedRole && (
         <AssignPermissionsModal
-  roleId={selectedRole.id}
-  roleName={selectedRole.name}   // ← ВОТ ЭТА СТРОКА
-  assignedPermissions={selectedRole.permissions}
-  onClose={() => setSelectedRole(null)}
-  onUpdated={() => {
-    setSelectedRole(null);
-    loadRoles();
-  }}
-/>
-
+          roleId={selectedRole.id}
+          roleName={selectedRole.name}
+          assignedPermissions={selectedRole.permissions}
+          onClose={() => setSelectedRole(null)}
+          onUpdated={() => {
+            setSelectedRole(null);
+            loadRoles();
+          }}
+        />
       )}
+
+      <AssignInventoryAccessModal
+        open={inventoryAccessOpen}
+        onClose={() => {
+          setInventoryAccessOpen(false);
+          setInventoryRole(null);
+        }}
+        roleId={inventoryRole?.id ?? null}
+        roleName={inventoryRole?.name ?? ""}
+        onUpdated={loadRoles}
+      />
 
       <DeleteRoleConfirmModal
         isOpen={deleteOpen}

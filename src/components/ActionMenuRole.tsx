@@ -13,6 +13,7 @@ interface ActionMenuRoleProps {
   };
   onAssign: () => void;
   onPermissions: () => void;
+  onInventoryAccess?: () => void;
   onEdit: () => void;
   onDelete: () => void;
 }
@@ -21,6 +22,7 @@ export default function ActionMenuRole({
   role,
   onAssign,
   onPermissions,
+  onInventoryAccess,
   onEdit,
   onDelete,
 }: ActionMenuRoleProps) {
@@ -55,7 +57,12 @@ export default function ActionMenuRole({
           Права роли
         </DropdownMenuItem>
 
-        {/* ===== История изменений ===== */}
+        {onInventoryAccess && (
+          <DropdownMenuItem onClick={onInventoryAccess}>
+            Доступ к целевым системам
+          </DropdownMenuItem>
+        )}
+
         <DropdownMenuItem
           onClick={() => {
             if (role?.id) {
@@ -66,7 +73,6 @@ export default function ActionMenuRole({
           История изменений
         </DropdownMenuItem>
 
-        {/* ===== Edit ===== */}
         <DropdownMenuItem
           onClick={!isSuperadmin ? onEdit : undefined}
           disabled={isSuperadmin}
@@ -75,7 +81,6 @@ export default function ActionMenuRole({
           Редактировать
         </DropdownMenuItem>
 
-        {/* ===== Delete ===== */}
         <DropdownMenuItem
           onClick={!isSuperadmin ? onDelete : undefined}
           disabled={isSuperadmin}
@@ -88,7 +93,6 @@ export default function ActionMenuRole({
           Удалить
         </DropdownMenuItem>
 
-        {/* ===== INFO MESSAGE (ТОЛЬКО ДЛЯ superadmin) ===== */}
         {isSuperadmin && (
           <div className="px-3 py-2 mt-1 text-xs text-gray-400 border-t border-[#1E2A45]">
             Роль <span className="text-gray-300">superadmin</span> нельзя

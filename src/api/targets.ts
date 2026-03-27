@@ -39,3 +39,10 @@ export async function unbindTargetVaultSecret(
 ): Promise<TargetVaultBindingOut> {
   return api.delete<TargetVaultBindingOut>(`/targets/${targetId}/vault-binding`);
 }
+
+export async function listAccessibleTargets(
+  protocol?: "ssh" | "rdp"
+): Promise<Target[]> {
+  const query = protocol ? `?protocol=${protocol}` : "";
+  return api.get<Target[]>(`/targets/accessible${query}`);
+}

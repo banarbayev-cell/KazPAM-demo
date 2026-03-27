@@ -5,9 +5,10 @@ import SessionDetailPanel from "../components/SessionDetailPanel";
 import { getSessions, terminateSession, startSession } from "../api/sessions";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { useAuth } from "../store/auth";
 
 /* ===============================
-   UI MODEL (НЕ МЕНЯЕМ)
+   UI MODEL
 ================================ */
 interface Session {
   id: number;
@@ -20,7 +21,7 @@ interface Session {
   risk: string;
   last_command: string;
   duration: string;
-  status: "active" | "closed" | "failed";
+  status: "active" | "closed" | "failed" | "terminated";
   date: string;
 }
 
@@ -34,32 +35,12 @@ interface BackendSession {
   os: string;
   ip: string;
   app?: string;
-  status: "active" | "closed" | "failed";
+  status: "active" | "closed" | "failed" | "terminated";
   start_time?: string;
 }
 
 /* ===============================
-   FALLBACK MOCK
-================================ */
-const MOCK_SESSIONS: Session[] = [
-  {
-    id: 1,
-    user: "admin",
-    system: "Linux-Server-01",
-    os: "Linux",
-    conn: "SSH",
-    ip: "192.168.1.10",
-    app: "PostgreSQL Admin",
-    risk: "Low",
-    last_command: "sudo su",
-    duration: "14 мин",
-    status: "active",
-    date: "28.11.2025",
-  },
-];
-
-/* ===============================
-   MAPPER
+   HELPERS
 ================================ */
 function mapBackendSession(s: BackendSession): Session {
   return {
@@ -78,16 +59,99 @@ function mapBackendSession(s: BackendSession): Session {
   };
 }
 
+function extractSessions(payload: unknown): BackendSession[] {
+  if (Array.isArray(payload)) {
+    return payload as BackendSession[];
+  }
+
+  if (payload && typeof payload === "object") {
+    const obj = payload as Record<string, unknown>;
+
+    if (Array.isArray(obj.sessions)) {
+      return obj.sessions as BackendSession[];
+    }
+
+    if (Array.isArray(obj.items)) {
+      return obj.items as BackendSession[];
+    }
+
+    if (Array.isArray(obj.data)) {
+      return obj.data as BackendSession[];
+    }
+  }
+
+  return [];
+}
+
+function statusLabel(status: Session["status"]) {
+  switch (status) {
+    case "active":
+      return "Активна";
+    case "closed":
+    case "terminated":
+      return "Завершена";
+    case "failed":
+      return "Ошибка";
+    default:
+      return status;
+  }
+}
+
+function statusClass(status: Session["status"]) {
+  switch (status) {
+    case "active":
+      return "inline-flex px-3 py-1 rounded-full text-xs font-semibold bg-green-500/20 text-green-300 border border-green-500/30";
+    case "closed":
+    case "terminated":
+      return "inline-flex px-3 py-1 rounded-full text-xs font-semibold bg-gray-500/20 text-gray-300 border border-gray-500/30";
+    case "failed":
+      return "inline-flex px-3 py-1 rounded-full text-xs font-semibold bg-red-500/20 text-red-300 border border-red-500/30";
+    default:
+      return "inline-flex px-3 py-1 rounded-full text-xs font-semibold bg-gray-500/20 text-gray-300 border border-gray-500/30";
+  }
+}
+
+function extractErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error) {
+    const text = error.message?.trim();
+    if (text) return text;
+  }
+
+  if (typeof error === "string" && error.trim()) {
+    return error.trim();
+  }
+
+  return fallback;
+}
+
+function mergeSessions(
+  freshSessions: Session[],
+  previousSessions: Session[]
+): Session[] {
+  const historical = previousSessions.filter((s) => s.status !== "active");
+  const merged = new Map<number, Session>();
+
+  for (const item of historical) {
+    merged.set(item.id, item);
+  }
+
+  for (const item of freshSessions) {
+    merged.set(item.id, item);
+  }
+
+  return Array.from(merged.values()).sort((a, b) => b.id - a.id);
+}
+
 export default function Sessions() {
   const navigate = useNavigate();
+  const authUser = useAuth((s) => s.user);
 
-  /* STATE */
   const [sessions, setSessions] = useState<Session[]>([]);
   const [detailOpen, setDetailOpen] = useState(false);
   const [selectedSession, setSelectedSession] = useState<Session | null>(null);
 
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [statusFilter] = useState("all");
 
   const [startOpen, setStartOpen] = useState(false);
   const [startForm, setStartForm] = useState({
@@ -97,43 +161,88 @@ export default function Sessions() {
     ip: "",
   });
 
-  /* LOAD */
-  const loadSessions = () => {
-    getSessions()
-      .then((data: BackendSession[]) => {
-        if (Array.isArray(data) && data.length > 0) {
-          setSessions(data.map(mapBackendSession));
-        } else {
-          setSessions(MOCK_SESSIONS);
-        }
-      })
-      .catch(() => {
-        setSessions(MOCK_SESSIONS);
-        toast.error("Не удалось загрузить сессии");
-      });
+  const [loading, setLoading] = useState(false);
+  const [launchLoading, setLaunchLoading] = useState(false);
+
+  const notifySessionsChanged = () => {
+    window.dispatchEvent(new Event("kazpam:sessions-changed"));
+  };
+
+  const loadSessions = async () => {
+    setLoading(true);
+
+    try {
+      const data = await getSessions();
+      const normalized = extractSessions(data).map(mapBackendSession);
+
+      setSessions((prev) => mergeSessions(normalized, prev));
+    } catch (error) {
+      setSessions((prev) => prev.filter((s) => s.status !== "active"));
+      toast.error(extractErrorMessage(error, "Не удалось загрузить сессии"));
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
     loadSessions();
   }, []);
 
-  /* ACTIONS */
+  useEffect(() => {
+    if (!startOpen) return;
+
+    setStartForm((prev) => ({
+      ...prev,
+      user: prev.user || authUser?.email || "",
+    }));
+  }, [startOpen, authUser?.email]);
+
   const handleTerminate = async (session: Session) => {
     if (session.status !== "active") {
       toast.info("Сессия уже завершена");
       return;
     }
 
-    await terminateSession(session.id);
-    toast.success("Сессия завершена");
-    loadSessions();
+    try {
+      await terminateSession(session.id);
+
+      setSessions((prev): Session[] =>
+        prev
+          .map((s): Session =>
+            s.id === session.id
+              ? {
+                  ...s,
+                  status: "terminated" as const,
+                }
+              : s
+          )
+          .sort((a, b) => b.id - a.id)
+      );
+
+      setSelectedSession((prev) =>
+        prev && prev.id === session.id
+          ? {
+              ...prev,
+              status: "terminated" as const,
+            }
+          : prev
+      );
+
+      toast.success("Сессия завершена");
+      notifySessionsChanged();
+
+      await loadSessions();
+    } catch (error) {
+      toast.error(
+        extractErrorMessage(error, "Не удалось завершить сессию")
+      );
+    }
   };
 
   const handleAudit = (session: Session) => {
     navigate(`/audit?session_id=${session.id}`);
   };
 
-  /* FILTER */
   const filtered = useMemo(() => {
     return sessions.filter(
       (s) =>
@@ -174,29 +283,48 @@ export default function Sessions() {
               <th className="p-3">Действия</th>
             </tr>
           </thead>
+
           <tbody>
-            {filtered.map((s) => (
-              <tr
-                key={s.id}
-                className="border-t border-[#1E2A45] hover:bg-[#0E1A3A]"
-              >
-                <td className="p-3">{s.user}</td>
-                <td className="p-3">{s.system}</td>
-                <td className="p-3">{s.os}</td>
-                <td className="p-3">{s.ip}</td>
-                <td className="p-3">{s.status}</td>
-                <td className="p-3">
-                  <ActionMenuSession
-                    onView={() => {
-                      setSelectedSession(s);
-                      setDetailOpen(true);
-                    }}
-                    onTerminate={() => handleTerminate(s)}
-                    onAudit={() => handleAudit(s)}
-                  />
+            {loading ? (
+              <tr className="border-t border-[#1E2A45]">
+                <td colSpan={6} className="p-6 text-center text-gray-400">
+                  Загрузка сессий...
                 </td>
               </tr>
-            ))}
+            ) : filtered.length === 0 ? (
+              <tr className="border-t border-[#1E2A45]">
+                <td colSpan={6} className="p-6 text-center text-gray-400">
+                  Сессии не найдены
+                </td>
+              </tr>
+            ) : (
+              filtered.map((s) => (
+                <tr
+                  key={s.id}
+                  className="border-t border-[#1E2A45] hover:bg-[#0E1A3A]"
+                >
+                  <td className="p-3">{s.user}</td>
+                  <td className="p-3">{s.system}</td>
+                  <td className="p-3">{s.os}</td>
+                  <td className="p-3">{s.ip}</td>
+                  <td className="p-3">
+                    <span className={statusClass(s.status)}>
+                      {statusLabel(s.status)}
+                    </span>
+                  </td>
+                  <td className="p-3">
+                    <ActionMenuSession
+                      onView={() => {
+                        setSelectedSession(s);
+                        setDetailOpen(true);
+                      }}
+                      onTerminate={() => handleTerminate(s)}
+                      onAudit={() => handleAudit(s)}
+                    />
+                  </td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>
@@ -213,14 +341,20 @@ export default function Sessions() {
         }
       />
 
-      {/* START SESSION MODAL */}
       {startOpen && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
           <div className="bg-[#121A33] p-6 rounded-xl w-[420px] text-white space-y-4">
             <h2 className="text-lg font-semibold">Запуск сессии</h2>
 
+            <div className="space-y-1">
+              <div className="text-sm text-gray-400">Инициатор</div>
+              <div className="px-3 py-2 rounded bg-[#0E1A3A] border border-[#1E2A45] text-sm">
+                {authUser?.email || "—"}
+              </div>
+            </div>
+
             <Input
-              placeholder="Пользователь (email)"
+              placeholder="Пользователь / учётная запись"
               value={startForm.user}
               onChange={(e) =>
                 setStartForm({ ...startForm, user: e.target.value })
@@ -244,20 +378,38 @@ export default function Sessions() {
             />
 
             <div className="flex justify-end gap-2">
-              <button onClick={() => setStartOpen(false)}>Отмена</button>
               <button
-                className="px-4 py-2 bg-[#0052FF] rounded"
+                onClick={() => setStartOpen(false)}
+                disabled={launchLoading}
+              >
+                Отмена
+              </button>
+
+              <button
+                disabled={launchLoading}
+                className="px-4 py-2 bg-[#0052FF] rounded disabled:bg-gray-600"
                 onClick={async () => {
                   try {
-                    await startSession(startForm);
+                    setLaunchLoading(true);
+
+                    await startSession({
+                      user: startForm.user,
+                      system: startForm.system,
+                      os: startForm.os,
+                      ip: startForm.ip,
+                    });
+
                     toast.success("Сессия запущена");
                     setStartOpen(false);
-                    loadSessions();
-                  } catch (e: any) {
+
+                    await loadSessions();
+                    notifySessionsChanged();
+                  } catch (error) {
                     toast.error(
-                      e?.response?.data?.detail ||
-                        "Доступ запрещён политикой"
+                      extractErrorMessage(error, "Доступ запрещён политикой")
                     );
+                  } finally {
+                    setLaunchLoading(false);
                   }
                 }}
               >

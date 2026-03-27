@@ -45,6 +45,18 @@ interface PolicyHistory {
   };
 }
 
+interface PolicyUsage {
+  roles: number | { id: number; name?: string }[];
+  users: number | { id: number; email?: string }[];
+  active_sessions: number;
+}
+
+interface NormalizedPolicyUsage {
+  roles: number;
+  users: number;
+  active_sessions: number;
+}
+
 /* =========================
    Helpers
 ========================= */
@@ -56,6 +68,23 @@ const normalizeStatus = (s: string): string => {
   if (st === "disabled") return "disabled";
   if (st === "active") return "active";
   return st;
+};
+
+const toCount = (value: unknown): number => {
+  if (Array.isArray(value)) return value.length;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  return 0;
+};
+
+const normalizeUsage = (usage: PolicyUsage | null | undefined): NormalizedPolicyUsage => {
+  return {
+    roles: toCount(usage?.roles),
+    users: toCount(usage?.users),
+    active_sessions:
+      typeof usage?.active_sessions === "number" && Number.isFinite(usage.active_sessions)
+        ? usage.active_sessions
+        : 0,
+  };
 };
 
 /* =========================
@@ -78,9 +107,8 @@ export default function Policies() {
   const [selected, setSelected] = useState<Policy | null>(null);
   const [action, setAction] =
     useState<"delete" | "disable" | "activate" | null>(null);
-  const [riskUsage, setRiskUsage] = useState<any | null>(null);
+  const [riskUsage, setRiskUsage] = useState<NormalizedPolicyUsage | null>(null);
   const [riskOpen, setRiskOpen] = useState(false);
-
 
   /* =========================
      Load policies list
@@ -141,7 +169,6 @@ export default function Policies() {
   ========================= */
   const refreshPolicy = async (policyId: number) => {
     try {
-      // 1️⃣ reload policies
       const data = await api.get<Policy[]>("/policies/list");
 
       const normalized = Array.isArray(data)
@@ -153,11 +180,9 @@ export default function Policies() {
 
       setPolicies(normalized);
 
-      // 2️⃣ update opened policy
       const updated = normalized.find((p) => p.id === policyId);
       if (updated) setPolicyDetails(updated);
 
-      // 3️⃣ reload history
       setDetailsLoading(true);
       const history = await api.get<PolicyHistory[]>(
         `/policies/${policyId}/history`
@@ -175,37 +200,34 @@ export default function Policies() {
      Actions
   ========================= */
   const confirmAction = async () => {
-  if (!selected || !action) return;
+    if (!selected || !action) return;
 
-  const act = action;
-  const policyId = selected.id;
+    const act = action;
+    const policyId = selected.id;
 
-  // блокируем повторный вызов
-  setAction(null);
+    setAction(null);
 
-  try {
-    if (act === "delete") {
-      await api.delete(`/policies/${policyId}`);
+    try {
+      if (act === "delete") {
+        await api.delete(`/policies/${policyId}`);
+      }
+
+      if (act === "disable") {
+        await api.patch(`/policies/${policyId}`, { status: "disabled" });
+      }
+
+      if (act === "activate") {
+        await api.patch(`/policies/${policyId}`, { status: "active" });
+      }
+
+      toast.success("Операция выполнена");
+      loadPolicies();
+    } catch {
+      toast.error("Ошибка операции");
+    } finally {
+      setSelected(null);
     }
-
-    if (act === "disable") {
-      await api.patch(`/policies/${policyId}`, { status: "disabled" });
-    }
-
-    if (act === "activate") {
-      await api.patch(`/policies/${policyId}`, { status: "active" });
-    }
-
-    toast.success("Операция выполнена");
-    loadPolicies();
-
-  } catch {
-    toast.error("Ошибка операции");
-  } finally {
-    setSelected(null);
-  }
-};
-
+  };
 
   /* =========================
      Derived
@@ -213,49 +235,39 @@ export default function Policies() {
   const filtered = policies.filter((p) =>
     p.name.toLowerCase().includes(search.toLowerCase())
   );
-  
+
   const activeCount = filtered.filter((p) => p.status === "active").length;
   const disabledCount = filtered.filter((p) => p.status === "disabled").length;
 
-  if (loading) return <div className="p-6">Загрузка…</div>;
-  
   const handleRiskAction = async (
-  policy: Policy,
-  act: "delete" | "disable" | "activate"
-) => {
-  try {
-    setSelected(policy);
+    policy: Policy,
+    act: "delete" | "disable" | "activate"
+  ) => {
+    try {
+      setSelected(policy);
 
-    const usage = await api.get(`/policies/${policy.id}/usage`);
+      const usage = await api.get<PolicyUsage>(`/policies/${policy.id}/usage`);
+      const normalizedUsage = normalizeUsage(usage);
 
-    const roles = usage?.roles ?? [];
-    const users = usage?.users ?? [];
-    const sessions = usage?.active_sessions ?? 0;
+      const hasImpact =
+        normalizedUsage.roles > 0 ||
+        normalizedUsage.users > 0 ||
+        normalizedUsage.active_sessions > 0;
 
-    const hasImpact =
-      roles.length > 0 ||
-      users.length > 0 ||
-      sessions > 0;
-
-    if (hasImpact) {
-      setRiskUsage({
-        roles,
-        users,
-        active_sessions: sessions,
-      });
+      if (hasImpact) {
+        setRiskUsage(normalizedUsage);
+        setAction(act);
+        setRiskOpen(true);
+        return;
+      }
 
       setAction(act);
-      setRiskOpen(true);
-      return;
+    } catch {
+      toast.error("Не удалось проверить влияние политики");
     }
+  };
 
-    // безопасно → обычный confirm
-    setAction(act);
-
-  } catch {
-    toast.error("Не удалось проверить влияние политики");
-  }
-};
+  if (loading) return <div className="p-6">Загрузка…</div>;
 
   /* =========================
      UI
@@ -304,9 +316,7 @@ export default function Policies() {
                 <td className="px-4 py-3">{p.name}</td>
                 <td className="px-4 py-3">{p.type}</td>
                 <td className="px-4 py-3">{p.status}</td>
-                <td className="px-4 py-3">
-                  {formatDateTime(p.updated_at)}
-                </td>
+                <td className="px-4 py-3">{formatDateTime(p.updated_at)}</td>
                 <td className="px-4 py-3 text-right">
                   <ActionMenuPolicy
                     status={p.status}
@@ -334,29 +344,27 @@ export default function Policies() {
         onConfirm={confirmAction}
         onClose={() => setAction(null)}
       />
-       
+
       <ConfirmModal
-  open={riskOpen}
-  title="⚠️ Влияние политики"
-  message={
-    riskUsage
-      ? `Политика используется:
-Ролей: ${riskUsage.roles.length}
-Пользователей: ${riskUsage.users.length}
+        open={riskOpen}
+        title="⚠️ Влияние политики"
+        message={
+          riskUsage
+            ? `Политика используется:
+Ролей: ${riskUsage.roles}
+Пользователей: ${riskUsage.users}
 Активных сессий: ${riskUsage.active_sessions}
 
 Это может изменить доступы прямо сейчас. Продолжить?`
-      : ""
-  }
-  confirmText="Продолжить"
-  onConfirm={async () => {
-  setRiskOpen(false);
-  await confirmAction();
-}}
-
-  onClose={() => setRiskOpen(false)}
-/>
-
+            : ""
+        }
+        confirmText="Продолжить"
+        onConfirm={async () => {
+          setRiskOpen(false);
+          await confirmAction();
+        }}
+        onClose={() => setRiskOpen(false)}
+      />
 
       <CreatePolicyModal
         open={createOpen}

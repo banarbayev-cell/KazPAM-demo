@@ -1,4 +1,4 @@
-import type { Target } from "@/types/targets";
+import type { Target } from "./targets";
 
 export interface TargetGroup {
   id: number;

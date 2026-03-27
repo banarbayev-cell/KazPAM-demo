@@ -1,6 +1,6 @@
 import { api } from "@/services/api";
 import type { Target } from "@/types/targets";
-import type { TargetGroup } from "@/types/targetGroups";
+import type { TargetGroup } from "../types/targetGroups";
 
 export interface RoleInventoryAccessOut {
   role?: {

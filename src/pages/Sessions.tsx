@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { Input } from "../components/ui/input";
 import ActionMenuSession from "../components/ActionMenuSession";
 import SessionDetailPanel from "../components/SessionDetailPanel";
-import { getSessions, terminateSession, startSession } from "../api/sessions";
+import { getAllSessions, terminateSession, startSession } from "../api/sessions";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useAuth } from "../store/auth";
@@ -172,7 +172,7 @@ export default function Sessions() {
     setLoading(true);
 
     try {
-      const data = await getSessions();
+      const data = await getAllSessions();
       const normalized = extractSessions(data).map(mapBackendSession);
 
       setSessions((prev) => mergeSessions(normalized, prev));

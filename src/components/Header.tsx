@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   ChevronDown,
   User,
@@ -8,7 +8,6 @@ import {
   Activity,
   AlertTriangle,
 } from "lucide-react";
-
 import { useLocation } from "react-router-dom";
 
 import NotificationsDropdown from "./Notifications/NotificationsDropdown";
@@ -22,6 +21,7 @@ export default function Header() {
   const logout = useAuth((s) => s.logout);
   const user = useAuth((s) => s.user);
   const token = useAuth((s) => s.token);
+  const isInitialized = useAuth((s) => s.isInitialized);
 
   const location = useLocation();
 
@@ -36,6 +36,10 @@ export default function Header() {
 
   const displayName = user?.email || "user";
   const avatar = displayName?.[0]?.toUpperCase() || "U";
+
+  const authToken = useMemo(() => {
+    return token || localStorage.getItem("access_token") || "";
+  }, [token]);
 
   // PAM MODE DETECTION
   const privilegedRoutes = [
@@ -62,7 +66,6 @@ export default function Header() {
   useEffect(() => {
     const updateTimer = () => {
       const stored = localStorage.getItem("kazpam_session_start");
-
       if (!stored) return;
 
       const minutes = Math.floor((Date.now() - Number(stored)) / 60000);
@@ -71,49 +74,87 @@ export default function Header() {
 
     updateTimer();
 
-    const i = setInterval(updateTimer, 60000);
-
-    return () => clearInterval(i);
+    const i = window.setInterval(updateTimer, 60000);
+    return () => window.clearInterval(i);
   }, []);
 
   // ACTIVE SESSIONS
   useEffect(() => {
-    if (!token) return;
+    if (!isInitialized) return;
+
+    let cancelled = false;
 
     const loadSessions = async () => {
+      if (!authToken) {
+        if (!cancelled) setActiveSessions(0);
+        return;
+      }
+
       try {
         const res = await fetch(`${API_URL}/sessions/stats`, {
+          method: "GET",
           headers: {
-            Authorization: `Bearer ${token}`,
+            Accept: "application/json",
+            Authorization: `Bearer ${authToken}`,
           },
         });
 
-        if (!res.ok) return;
-
-        const data = await res.json();
-
-        if (typeof data.active === "number") {
-          setActiveSessions(data.active ?? 0);
+        if (res.status === 401) {
+          if (!cancelled) setActiveSessions(0);
+          return;
         }
-      } catch {}
+
+        if (!res.ok) {
+          return;
+        }
+
+        const data: unknown = await res.json();
+
+        if (
+          data &&
+          typeof data === "object" &&
+          typeof (data as { active?: unknown }).active === "number"
+        ) {
+          if (!cancelled) {
+            setActiveSessions((data as { active: number }).active ?? 0);
+          }
+        }
+      } catch {
+        // intentionally silent
+      }
     };
 
-    loadSessions();
+    const handleSessionsChanged = () => {
+      void loadSessions();
+    };
 
-    const i = setInterval(loadSessions, 20000);
+    void loadSessions();
 
-    return () => clearInterval(i);
-  }, [token]);
+    const i = window.setInterval(() => {
+      void loadSessions();
+    }, 20000);
+
+    window.addEventListener("kazpam:sessions-changed", handleSessionsChanged);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(i);
+      window.removeEventListener(
+        "kazpam:sessions-changed",
+        handleSessionsChanged
+      );
+    };
+  }, [authToken, isInitialized]);
 
   // SUCCESS TOAST
   useEffect(() => {
     if (!passwordChanged) return;
 
-    const t = setTimeout(() => {
+    const t = window.setTimeout(() => {
       setPasswordChanged(false);
     }, 3000);
 
-    return () => clearTimeout(t);
+    return () => window.clearTimeout(t);
   }, [passwordChanged]);
 
   const handleLogout = () => {
@@ -124,25 +165,18 @@ export default function Header() {
   return (
     <>
       <header className="w-full bg-[var(--bg-card)] border-b border-[var(--border)] flex flex-col">
-
-        {/* SECURITY STATUS BAR */}
-
         <div
-          className={`w-full text-xs flex items-center justify-between px-6 py-1 border-b
-          ${
+          className={`w-full text-xs flex items-center justify-between px-6 py-1 border-b ${
             isPrivileged
               ? "bg-red-900 border-red-700 text-red-200"
               : "bg-[#081025] border-[#16223f] text-blue-300"
           }`}
         >
           <div className="flex items-center gap-4">
-
             {isPrivileged ? (
               <>
                 <AlertTriangle size={14} />
-                <span className="font-semibold">
-                  Privileged Access Mode
-                </span>
+                <span className="font-semibold">Privileged Access Mode</span>
               </>
             ) : (
               <>
@@ -159,21 +193,15 @@ export default function Header() {
             </div>
           </div>
 
-          <div className="text-[11px]">
-            Session Time: {sessionMinutes}m
-          </div>
+          <div className="text-[11px]">Session Time: {sessionMinutes}m</div>
         </div>
 
-        {/* MAIN HEADER */}
-
         <div className="w-full h-16 flex items-center justify-between px-6 relative">
-
           <h1 className="text-xl font-bold mt-2 text-[var(--text-primary)]">
             Kaz<span className="text-[#0052FF]">PAM</span>
           </h1>
 
           <div className="flex items-center gap-6">
-
             <div className="hidden md:flex items-center gap-2 text-xs text-green-400 bg-green-900/30 border border-green-700 px-3 py-1 rounded-full">
               <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
               Secure Session · {sessionMinutes}m
@@ -204,7 +232,6 @@ export default function Header() {
 
               {open && (
                 <div className="absolute top-16 right-0 w-64 bg-[var(--bg-card)] border border-[var(--border)] rounded-xl shadow-xl p-2 animate-fadeIn z-[9999]">
-
                   <div className="px-3 py-2 border-b border-[var(--border)] mb-1">
                     <div className="text-sm font-semibold text-[var(--text-primary)]">
                       {displayName}
@@ -245,7 +272,6 @@ export default function Header() {
                     <LogOut size={18} />
                     Выйти
                   </button>
-
                 </div>
               )}
             </div>

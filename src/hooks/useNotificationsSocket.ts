@@ -1,27 +1,40 @@
-import { useEffect, useRef } from "react";
-import { useNotifications } from "./useNotifications";
+import { useEffect, useMemo, useRef } from "react";
 import { useAuth } from "../store/auth";
 import { API_URL } from "../api/config";
 
 export function useNotificationsSocket() {
   const token = useAuth((s) => s.token);
-  const { refresh } = useNotifications();
+  const isInitialized = useAuth((s) => s.isInitialized);
 
   const wsRef = useRef<WebSocket | null>(null);
   const closingRef = useRef(false);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const refreshRef = useRef(refresh);
+
+  const authToken = useMemo(() => {
+    return token || localStorage.getItem("access_token") || "";
+  }, [token]);
 
   useEffect(() => {
-    refreshRef.current = refresh;
-  }, [refresh]);
+    if (!isInitialized) return;
+    if (!authToken) return;
 
-  useEffect(() => {
-    if (!token) return;
+    const wsBase = API_URL.replace(/^http/, "ws").replace(/\/+$/, "");
+    const wsUrl = `${wsBase}/ws/notifications?token=${encodeURIComponent(
+      authToken
+    )}`;
 
-    const wsBase = API_URL.replace(/^http/, "ws");
-    const wsUrl = `${wsBase}/ws/notifications?token=${encodeURIComponent(token)}`;
     let mounted = true;
+
+    const cleanupSocket = () => {
+      if (wsRef.current) {
+        try {
+          wsRef.current.close(1000, "Notifications socket cleanup");
+        } catch {
+          // ignore
+        }
+        wsRef.current = null;
+      }
+    };
 
     const connect = () => {
       if (!mounted) return;
@@ -39,11 +52,21 @@ export function useNotificationsSocket() {
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
+      ws.onopen = () => {
+        // socket connected
+      };
+
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          if (data?.type === "notification:new" || data?.type === "notification") {
-            refreshRef.current();
+
+          if (
+            data?.type === "notification:new" ||
+            data?.type === "notification"
+          ) {
+            window.dispatchEvent(
+              new Event("kazpam:notifications-refresh")
+            );
           }
         } catch {
           // ignore parse errors
@@ -55,14 +78,16 @@ export function useNotificationsSocket() {
         console.warn("Notifications WS error");
       };
 
-      ws.onclose = () => {
+      ws.onclose = (event) => {
         if (!mounted || closingRef.current) return;
 
-        console.log("Notifications WS closed");
+        // при 1008 / 403 не спамим бесконечно слишком часто
+        const retryDelay =
+          event.code === 1008 ? 8000 : 3000;
 
         reconnectTimerRef.current = setTimeout(() => {
           connect();
-        }, 3000);
+        }, retryDelay);
       };
     };
 
@@ -77,14 +102,7 @@ export function useNotificationsSocket() {
         reconnectTimerRef.current = null;
       }
 
-      if (wsRef.current) {
-        try {
-          wsRef.current.close(1000, "Notifications socket cleanup");
-        } catch {
-          // ignore
-        }
-        wsRef.current = null;
-      }
+      cleanupSocket();
     };
-  }, [token]);
+  }, [authToken, isInitialized]);
 }

@@ -49,12 +49,11 @@ function formatDateSafe(value?: string): string {
    Details parser
 ========================= */
 
-function parseDetails(details: any): any {
+function parseDetails(details: unknown): any {
   if (!details) return {};
 
   if (typeof details === "string") {
     try {
-      // backend иногда присылает python-like single quotes
       return JSON.parse(details.replace(/'/g, '"'));
     } catch {
       return { raw: details };
@@ -84,7 +83,6 @@ export function useNotifications() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Resolver v2 context (best-effort)
   const ctxUsers = useNotificationContext((s) => s.users);
   const ctxRoles = useNotificationContext((s) => s.roles);
   const ctxPolicies = useNotificationContext((s) => s.policies);
@@ -95,8 +93,7 @@ export function useNotifications() {
     setError(null);
 
     try {
-      // best-effort preload ctx, НЕ блокируем notifications
-      loadCtx();
+      void loadCtx();
 
       const raw = await api.get<any[]>("/notifications/");
 
@@ -110,7 +107,7 @@ export function useNotifications() {
             });
 
             return {
-              id: n.audit_id,
+              id: Number(n.audit_id),
               message,
               created_at: formatDateSafe(n.timestamp),
               is_read: Boolean(n.is_read),
@@ -136,7 +133,9 @@ export function useNotifications() {
 
     try {
       await api.post(`/notifications/${id}/read`);
-    } catch {}
+    } catch {
+      // ignore
+    }
   }, []);
 
   const markAllAsRead = useCallback(async () => {
@@ -144,7 +143,9 @@ export function useNotifications() {
 
     try {
       await api.post("/notifications/read-all");
-    } catch {}
+    } catch {
+      // ignore
+    }
   }, []);
 
   const unreadCount = useMemo(
@@ -153,10 +154,27 @@ export function useNotifications() {
   );
 
   useEffect(() => {
-    refresh();
-    // preload ctx on mount
-    loadCtx();
+    void refresh();
+    void loadCtx();
   }, [refresh, loadCtx]);
+
+  useEffect(() => {
+    const handleExternalRefresh = () => {
+      void refresh();
+    };
+
+    window.addEventListener(
+      "kazpam:notifications-refresh",
+      handleExternalRefresh
+    );
+
+    return () => {
+      window.removeEventListener(
+        "kazpam:notifications-refresh",
+        handleExternalRefresh
+      );
+    };
+  }, [refresh]);
 
   return {
     notifications,

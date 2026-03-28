@@ -2,7 +2,16 @@ import { useState, useMemo, useEffect } from "react";
 import { Input } from "../components/ui/input";
 import ActionMenuSession from "../components/ActionMenuSession";
 import SessionDetailPanel from "../components/SessionDetailPanel";
-import { getAllSessions, terminateSession, startSession } from "../api/sessions";
+import {
+  getAllSessions,
+  terminateSession,
+  startSession,
+} from "../api/sessions";
+import {
+  listAccessibleTargets,
+  listTargets,
+} from "../api/targets";
+import type { Target } from "../types/targets";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useAuth } from "../store/auth";
@@ -23,6 +32,13 @@ interface Session {
   duration: string;
   status: "active" | "closed" | "failed" | "terminated";
   date: string;
+  target_id?: number | null;
+  vault_secret_id?: number | null;
+  protocol?: string | null;
+  gateway_node?: string | null;
+  launch_mode?: string | null;
+  details?: string | null;
+  pam_user?: string | null;
 }
 
 /* ===============================
@@ -35,6 +51,13 @@ interface BackendSession {
   os: string;
   ip: string;
   app?: string;
+  target_id?: number | null;
+  vault_secret_id?: number | null;
+  protocol?: string | null;
+  gateway_node?: string | null;
+  launch_mode?: string | null;
+  details?: string | null;
+  pam_user?: string | null;
   status: "active" | "closed" | "failed" | "terminated";
   start_time?: string;
 }
@@ -56,6 +79,13 @@ function mapBackendSession(s: BackendSession): Session {
     duration: "—",
     status: s.status,
     date: s.start_time ?? "",
+    target_id: s.target_id ?? null,
+    vault_secret_id: s.vault_secret_id ?? null,
+    protocol: s.protocol ?? null,
+    gateway_node: s.gateway_node ?? null,
+    launch_mode: s.launch_mode ?? null,
+    details: s.details ?? null,
+    pam_user: s.pam_user ?? null,
   };
 }
 
@@ -121,6 +151,15 @@ function extractErrorMessage(error: unknown, fallback: string): string {
     return error.trim();
   }
 
+  if (
+    error &&
+    typeof error === "object" &&
+    "response" in error &&
+    (error as any).response?.data?.detail
+  ) {
+    return String((error as any).response.data.detail);
+  }
+
   return fallback;
 }
 
@@ -147,6 +186,7 @@ export default function Sessions() {
   const authUser = useAuth((s) => s.user);
 
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [targets, setTargets] = useState<Target[]>([]);
   const [detailOpen, setDetailOpen] = useState(false);
   const [selectedSession, setSelectedSession] = useState<Session | null>(null);
 
@@ -154,7 +194,9 @@ export default function Sessions() {
   const [statusFilter] = useState("all");
 
   const [startOpen, setStartOpen] = useState(false);
-  const [startForm, setStartForm] = useState({
+  const [selectedTargetId, setSelectedTargetId] = useState("");
+  const [manualMode, setManualMode] = useState(false);
+  const [manualForm, setManualForm] = useState({
     user: "",
     system: "",
     os: "Linux",
@@ -162,6 +204,7 @@ export default function Sessions() {
   });
 
   const [loading, setLoading] = useState(false);
+  const [targetsLoading, setTargetsLoading] = useState(false);
   const [launchLoading, setLaunchLoading] = useState(false);
 
   const notifySessionsChanged = () => {
@@ -172,7 +215,7 @@ export default function Sessions() {
     setLoading(true);
 
     try {
-      const data = await getAllSessions();
+      const data = await getAllSessions(200);
       const normalized = extractSessions(data).map(mapBackendSession);
 
       setSessions((prev) => mergeSessions(normalized, prev));
@@ -184,18 +227,71 @@ export default function Sessions() {
     }
   };
 
+  const loadTargets = async () => {
+  setTargetsLoading(true);
+
+  try {
+    const accessible = await listAccessibleTargets("ssh");
+    const accessibleSsh = Array.isArray(accessible)
+      ? accessible.filter(
+          (t) =>
+            String(t.protocol || "").toLowerCase() === "ssh" &&
+            t.is_active !== false
+        )
+      : [];
+
+    if (accessibleSsh.length > 0) {
+      setTargets(accessibleSsh);
+      return;
+    }
+
+    const all = await listTargets();
+    const sshOnly = Array.isArray(all)
+      ? all.filter(
+          (t) =>
+            String(t.protocol || "").toLowerCase() === "ssh" &&
+            t.is_active !== false
+        )
+      : [];
+
+    setTargets(sshOnly);
+  } catch (error) {
+    setTargets([]);
+    toast.error(
+      extractErrorMessage(error, "Не удалось загрузить список систем")
+    );
+  } finally {
+    setTargetsLoading(false);
+  }
+};
+
   useEffect(() => {
     loadSessions();
+    loadTargets();
   }, []);
 
   useEffect(() => {
     if (!startOpen) return;
 
-    setStartForm((prev) => ({
+    setManualForm((prev) => ({
       ...prev,
       user: prev.user || authUser?.email || "",
     }));
   }, [startOpen, authUser?.email]);
+
+  const sshTargets = useMemo(() => {
+    return targets.filter(
+      (t) =>
+        String(t.protocol || "").toLowerCase() === "ssh" &&
+        t.is_active !== false
+    );
+  }, [targets]);
+
+  const selectedTarget = useMemo(() => {
+    const id = Number(selectedTargetId);
+    if (!Number.isFinite(id)) return null;
+    return sshTargets.find((t) => t.id === id) || null;
+  }, [sshTargets, selectedTargetId]);
 
   const handleTerminate = async (session: Session) => {
     if (session.status !== "active") {
@@ -252,6 +348,57 @@ export default function Sessions() {
         (statusFilter === "all" || s.status === statusFilter)
     );
   }, [sessions, search, statusFilter]);
+
+  const handleLaunch = async () => {
+    try {
+      setLaunchLoading(true);
+
+      if (!manualMode) {
+        if (!selectedTarget) {
+          toast.error("Выберите целевую систему");
+          return;
+        }
+
+        await startSession({
+          user:
+            selectedTarget.username?.trim() ||
+            authUser?.email ||
+            "unknown",
+          target_id: selectedTarget.id,
+          app: "SSH",
+          mfa_passed: false,
+        });
+      } else {
+        await startSession({
+          user: manualForm.user,
+          system: manualForm.system,
+          os: manualForm.os,
+          ip: manualForm.ip,
+          app: "SSH",
+          mfa_passed: false,
+        });
+      }
+
+      toast.success("Сессия запущена");
+      setStartOpen(false);
+      setSelectedTargetId("");
+      setManualForm({
+        user: authUser?.email || "",
+        system: "",
+        os: "Linux",
+        ip: "",
+      });
+
+      await loadSessions();
+      notifySessionsChanged();
+    } catch (error) {
+      toast.error(
+        extractErrorMessage(error, "Не удалось запустить сессию")
+      );
+    } finally {
+      setLaunchLoading(false);
+    }
+  };
 
   return (
     <div className="p-6 w-full bg-gray-100 text-gray-900">
@@ -343,7 +490,7 @@ export default function Sessions() {
 
       {startOpen && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div className="bg-[#121A33] p-6 rounded-xl w-[420px] text-white space-y-4">
+          <div className="bg-[#121A33] p-6 rounded-xl w-[520px] text-white space-y-4">
             <h2 className="text-lg font-semibold">Запуск сессии</h2>
 
             <div className="space-y-1">
@@ -353,29 +500,118 @@ export default function Sessions() {
               </div>
             </div>
 
-            <Input
-              placeholder="Пользователь / учётная запись"
-              value={startForm.user}
-              onChange={(e) =>
-                setStartForm({ ...startForm, user: e.target.value })
-              }
-            />
+            <div className="space-y-1">
+              <div className="text-sm text-gray-400">Целевая система</div>
+              <select
+                value={selectedTargetId}
+                onChange={(e) => setSelectedTargetId(e.target.value)}
+                className="w-full px-3 py-2 rounded bg-[#0E1A3A] border border-[#1E2A45] text-sm text-white"
+                disabled={targetsLoading}
+              >
+                <option value="">
+                  {targetsLoading
+                    ? "Загрузка систем..."
+                    : "Выберите систему"}
+                </option>
+                {sshTargets.map((target) => (
+                  <option key={target.id} value={target.id}>
+                    {target.name} — {target.host}:{target.port}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-            <Input
-              placeholder="Система"
-              value={startForm.system}
-              onChange={(e) =>
-                setStartForm({ ...startForm, system: e.target.value })
-              }
-            />
+            {selectedTarget && (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <div className="text-sm text-gray-400">Host / IP</div>
+                    <div className="px-3 py-2 rounded bg-[#0E1A3A] border border-[#1E2A45] text-sm">
+                      {selectedTarget.host}:{selectedTarget.port}
+                    </div>
+                  </div>
 
-            <Input
-              placeholder="IP"
-              value={startForm.ip}
-              onChange={(e) =>
-                setStartForm({ ...startForm, ip: e.target.value })
-              }
-            />
+                  <div className="space-y-1">
+                    <div className="text-sm text-gray-400">OS</div>
+                    <div className="px-3 py-2 rounded bg-[#0E1A3A] border border-[#1E2A45] text-sm">
+                      {selectedTarget.os_type || "—"}
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="text-sm text-gray-400">Protocol</div>
+                    <div className="px-3 py-2 rounded bg-[#0E1A3A] border border-[#1E2A45] text-sm uppercase">
+                      {selectedTarget.protocol || "—"}
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="text-sm text-gray-400">Учётная запись</div>
+                    <div className="px-3 py-2 rounded bg-[#0E1A3A] border border-[#1E2A45] text-sm">
+                      {selectedTarget.username || "Будет определена backend"}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  {selectedTarget.requires_vault_secret && (
+                    <span className="inline-flex px-3 py-1 rounded-full text-xs font-semibold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                      Vault required
+                    </span>
+                  )}
+                  {selectedTarget.approval_required && (
+                    <span className="inline-flex px-3 py-1 rounded-full text-xs font-semibold bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                      Approval required
+                    </span>
+                  )}
+                  {selectedTarget.break_glass_enabled && (
+                    <span className="inline-flex px-3 py-1 rounded-full text-xs font-semibold bg-red-500/20 text-red-300 border border-red-500/30">
+                      Break-glass {selectedTarget.break_glass_ttl_minutes}m
+                    </span>
+                  )}
+                </div>
+              </>
+            )}
+
+            <div className="pt-1">
+              <button
+                type="button"
+                onClick={() => setManualMode((prev) => !prev)}
+                className="text-xs text-gray-400 underline"
+              >
+                {manualMode
+                  ? "Скрыть ручной режим"
+                  : "Ручной режим (admin fallback)"}
+              </button>
+            </div>
+
+            {manualMode && (
+              <div className="space-y-3 pt-2 border-t border-[#1E2A45]">
+                <Input
+                  placeholder="Пользователь / учётная запись"
+                  value={manualForm.user}
+                  onChange={(e) =>
+                    setManualForm({ ...manualForm, user: e.target.value })
+                  }
+                />
+
+                <Input
+                  placeholder="Система"
+                  value={manualForm.system}
+                  onChange={(e) =>
+                    setManualForm({ ...manualForm, system: e.target.value })
+                  }
+                />
+
+                <Input
+                  placeholder="IP"
+                  value={manualForm.ip}
+                  onChange={(e) =>
+                    setManualForm({ ...manualForm, ip: e.target.value })
+                  }
+                />
+              </div>
+            )}
 
             <div className="flex justify-end gap-2">
               <button
@@ -386,32 +622,9 @@ export default function Sessions() {
               </button>
 
               <button
-                disabled={launchLoading}
+                disabled={launchLoading || (!manualMode && !selectedTarget)}
                 className="px-4 py-2 bg-[#0052FF] rounded disabled:bg-gray-600"
-                onClick={async () => {
-                  try {
-                    setLaunchLoading(true);
-
-                    await startSession({
-                      user: startForm.user,
-                      system: startForm.system,
-                      os: startForm.os,
-                      ip: startForm.ip,
-                    });
-
-                    toast.success("Сессия запущена");
-                    setStartOpen(false);
-
-                    await loadSessions();
-                    notifySessionsChanged();
-                  } catch (error) {
-                    toast.error(
-                      extractErrorMessage(error, "Доступ запрещён политикой")
-                    );
-                  } finally {
-                    setLaunchLoading(false);
-                  }
-                }}
+                onClick={handleLaunch}
               >
                 Запустить
               </button>

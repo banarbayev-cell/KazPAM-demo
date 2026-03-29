@@ -3,6 +3,7 @@ import { X } from "lucide-react";
 import { formatPolicyHistoryAction } from "../../utils/policyHistory";
 import AssignRolesToPolicyModal from "../modals/AssignRolesToPolicyModal";
 import Access from "../Access";
+import { formatDateTime } from "../../utils/time";
 
 /* =========================
    Types
@@ -27,8 +28,9 @@ interface PolicyDetailsPanelProps {
     time_start?: string;
     time_end?: string;
     ip_range?: string;
-    session_limit?: number;
+    session_limit?: number | null;
     enforce_all_policies?: boolean;
+    allowed_systems?: string[];
 
     roles?: Role[];
   } | null;
@@ -38,15 +40,24 @@ interface PolicyDetailsPanelProps {
     action: string;
     timestamp: string;
     user?: string;
-    details?: {
-      changes?: Record<string, [any, any]>;
-    };
+    details?: any;
   }[];
 
   loading?: boolean;
-
-  // ✅ NEW: безопасный refresh родителя (ничего не ломаем)
   onRefreshPolicy?: (policyId: number) => Promise<void> | void;
+}
+
+/* =========================
+   Helpers
+========================= */
+function renderSessionLimit(value?: number | null) {
+  if (value === null || value === undefined) return "Без лимита";
+  return String(value);
+}
+
+function renderAllowedSystems(value?: string[]) {
+  if (!Array.isArray(value) || value.length === 0) return "Все системы";
+  return value.join(", ");
 }
 
 /* =========================
@@ -70,7 +81,6 @@ export default function PolicyDetailsPanel({
   return (
     <div className="fixed inset-0 bg-black/40 z-[9998] flex justify-end">
       <div className="w-[420px] h-full bg-[#121A33] p-6 shadow-xl overflow-y-auto text-white">
-        {/* Header */}
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl font-bold">Политика: {policy.name}</h2>
           <button onClick={onClose}>
@@ -78,7 +88,6 @@ export default function PolicyDetailsPanel({
           </button>
         </div>
 
-        {/* Meta */}
         <div className="space-y-2 text-sm mb-4">
           <div>
             <span className="text-gray-400">Тип:</span>{" "}
@@ -98,11 +107,12 @@ export default function PolicyDetailsPanel({
           </div>
           <div>
             <span className="text-gray-400">Обновлена:</span>{" "}
-            <span className="font-semibold">{policy.updated_at}</span>
+            <span className="font-semibold">
+              {formatDateTime(policy.updated_at)}
+            </span>
           </div>
         </div>
 
-        {/* Tabs */}
         <div className="flex gap-2 mb-6">
           <TabButton active={tab === "params"} onClick={() => setTab("params")}>
             Параметры
@@ -118,10 +128,11 @@ export default function PolicyDetailsPanel({
           </TabButton>
         </div>
 
-        {/* CONTENT */}
         {tab === "params" && (
           <div className="space-y-3 text-sm">
-            <Param label="MFA требуется">{policy.mfa_required ? "Да" : "Нет"}</Param>
+            <Param label="MFA требуется">
+              {policy.mfa_required ? "Да" : "Нет"}
+            </Param>
 
             <Param label="Окно доступа">
               {policy.time_start && policy.time_end
@@ -133,8 +144,12 @@ export default function PolicyDetailsPanel({
               {policy.ip_range ?? "—"}
             </Param>
 
-            <Param label="Лимит сессии">
-              {policy.session_limit ? `${policy.session_limit} минут` : "—"}
+            <Param label="Лимит активных сессий">
+              {renderSessionLimit(policy.session_limit)}
+            </Param>
+
+            <Param label="Разрешённые системы">
+              {renderAllowedSystems(policy.allowed_systems)}
             </Param>
 
             <Param label="Применять все политики">
@@ -174,7 +189,6 @@ export default function PolicyDetailsPanel({
               policyName={policy.name}
               assignedRoles={roles}
               onChanged={async () => {
-                // ✅ без reload: просто просим родителя обновить данные
                 await onRefreshPolicy?.(policy.id);
               }}
             />
@@ -198,7 +212,7 @@ export default function PolicyDetailsPanel({
                       {formatPolicyHistoryAction(log.action, log.details)}
                     </div>
                     <div className="text-xs text-gray-400 mt-1">
-                      {log.timestamp}
+                      {formatDateTime(log.timestamp)}
                       {log.user ? ` · ${log.user}` : ""}
                     </div>
                   </div>

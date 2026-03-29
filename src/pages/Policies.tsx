@@ -58,6 +58,17 @@ interface NormalizedPolicyUsage {
   active_sessions: number;
 }
 
+interface CreatePolicyPayload {
+  name: string;
+  type: string;
+  status: string;
+  mfa_required: boolean;
+  time_start: string;
+  time_end: string;
+  ip_range: string;
+  session_limit: number;
+}
+
 /* =========================
    Helpers
 ========================= */
@@ -77,12 +88,15 @@ const toCount = (value: unknown): number => {
   return 0;
 };
 
-const normalizeUsage = (usage: PolicyUsage | null | undefined): NormalizedPolicyUsage => {
+const normalizeUsage = (
+  usage: PolicyUsage | null | undefined
+): NormalizedPolicyUsage => {
   return {
     roles: toCount(usage?.roles),
     users: toCount(usage?.users),
     active_sessions:
-      typeof usage?.active_sessions === "number" && Number.isFinite(usage.active_sessions)
+      typeof usage?.active_sessions === "number" &&
+      Number.isFinite(usage.active_sessions)
         ? usage.active_sessions
         : 0,
   };
@@ -108,12 +122,11 @@ export default function Policies() {
   const [selected, setSelected] = useState<Policy | null>(null);
   const [action, setAction] =
     useState<"delete" | "disable" | "activate" | null>(null);
-  const [riskUsage, setRiskUsage] = useState<NormalizedPolicyUsage | null>(null);
+  const [riskUsage, setRiskUsage] = useState<NormalizedPolicyUsage | null>(
+    null
+  );
   const [riskOpen, setRiskOpen] = useState(false);
 
-  /* =========================
-     Load policies list
-  ========================= */
   const loadPolicies = async () => {
     try {
       setLoading(true);
@@ -138,9 +151,6 @@ export default function Policies() {
     loadPolicies();
   }, []);
 
-  /* =========================
-     Load details + history
-  ========================= */
   const loadPolicyDetails = async (policyId: number) => {
     try {
       setDetailsLoading(true);
@@ -165,9 +175,6 @@ export default function Policies() {
     }
   };
 
-  /* =========================
-     🔑 CANONICAL refresh
-  ========================= */
   const refreshPolicy = async (policyId: number) => {
     try {
       const data = await api.get<Policy[]>("/policies/list");
@@ -197,9 +204,6 @@ export default function Policies() {
     }
   };
 
-  /* =========================
-     Actions
-  ========================= */
   const confirmAction = async () => {
     if (!selected || !action) return;
 
@@ -230,9 +234,6 @@ export default function Policies() {
     }
   };
 
-  /* =========================
-     Derived
-  ========================= */
   const filtered = policies.filter((p) =>
     p.name.toLowerCase().includes(search.toLowerCase())
   );
@@ -270,9 +271,6 @@ export default function Policies() {
 
   if (loading) return <div className="p-6">Загрузка…</div>;
 
-  /* =========================
-     UI
-  ========================= */
   return (
     <div className="p-6 w-full bg-gray-100 text-gray-900">
       <h1 className="text-3xl font-bold mb-4">Политики доступа</h1>
@@ -370,8 +368,8 @@ export default function Policies() {
       <CreatePolicyModal
         open={createOpen}
         onClose={() => setCreateOpen(false)}
-        onCreate={async (name, type) => {
-          await api.post("/policies/", { name, type, status: "active" });
+        onCreate={async (payload: CreatePolicyPayload) => {
+          await api.post("/policies/", payload);
           toast.success("Политика создана");
           setCreateOpen(false);
           loadPolicies();

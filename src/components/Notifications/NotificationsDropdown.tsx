@@ -2,7 +2,6 @@ import { useState } from "react";
 import { Bell, Check } from "lucide-react";
 import { useNotifications } from "../../hooks/useNotifications";
 
-
 export default function NotificationsDropdown() {
   const {
     notifications,
@@ -15,10 +14,10 @@ export default function NotificationsDropdown() {
 
   return (
     <div className="relative">
-      {/* 🔔 Bell */}
       <button
         onClick={() => setOpen((v) => !v)}
         className="relative p-2 rounded-lg hover:bg-white/5 transition"
+        type="button"
       >
         <Bell className="w-5 h-5 text-[var(--text-primary)]" />
 
@@ -33,7 +32,6 @@ export default function NotificationsDropdown() {
         )}
       </button>
 
-      {/* 📥 Dropdown */}
       {open && (
         <div
           className="absolute right-0 mt-2 w-80
@@ -42,7 +40,6 @@ export default function NotificationsDropdown() {
             rounded-xl shadow-xl
             z-[9999]"
         >
-          {/* Header */}
           <div className="flex items-center justify-between px-4 py-2 border-b border-[var(--border)]">
             <span className="font-semibold text-sm text-[var(--text-primary)]">
               Уведомления
@@ -50,15 +47,15 @@ export default function NotificationsDropdown() {
 
             {notifications.length > 0 && (
               <button
+                type="button"
                 onClick={markAllAsRead}
                 className="text-xs text-[#3BE3FD] hover:underline"
               >
-                
+                Прочитать все
               </button>
             )}
           </div>
 
-          {/* List */}
           <div className="max-h-96 overflow-y-auto">
             {notifications.length === 0 && (
               <div className="p-4 text-sm text-[var(--text-secondary)]">
@@ -69,6 +66,7 @@ export default function NotificationsDropdown() {
             {notifications.map((n) => (
               <button
                 key={n.id}
+                type="button"
                 onClick={() => markAsRead(n.id)}
                 className={`
                   w-full text-left px-4 py-3 text-sm
@@ -79,10 +77,9 @@ export default function NotificationsDropdown() {
                 `}
               >
                 <div className="flex items-start justify-between gap-3">
-                  {/* TEXT */}
                   <div className="flex-1">
                     <div className="font-medium text-[var(--text-primary)]">
-                       {n.message}
+                      {n.message}
                     </div>
 
                     <div className="text-xs text-[var(--text-secondary)] mt-1">
@@ -90,13 +87,10 @@ export default function NotificationsDropdown() {
                     </div>
                   </div>
 
-                  {/* READ INDICATOR */}
                   {n.is_read && (
-                    <Check
-                      size={16}
-                      className="mt-1 text-[#3BE3FD]"
-                      title="Прочитано"
-                    />
+                    <span title="Прочитано" className="mt-1 inline-flex">
+                      <Check size={16} className="text-[#3BE3FD]" />
+                    </span>
                   )}
                 </div>
               </button>

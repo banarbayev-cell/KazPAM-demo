@@ -26,7 +26,8 @@ interface Policy {
   time_start?: string;
   time_end?: string;
   ip_range?: string;
-  session_limit?: number;
+  session_limit?: number | null;
+  allowed_systems?: string[];
   enforce_all_policies?: boolean;
 
   roles?: {
@@ -381,8 +382,8 @@ export default function Policies() {
         open={editOpen}
         policy={selected}
         onClose={() => setEditOpen(false)}
-        onSave={async (id, name, type, status) => {
-          await api.patch(`/policies/${id}`, { name, type, status });
+        onSave={async (id, payload) => {
+          await api.patch(`/policies/${id}`, payload);
           toast.success("Политика обновлена");
           setEditOpen(false);
           loadPolicies();

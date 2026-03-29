@@ -1,12 +1,14 @@
-interface Props {
+interface ConfirmTerminateSession {
+  user: string;
+  system: string;
+  ip: string;
+}
+
+interface ConfirmTerminateSessionModalProps {
   open: boolean;
   onCancel: () => void;
   onConfirm: () => void;
-  session: {
-    user: string;
-    system: string;
-    ip: string;
-  };
+  session: ConfirmTerminateSession;
 }
 
 export default function ConfirmTerminateSessionModal({
@@ -14,7 +16,7 @@ export default function ConfirmTerminateSessionModal({
   onCancel,
   onConfirm,
   session,
-}: Props) {
+}: ConfirmTerminateSessionModalProps) {
   if (!open) return null;
 
   return (
@@ -29,14 +31,21 @@ export default function ConfirmTerminateSessionModal({
           Пользователь будет немедленно отключён от системы.
         </p>
 
-        <div className="bg-[#0E1A3A] rounded-md p-3 text-sm mb-6">
-          <div><span className="text-gray-400">Пользователь:</span> {session.user}</div>
-          <div><span className="text-gray-400">Система:</span> {session.system}</div>
-          <div><span className="text-gray-400">IP:</span> {session.ip}</div>
+        <div className="bg-[#0E1A3A] rounded-md p-3 text-sm mb-6 space-y-1">
+          <div>
+            <span className="text-gray-400">Пользователь:</span> {session.user}
+          </div>
+          <div>
+            <span className="text-gray-400">Система:</span> {session.system}
+          </div>
+          <div>
+            <span className="text-gray-400">IP:</span> {session.ip}
+          </div>
         </div>
 
         <div className="flex justify-end gap-3">
           <button
+            type="button"
             onClick={onCancel}
             className="px-4 py-2 rounded-md bg-[#1A243F] hover:bg-[#0E1A3A]"
           >
@@ -44,6 +53,7 @@ export default function ConfirmTerminateSessionModal({
           </button>
 
           <button
+            type="button"
             onClick={onConfirm}
             className="px-4 py-2 rounded-md bg-red-600 hover:bg-red-700"
           >

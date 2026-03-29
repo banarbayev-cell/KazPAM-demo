@@ -2,8 +2,19 @@ import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
-  DropdownMenuItem
+  DropdownMenuItem,
 } from "./ui/dropdown-menu";
+
+type PolicyStatus = "active" | "disabled" | string;
+
+interface ActionMenuPolicyProps {
+  status: PolicyStatus;
+  onView: () => void;
+  onEdit: () => void;
+  onDisable: () => void;
+  onActivate: () => void;
+  onDelete: () => void;
+}
 
 export default function ActionMenuPolicy({
   status,
@@ -11,15 +22,17 @@ export default function ActionMenuPolicy({
   onEdit,
   onDisable,
   onActivate,
-  onDelete
-}: any) {
+  onDelete,
+}: ActionMenuPolicyProps) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button className="flex items-center gap-2 px-3 py-1.5
-               bg-[#1A243F] hover:bg-[#0E1A3A]
-               text-gray-200 border border-[#1E2A45]
-               rounded-md transition cursor-pointer select-none">
+        <button
+          className="flex items-center gap-2 px-3 py-1.5
+          bg-[#1A243F] hover:bg-[#0E1A3A]
+          text-gray-200 border border-[#1E2A45]
+          rounded-md transition cursor-pointer select-none"
+        >
           Управление
           <span className="text-gray-400 text-sm">▼</span>
         </button>

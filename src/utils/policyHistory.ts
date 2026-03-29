@@ -1,10 +1,16 @@
-type LegacyChangeValue = [any, any];
+type Primitive = string | number | boolean | null | undefined;
+type LegacyChangeValue = [Primitive | string[], Primitive | string[]];
 type ModernChangeValue = {
-  old?: any;
-  new?: any;
+  old?: Primitive | string[];
+  new?: Primitive | string[];
 };
 
-function normalizeValue(v: any): string {
+interface PolicyHistoryDetails {
+  raw?: string;
+  changes?: Record<string, LegacyChangeValue | ModernChangeValue>;
+}
+
+function normalizeValue(v: Primitive | string[]): string {
   if (v === null || v === undefined || v === "") return "—";
   if (v === "active") return "Активна";
   if (v === "disabled") return "Отключена";
@@ -18,14 +24,17 @@ function normalizeValue(v: any): string {
   return String(v);
 }
 
-function extractChangePair(value: unknown): [any, any] | null {
+function extractChangePair(
+  value: LegacyChangeValue | ModernChangeValue | undefined
+): [Primitive | string[] | undefined, Primitive | string[] | undefined] | null {
+  if (!value) return null;
+
   if (Array.isArray(value) && value.length === 2) {
     return [value[0], value[1]];
   }
 
-  if (value && typeof value === "object") {
-    const obj = value as ModernChangeValue;
-    return [obj.old, obj.new];
+    if (!Array.isArray(value) && typeof value === "object") {
+    return [value.old, value.new];
   }
 
   return null;
@@ -33,7 +42,7 @@ function extractChangePair(value: unknown): [any, any] | null {
 
 export function formatPolicyHistoryAction(
   action: string,
-  details?: any
+  details?: PolicyHistoryDetails
 ): string {
   if (!action) return "—";
 
@@ -83,7 +92,7 @@ export function formatPolicyHistoryAction(
             from
           )} → ${normalizeValue(to)}`;
         })
-        .filter(Boolean);
+        .filter((item): item is string => Boolean(item));
 
       if (parts.length > 0) {
         return parts.join("; ");

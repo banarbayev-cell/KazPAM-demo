@@ -13,6 +13,27 @@ interface Role {
   name: string;
 }
 
+type PolicyHistoryChangeValue =
+  | [
+      string | number | boolean | null | undefined | string[],
+      string | number | boolean | null | undefined | string[]
+    ]
+  | {
+      old?: string | number | boolean | null | undefined | string[];
+      new?: string | number | boolean | null | undefined | string[];
+    };
+
+interface PolicyAuditLog {
+  id: number;
+  action: string;
+  timestamp: string;
+  user?: string;
+  details?: {
+    raw?: string;
+    changes?: Record<string, PolicyHistoryChangeValue>;
+  };
+}
+
 interface PolicyDetailsPanelProps {
   open: boolean;
   onClose: () => void;
@@ -35,14 +56,7 @@ interface PolicyDetailsPanelProps {
     roles?: Role[];
   } | null;
 
-  auditLogs?: {
-    id: number;
-    action: string;
-    timestamp: string;
-    user?: string;
-    details?: any;
-  }[];
-
+  auditLogs?: PolicyAuditLog[];
   loading?: boolean;
   onRefreshPolicy?: (policyId: number) => Promise<void> | void;
 }
@@ -226,9 +240,6 @@ export default function PolicyDetailsPanel({
   );
 }
 
-/* =========================
-   UI helpers
-========================= */
 function TabButton({
   active,
   onClick,

@@ -1,18 +1,32 @@
 import { useState } from "react";
 import { X } from "lucide-react";
-import { toast } from "sonner";
 import ConfirmTerminateSessionModal from "./modals/ConfirmTerminateSessionModal";
 
-interface Props {
+type SessionStatus = "active" | "closed" | "failed" | "terminated" | string;
+
+interface SessionDetail {
+  id: number;
+  user: string;
+  system: string;
+  ip: string;
+  status: SessionStatus;
+  os?: string;
+  app?: string;
+  conn?: string;
+  risk?: string;
+  last_command?: string;
+  duration?: string;
+  date?: string;
+}
+
+interface SessionDetailPanelProps {
   open: boolean;
   onClose: () => void;
-  session: any | null;
-
+  session: SessionDetail | null;
   onTerminate?: () => void;
   onAudit?: () => void;
   onDownloadLogs?: () => void;
 }
-
 
 export default function SessionDetailPanel({
   open,
@@ -20,7 +34,7 @@ export default function SessionDetailPanel({
   session,
   onTerminate,
   onAudit,
-}: Props) {
+}: SessionDetailPanelProps) {
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   if (!open || !session) return null;
@@ -30,13 +44,12 @@ export default function SessionDetailPanel({
       <div className="absolute inset-0 bg-black/40" />
 
       <div
-        className="absolute right-0 top-0 h-full w-[420px]
-        bg-[#121A33] text-white p-6"
+        className="absolute right-0 top-0 h-full w-[420px] bg-[#121A33] text-white p-6"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex justify-between mb-4">
           <h2 className="text-xl font-bold">Детали сессии</h2>
-          <button onClick={onClose}>
+          <button onClick={onClose} type="button">
             <X />
           </button>
         </div>
@@ -56,6 +69,7 @@ export default function SessionDetailPanel({
 
         <div className="mt-6 space-y-3">
           <button
+            type="button"
             className="w-full bg-red-600 py-2 rounded"
             onClick={() => setConfirmOpen(true)}
           >
@@ -63,6 +77,7 @@ export default function SessionDetailPanel({
           </button>
 
           <button
+            type="button"
             className="w-full bg-[#1A243F] py-2 rounded"
             onClick={() => onAudit?.()}
           >
@@ -77,18 +92,28 @@ export default function SessionDetailPanel({
             setConfirmOpen(false);
             onTerminate?.();
           }}
-          session={session}
+          session={{
+            user: session.user,
+            system: session.system,
+            ip: session.ip,
+          }}
         />
       </div>
     </div>
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | number | null | undefined;
+}) {
   return (
-    <div className="flex justify-between">
+    <div className="flex justify-between gap-4">
       <span className="text-gray-400">{label}</span>
-      <span>{value}</span>
+      <span>{value ?? "—"}</span>
     </div>
   );
 }

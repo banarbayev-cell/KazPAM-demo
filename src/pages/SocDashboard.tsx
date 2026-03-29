@@ -23,7 +23,6 @@ import { formatKzDateTime } from "../utils/time";
 import {
   blockUser,
   isolateSession,
-  exportSocCsv,
   exportSocSiemJson,
 } from "../api/socActions";
 
@@ -138,7 +137,8 @@ export default function SocDashboard() {
   const wsRef = useRef<WebSocket | null>(null);
   const wsClosingRef = useRef(false);
   const initialLoadedRef = useRef(false);
-  
+  const wsReconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // 🔎 Investigation query
   const [searchParams] = useSearchParams();
   const q = searchParams.get("q");
@@ -243,66 +243,84 @@ useEffect(() => {
   useEffect(() => {
   if (!token) return;
 
-  if (
-    wsRef.current &&
-    (wsRef.current.readyState === WebSocket.OPEN ||
-      wsRef.current.readyState === WebSocket.CONNECTING)
-  ) {
-    return;
-  }
+  const wsUrl = `${API_URL.replace(/^http/, "ws")}/soc/ws/commands`;
+  let mounted = true;
 
-  wsClosingRef.current = false;
+  const connect = () => {
+    if (!mounted) return;
 
-  const ws = new WebSocket(`wss://server.kazpam.kz/api/soc/ws/commands`);
-  wsRef.current = ws;
-
-  ws.onopen = () => {
-    console.log("SOC command stream connected");
-  };
-
-  ws.onmessage = (event) => {
-    try {
-      const data = JSON.parse(event.data);
-
-      console.log("SOC WS EVENT:", data);
-
-      if (data.type === "command") {
-        const next: SessionCommand = {
-          type: "command",
-          time: data.time,
-          command: data.command,
-          recording_id: data.recording_id,
-          session_id: data.session_id,
-          user: data.user,
-          system: data.system,
-          severity: data.severity,
-          risk_score: data.risk_score,
-          risk_reason: data.risk_reason,
-        };
-
-        console.log("SOC live command received:", next);
-        setLiveCommands((prev) => [next, ...prev].slice(0, 100));
-      }
-    } catch (err) {
-      console.error("SOC WS parse error:", err);
+    if (
+      wsRef.current &&
+      (wsRef.current.readyState === WebSocket.OPEN ||
+        wsRef.current.readyState === WebSocket.CONNECTING)
+    ) {
+      return;
     }
+
+    wsClosingRef.current = false;
+
+    const ws = new WebSocket(wsUrl);
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      if (!mounted || wsClosingRef.current) return;
+      console.log("SOC command stream connected");
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+
+        if (data.type === "command") {
+          const next: SessionCommand = {
+            type: "command",
+            time: data.time,
+            command: data.command,
+            recording_id: data.recording_id,
+            session_id: data.session_id,
+            user: data.user,
+            system: data.system,
+            severity: data.severity,
+            risk_score: data.risk_score,
+            risk_reason: data.risk_reason,
+          };
+
+          setLiveCommands((prev) => [next, ...prev].slice(0, 100));
+        }
+      } catch (err) {
+        console.error("SOC WS parse error:", err);
+      }
+    };
+
+    ws.onerror = (event) => {
+      if (!mounted || wsClosingRef.current) return;
+      console.error("SOC WS error:", event);
+    };
+
+    ws.onclose = () => {
+      if (!mounted || wsClosingRef.current) return;
+
+      console.log("SOC command stream closed");
+
+      wsReconnectTimerRef.current = setTimeout(() => {
+        connect();
+      }, 3000);
+    };
   };
 
-  ws.onerror = (err) => {
-    if (wsClosingRef.current) return;
-    console.error("SOC WS error:", err);
-  };
-
-  ws.onclose = () => {
-    if (wsClosingRef.current) return;
-    console.log("SOC command stream closed");
-  };
+  connect();
 
   return () => {
+    mounted = false;
     wsClosingRef.current = true;
 
+    if (wsReconnectTimerRef.current) {
+      clearTimeout(wsReconnectTimerRef.current);
+      wsReconnectTimerRef.current = null;
+    }
+
     if (wsRef.current) {
-      wsRef.current.close();
+      wsRef.current.close(1000, "SocDashboard unmount");
       wsRef.current = null;
     }
   };
@@ -684,7 +702,6 @@ if (!alreadyRestoredThisSession) {
         onExport={async () => {
           try {
             setRbacError(null);
-            await exportSocCsv();
             await exportSocSiemJson();
 
             setIncident((prev) =>

@@ -70,14 +70,10 @@ export async function exportSocSiemJson() {
     throw new Error("SIEM_EXPORT_FAILED");
   }
 
-  const data = await res.json();
 
-  const blob = new Blob([JSON.stringify(data, null, 2)], {
-    type: "application/json",
-  });
-
-  downloadFile(blob, "soc_export_siem.json");
-}
+  const blob = await res.blob();
+    downloadFile(blob, "soc_export_siem.json");
+  };
 
 // =====================================================
 // HELPERS (SAFE, LOCAL)

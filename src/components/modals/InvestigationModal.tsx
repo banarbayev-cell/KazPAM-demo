@@ -14,7 +14,7 @@ import { updateIncidentStatus } from "../../api/incidents";
 import PlaybookCard from "../soc/PlaybookCard";
 import { detectPlaybookFromTimeline } from "../../soc/playbooks/detectPlaybook";
 import { useNavigate } from "react-router-dom";
-
+import { formatKzDateTime } from "../../utils/time";
 
 interface InvestigationModalProps {
   isOpen: boolean;
@@ -172,11 +172,8 @@ export default function InvestigationModal({
               </div>
 
               <div className="text-xs text-gray-400 mt-1">
-  Created:{" "}
-  {incident.createdAt
-    ? new Date(incident.createdAt).toLocaleString()
-    : "—"}
-</div>
+                Created: {formatKzDateTime(incident.createdAt, { seconds: true, naiveInput: "utc" })}
+              </div>
 
 
               {/* ✅ ВОТ ОНА */}
@@ -312,7 +309,7 @@ export default function InvestigationModal({
               onClick={onExport}
               className="bg-[#1A243F] hover:bg-[#0E1A3A] text-gray-200 border border-[#1E2A45] px-5 py-2 rounded-lg font-semibold"
             >
-              Экспорт SOC
+              Экспорт SIEM JSON
             </button>
           </div>
         </div>

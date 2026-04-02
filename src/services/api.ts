@@ -68,6 +68,58 @@ export async function apiFetch(
   }
 }
 
+export async function apiDownload(
+  path: string,
+  filename: string,
+  options: RequestInit = {}
+): Promise<void> {
+  if (authSessionInvalidated) {
+    throw new Error("AUTH_SESSION_INVALIDATED");
+  }
+
+  const token =
+    localStorage.getItem("access_token") ??
+    localStorage.getItem("token");
+
+  const headers: HeadersInit = {
+    ...(options.headers || {}),
+  };
+
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...options,
+    headers,
+  });
+
+  if (response.status === 401) {
+    throw new Error("Unauthorized");
+  }
+
+  if (response.status === 403) {
+    throw new Error("Forbidden");
+  }
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `HTTP error ${response.status}`);
+  }
+
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+
+  window.URL.revokeObjectURL(url);
+}
+
 export const api = {
   get: <T>(path: string) => apiFetch<T>(path),
 
@@ -87,4 +139,7 @@ export const api = {
 
   delete: <T = void>(path: string) =>
     apiFetch<T>(path, { method: "DELETE" }),
+
+  download: (path: string, filename: string, options?: RequestInit) =>
+    apiDownload(path, filename, options),
 };

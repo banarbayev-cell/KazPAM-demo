@@ -9,12 +9,16 @@ interface Props {
   onView: () => void;
   onTerminate: () => void;
   onAudit: () => void;
+  onArchive?: () => void;
+  canArchive?: boolean;
 }
 
 export default function ActionMenuSession({
   onView,
   onTerminate,
   onAudit,
+  onArchive,
+  canArchive = false,
 }: Props) {
   return (
     <DropdownMenu>
@@ -42,6 +46,12 @@ export default function ActionMenuSession({
         >
           Завершить сессию
         </DropdownMenuItem>
+
+        {canArchive && onArchive && (
+          <DropdownMenuItem onSelect={onArchive}>
+            Архивировать
+          </DropdownMenuItem>
+        )}
 
         <DropdownMenuItem onSelect={onAudit}>
           Открыть аудит

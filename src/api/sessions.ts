@@ -1,4 +1,5 @@
 import { apiGet, apiPost } from "./client";
+import { apiDownload } from "../services/api";
 
 export type StartSessionParams = {
   user: string;
@@ -16,8 +17,17 @@ export const getSessions = () => {
   return apiGet("/sessions/");
 };
 
-export const getAllSessions = (limit = 200) => {
-  return apiGet(`/sessions/all?limit=${limit}`);
+export const getAllSessions = (
+  limit = 200,
+  archived = false,
+  status = "all"
+) => {
+  const query = new URLSearchParams();
+  query.set("limit", String(limit));
+  query.set("archived", String(archived));
+  query.set("status", status);
+
+  return apiGet(`/sessions/all?${query.toString()}`);
 };
 
 export const startSession = (params: StartSessionParams) => {
@@ -61,4 +71,24 @@ export const startSession = (params: StartSessionParams) => {
 
 export const terminateSession = (id: number) => {
   return apiPost(`/sessions/terminate/${id}`);
+};
+
+export const archiveSession = (id: number) => {
+  return apiPost(`/sessions/${id}/archive`);
+};
+
+export const exportSessions = (
+  format: "csv" | "json",
+  archived = false,
+  status = "all"
+) => {
+  const query = new URLSearchParams();
+  query.set("archived", String(archived));
+  query.set("status", status);
+  query.set("limit", "5000");
+
+  return apiDownload(
+    `/sessions/export/${format}?${query.toString()}`,
+    format === "csv" ? "sessions_export.csv" : "sessions_export.json"
+  );
 };

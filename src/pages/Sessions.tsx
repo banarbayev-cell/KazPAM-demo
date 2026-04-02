@@ -6,6 +6,8 @@ import {
   getAllSessions,
   terminateSession,
   startSession,
+  archiveSession,
+  exportSessions,
 } from "../api/sessions";
 import {
   listAccessibleTargets,
@@ -39,6 +41,8 @@ interface Session {
   launch_mode?: string | null;
   details?: string | null;
   pam_user?: string | null;
+  is_archived?: boolean;
+  archived_at?: string | null;
 }
 
 /* ===============================
@@ -60,6 +64,8 @@ interface BackendSession {
   pam_user?: string | null;
   status: "active" | "closed" | "failed" | "terminated";
   start_time?: string;
+  is_archived?: boolean;
+  archived_at?: string | null;
 }
 
 /* ===============================
@@ -86,6 +92,8 @@ function mapBackendSession(s: BackendSession): Session {
     launch_mode: s.launch_mode ?? null,
     details: s.details ?? null,
     pam_user: s.pam_user ?? null,
+    is_archived: s.is_archived ?? false,
+    archived_at: s.archived_at ?? null,
   };
 }
 
@@ -163,23 +171,8 @@ function extractErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
-function mergeSessions(
-  freshSessions: Session[],
-  previousSessions: Session[]
-): Session[] {
-  const historical = previousSessions.filter((s) => s.status !== "active");
-  const merged = new Map<number, Session>();
-
-  for (const item of historical) {
-    merged.set(item.id, item);
-  }
-
-  for (const item of freshSessions) {
-    merged.set(item.id, item);
-  }
-
-  return Array.from(merged.values()).sort((a, b) => b.id - a.id);
-}
+// Для archive/filter/export режимов mergeSessions больше не нужен.
+// Список всегда берём заново с backend по текущим фильтрам.
 
 export default function Sessions() {
   const navigate = useNavigate();
@@ -191,7 +184,8 @@ export default function Sessions() {
   const [selectedSession, setSelectedSession] = useState<Session | null>(null);
 
   const [search, setSearch] = useState("");
-  const [statusFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [archiveMode, setArchiveMode] = useState<"main" | "archived">("main");
 
   const [startOpen, setStartOpen] = useState(false);
   const [selectedTargetId, setSelectedTargetId] = useState("");
@@ -215,12 +209,18 @@ export default function Sessions() {
     setLoading(true);
 
     try {
-      const data = await getAllSessions(200);
-      const normalized = extractSessions(data).map(mapBackendSession);
+      const data = await getAllSessions(
+        200,
+        archiveMode === "archived",
+        statusFilter
+      );
+      const normalized = extractSessions(data)
+        .map(mapBackendSession)
+        .sort((a, b) => b.id - a.id);
 
-      setSessions((prev) => mergeSessions(normalized, prev));
+      setSessions(normalized);
     } catch (error) {
-      setSessions((prev) => prev.filter((s) => s.status !== "active"));
+      setSessions([]);
       toast.error(extractErrorMessage(error, "Не удалось загрузить сессии"));
     } finally {
       setLoading(false);
@@ -267,8 +267,11 @@ export default function Sessions() {
 
   useEffect(() => {
     loadSessions();
+  }, [archiveMode, statusFilter]);
+  
+  useEffect(() => {
     loadTargets();
-  }, []);
+  }, []);  
 
   useEffect(() => {
     if (!startOpen) return;
@@ -342,12 +345,50 @@ export default function Sessions() {
   const filtered = useMemo(() => {
     return sessions.filter(
       (s) =>
-        (s.user.toLowerCase().includes(search.toLowerCase()) ||
-          s.system.toLowerCase().includes(search.toLowerCase()) ||
-          s.ip.toLowerCase().includes(search.toLowerCase())) &&
-        (statusFilter === "all" || s.status === statusFilter)
+        s.user.toLowerCase().includes(search.toLowerCase()) ||
+        s.system.toLowerCase().includes(search.toLowerCase()) ||
+        s.ip.toLowerCase().includes(search.toLowerCase())
     );
-  }, [sessions, search, statusFilter]);
+  }, [sessions, search]);
+
+  const handleArchive = async (session: Session) => {
+    if (session.status === "active") {
+      toast.info("Активную сессию сначала нужно завершить");
+      return;
+    }
+
+    if (session.is_archived) {
+      toast.info("Сессия уже в архиве");
+      return;
+    }
+
+    try {
+      await archiveSession(session.id);
+      toast.success("Сессия архивирована");
+      await loadSessions();
+      notifySessionsChanged();
+    } catch (error) {
+      toast.error(extractErrorMessage(error, "Не удалось архивировать сессию"));
+    }
+  };
+
+  const handleExportCsv = async () => {
+    try {
+      await exportSessions("csv", archiveMode === "archived", statusFilter);
+      toast.success("CSV экспорт выполнен");
+    } catch (error) {
+      toast.error(extractErrorMessage(error, "Не удалось экспортировать CSV"));
+    }
+  };
+
+  const handleExportJson = async () => {
+    try {
+      await exportSessions("json", archiveMode === "archived", statusFilter);
+      toast.success("JSON экспорт выполнен");
+    } catch (error) {
+      toast.error(extractErrorMessage(error, "Не удалось экспортировать JSON"));
+    }
+  };
 
   const handleLaunch = async () => {
     try {
@@ -404,11 +445,26 @@ export default function Sessions() {
     <div className="p-6 w-full bg-gray-100 text-gray-900">
       <h1 className="text-3xl font-bold mb-4">Пользовательские сессии</h1>
 
+    <div className="mb-6 flex flex-wrap gap-3 items-center"></div>
       <button
         onClick={() => setStartOpen(true)}
-        className="mb-6 px-4 py-2 bg-[#0052FF] text-white rounded"
+        className="px-4 py-2 bg-[#0052FF] text-white rounded"
       >
         Запустить сессию
+      </button>
+
+      <button
+        onClick={handleExportCsv}
+        className="px-4 py-2 bg-[#1A243F] text-white rounded"
+      >
+        Экспорт CSV
+      </button>
+
+      <button
+        onClick={handleExportJson}
+        className="px-4 py-2 bg-[#1A243F] text-white rounded"
+      >
+        Экспорт JSON
       </button>
 
       <Input
@@ -427,6 +483,7 @@ export default function Sessions() {
               <th className="p-3">OS</th>
               <th className="p-3">IP</th>
               <th className="p-3">Статус</th>
+              <th className="p-3">Архив</th>
               <th className="p-3">Действия</th>
             </tr>
           </thead>
@@ -434,13 +491,13 @@ export default function Sessions() {
           <tbody>
             {loading ? (
               <tr className="border-t border-[#1E2A45]">
-                <td colSpan={6} className="p-6 text-center text-gray-400">
+                <td colSpan={7} className="p-6 text-center text-gray-400">
                   Загрузка сессий...
                 </td>
               </tr>
             ) : filtered.length === 0 ? (
               <tr className="border-t border-[#1E2A45]">
-                <td colSpan={6} className="p-6 text-center text-gray-400">
+                <td colSpan={7} className="p-6 text-center text-gray-400">
                   Сессии не найдены
                 </td>
               </tr>
@@ -459,6 +516,17 @@ export default function Sessions() {
                       {statusLabel(s.status)}
                     </span>
                   </td>
+                  
+                  <td className="p-3">
+                    {s.is_archived ? (
+                      <span className="inline-flex px-3 py-1 rounded-full text-xs font-semibold bg-gray-500/20 text-gray-300 border border-gray-500/30">
+                        В архиве
+                      </span>
+                    ) : (
+                      <span className="text-gray-500">—</span>
+                    )}
+                  </td>
+
                   <td className="p-3">
                     <ActionMenuSession
                       onView={() => {
@@ -467,6 +535,8 @@ export default function Sessions() {
                       }}
                       onTerminate={() => handleTerminate(s)}
                       onAudit={() => handleAudit(s)}
+                      onArchive={() => handleArchive(s)}
+                      canArchive={s.status !== "active" && !s.is_archived}
                     />
                   </td>
                 </tr>

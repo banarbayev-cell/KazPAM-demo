@@ -172,6 +172,18 @@ export default function Users() {
     }
   };
 
+  const handleResetMfa = async (userId: number, userEmail?: string) => {
+    const email = userEmail ?? "неизвестный пользователь";
+
+    try {
+      await api.post(`/users/${userId}/reset-mfa`);
+      toast.success(`MFA для ${email} сброшена`);
+      fetchUsers();
+    } catch {
+      toast.error(`Ошибка сброса MFA для ${email}`);
+    }
+  };
+
   // ------------------------------
   // DELETE USER
   // ------------------------------
@@ -347,6 +359,7 @@ export default function Users() {
                       onDisable={() => handleDeactivateUser(user.id)}
                       onActivate={() => handleActivateUser(user.id)}
                       onResetPassword={() => handleResetPassword(user.id, user.email)}
+                      onResetMfa={() => handleResetMfa(user.id, user.email)}
                       onDelete={() => {
                         setUserToDelete(user);
                         setConfirmOpen(true);

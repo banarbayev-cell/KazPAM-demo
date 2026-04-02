@@ -30,6 +30,7 @@ interface UserProfile {
   email: string;
   is_active: boolean;
   mfa_enabled: boolean;
+  mfa_method?: string | null;
   last_login: string | null;
   roles: Array<{
     id: number;

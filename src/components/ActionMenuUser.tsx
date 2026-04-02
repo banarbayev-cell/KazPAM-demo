@@ -11,6 +11,7 @@ interface ActionMenuUserProps {
   onDisable?: () => void;
   onActivate?: () => void;
   onResetPassword: () => void;
+  onResetMfa: () => void;
   onDelete: () => void;
 }
 
@@ -20,6 +21,7 @@ export default function ActionMenuUser({
   onDisable,
   onActivate,
   onResetPassword,
+  onResetMfa,
   onDelete,
 }: ActionMenuUserProps) {
   return (
@@ -67,6 +69,10 @@ export default function ActionMenuUser({
 
         <DropdownMenuItem onClick={onResetPassword}>
           Сбросить пароль
+        </DropdownMenuItem>
+
+        <DropdownMenuItem onClick={onResetMfa}>
+          Сбросить MFA
         </DropdownMenuItem>
 
         <DropdownMenuItem

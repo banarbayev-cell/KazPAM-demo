@@ -1,6 +1,9 @@
 // src/components/modals/ProfileModal.tsx
 import { createPortal } from "react-dom";
 import { useAuth } from "../../store/auth";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
+import { mfaApi } from "../../api/mfa";
 
 /**
  * =====================================================
@@ -38,6 +41,12 @@ export default function ProfileModal({
 }: any) {
   const logout = useAuth((s) => s.logout);
   const authUser = useAuth((s) => s.user);
+  const fetchMe = useAuth((s) => s.fetchMe);
+
+  const [mfaLoading, setMfaLoading] = useState(false);
+  const [mfaSecret, setMfaSecret] = useState<string | null>(null);
+  const [mfaOtpUri, setMfaOtpUri] = useState<string | null>(null);
+  const [mfaCode, setMfaCode] = useState("");
 
   if (!open) return null;
 
@@ -64,7 +73,40 @@ export default function ProfileModal({
     user?.roles?.[0]?.name || "—";
 
   
+    const startTotpSetup = async () => {
+    try {
+      setMfaLoading(true);
+      const res = await mfaApi.enableTotp();
+      setMfaSecret(res.secret);
+      setMfaOtpUri(res.otpauth_uri);
+      toast.success("Секрет MFA сгенерирован. Добавьте его в Google Authenticator.");
+    } catch (e: any) {
+      toast.error(e?.message || "Не удалось начать настройку MFA");
+    } finally {
+      setMfaLoading(false);
+    }
+  };
 
+  const verifyTotp = async () => {
+    if (!mfaCode.trim()) {
+      toast.error("Введите MFA код");
+      return;
+    }
+
+    try {
+      setMfaLoading(true);
+      await mfaApi.verify(mfaCode.trim(), "totp");
+      setMfaCode("");
+      setMfaSecret(null);
+      setMfaOtpUri(null);
+      await fetchMe();
+      toast.success("MFA успешно включена");
+    } catch (e: any) {
+      toast.error(e?.message || "Неверный MFA код");
+    } finally {
+      setMfaLoading(false);
+    }
+  };
 
   return createPortal(
     <div className="fixed inset-0 z-[9999] flex items-center justify-center">
@@ -119,12 +161,76 @@ export default function ProfileModal({
             {formatDate(user.last_login)}
           </p>
 
-          <p>
+            <div>
             <span className="font-semibold text-[var(--text-primary)]">
               MFA:
             </span>{" "}
-            {user.mfa_enabled ? "Включено" : "Выключено"}
-          </p>
+            {user.mfa_enabled ? `Включено${user.mfa_method ? ` (${user.mfa_method})` : ""}` : "Выключено"}
+
+            {!user.mfa_enabled && (
+              <div className="mt-3 rounded-lg bg-[#0E1A3A] border border-[#1E2A45] p-3">
+                <p className="text-sm text-gray-300 mb-3">
+                  Настройте TOTP для Google Authenticator.
+                </p>
+
+                {!mfaSecret ? (
+                  <button
+                    onClick={startTotpSetup}
+                    disabled={mfaLoading}
+                    className="px-4 py-2 rounded-lg bg-[#0052FF] text-white hover:bg-[#0040cc] transition disabled:opacity-50"
+                  >
+                    {mfaLoading ? "Подготовка..." : "Настроить MFA"}
+                  </button>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="text-xs text-gray-400">
+                      Секрет для ручного ввода в Google Authenticator:
+                    </div>
+
+                    <div className="break-all rounded-md bg-[#121A33] border border-[#1E2A45] p-3 text-sm text-white">
+                      {mfaSecret}
+                    </div>
+
+                    {mfaOtpUri && (
+                      <div className="text-xs text-gray-500 break-all">
+                        otpauth URI: {mfaOtpUri}
+                      </div>
+                    )}
+
+                    <input
+                      type="text"
+                      value={mfaCode}
+                      onChange={(e) => setMfaCode(e.target.value)}
+                      placeholder="Введите 6-значный код"
+                      className="w-full bg-[#121A33] border border-[#1E2A45] rounded-lg px-3 py-2 text-white"
+                    />
+
+                    <div className="flex gap-2">
+                      <button
+                        onClick={verifyTotp}
+                        disabled={mfaLoading}
+                        className="px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 transition disabled:opacity-50"
+                      >
+                        Подтвердить
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          setMfaSecret(null);
+                          setMfaOtpUri(null);
+                          setMfaCode("");
+                        }}
+                        disabled={mfaLoading}
+                        className="px-4 py-2 rounded-lg bg-gray-700 text-white hover:bg-gray-600 transition disabled:opacity-50"
+                      >
+                        Отмена
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
 
           {/* 🔒 Усиление: permissions (read-only, безопасно) */}
           {Array.isArray(user.permissions) && (

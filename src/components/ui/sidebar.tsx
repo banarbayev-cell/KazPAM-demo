@@ -19,6 +19,12 @@ export default function Sidebar() {
           </NavLink>
         </Access>
 
+        <Access permission="view_incidents">
+          <NavLink to="/soc/incidents" className={navClass}>
+            Инциденты
+          </NavLink>
+        </Access>
+
         <Access permission="view_soc">
           <NavLink to="/soc/commands" className={navClass}>
             Команды сессий
@@ -49,7 +55,7 @@ export default function Sidebar() {
           Сессии
         </NavLink>
         
-        <div className="my-3 border-t border-white/10" />
+      
         <Access permission="view_soc">
           <NavLink to="/recordings" className={navClass}>
             Записи сессий

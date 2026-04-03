@@ -31,6 +31,7 @@ import IncidentDetails from "./pages/IncidentDetails";
 import Targets from "./pages/Targets";
 import Recordings from "./pages/Recordings";
 import SessionReplay from "./pages/SessionReplay";
+import Incidents from "./pages/Incidents";
 
 export default function App() {
   const loadFromStorage = useAuth((s) => s.loadFromStorage);
@@ -72,6 +73,7 @@ export default function App() {
 
           <Route path="dashboard" element={<Home />} />
           <Route path="soc" element={<SocDashboard />} />
+          <Route path="soc/incidents" element={<Incidents />} />
           <Route path="soc/commands" element={<SocCommands />} />
           <Route path="soc/incidents/:id" element={<IncidentDetails />} />
           <Route path="users" element={<Users />} />

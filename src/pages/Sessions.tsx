@@ -445,7 +445,7 @@ export default function Sessions() {
     <div className="p-6 w-full bg-gray-100 text-gray-900">
       <h1 className="text-3xl font-bold mb-4">Пользовательские сессии</h1>
 
-    <div className="mb-6 flex flex-wrap gap-3 items-center"></div>
+    <div className="mb-6 flex flex-wrap gap-3 items-center">
       <button
         onClick={() => setStartOpen(true)}
         className="px-4 py-2 bg-[#0052FF] text-white rounded"
@@ -466,6 +466,27 @@ export default function Sessions() {
       >
         Экспорт JSON
       </button>
+
+      <select
+        value={archiveMode}
+        onChange={(e) => setArchiveMode(e.target.value as "main" | "archived")}
+        className="px-3 py-2 rounded border bg-white text-gray-900"
+      >
+        <option value="main">Основной список</option>
+        <option value="archived">Архив</option>
+      </select>
+
+      <select
+        value={statusFilter}
+        onChange={(e) => setStatusFilter(e.target.value)}
+        className="px-3 py-2 rounded border bg-white text-gray-900"
+      >
+        <option value="all">Все статусы</option>
+        <option value="active">Активные</option>
+        <option value="terminated">Завершённые</option>
+        <option value="failed">Ошибки</option>
+      </select>
+    </div>
 
       <Input
         placeholder="Поиск по пользователю, системе или IP..."

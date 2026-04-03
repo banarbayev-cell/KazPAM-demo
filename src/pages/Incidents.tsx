@@ -13,7 +13,7 @@ import { formatKzDateTime } from "../utils/time";
 function statusClass(status: string) {
   const s = (status || "").toUpperCase();
 
-  if (s === "OPEN") {
+  if (s === "OPEN" || s === "ESCALATED") {
     return "bg-red-500/20 text-red-300 border border-red-500/30";
   }
 
@@ -47,7 +47,7 @@ function severityClass(severity: string) {
 }
 
 function nextStatus(item: IncidentItem): IncidentStatus {
-  if (item.status === "OPEN") return "INVESTIGATING";
+  if (item.status === "OPEN" || item.status === "ESCALATED") return "INVESTIGATING";
   if (item.status === "INVESTIGATING") return "CLOSED";
   return "OPEN";
 }
@@ -147,6 +147,7 @@ export default function Incidents() {
           <option value="INVESTIGATING">INVESTIGATING</option>
           <option value="RESOLVED">RESOLVED</option>
           <option value="CLOSED">CLOSED</option>
+          <option value="ESCALATED">ESCALATED</option>
         </select>
 
         <select
@@ -159,6 +160,7 @@ export default function Incidents() {
           <option value="MEDIUM">MEDIUM</option>
           <option value="HIGH">HIGH</option>
           <option value="CRITICAL">CRITICAL</option>
+          <option value="ESCALATED">ESCALATED</option>
         </select>
       </div>
 

@@ -6,8 +6,14 @@ import { API_URL } from "../api/config";
 import { useAuth } from "../store/auth";
 import { fetchIncidentTimelineV3, TimelineV3 } from "../api/incidentsV3";
 import { fetchIncidentActions, IncidentAction } from "../api/incidentActions";
+import { formatKzDateTime } from "../utils/time";
 
-type IncidentStatus = "OPEN" | "INVESTIGATING" | "RESOLVED" | "CLOSED";
+type IncidentStatus =
+  | "OPEN"
+  | "INVESTIGATING"
+  | "RESOLVED"
+  | "CLOSED"
+  | "ESCALATED";
 
 interface BackendIncident {
   id: number;
@@ -31,9 +37,6 @@ function uebaBadge(level?: string) {
   return "text-gray-200 border-[#1E2A45]";
 }
 
-// ============================
-// UI HELPERS (SAFE, READ-ONLY)
-// ============================
 function riskColor(score: number) {
   if (!Number.isFinite(score)) return "bg-gray-600";
   if (score >= 90) return "bg-red-500";
@@ -43,9 +46,10 @@ function riskColor(score: number) {
 }
 
 function safeDate(value?: string | null) {
-  if (!value) return "—";
-  const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString();
+  return formatKzDateTime(value, {
+    seconds: true,
+    naiveInput: "utc",
+  });
 }
 
 function copy(value: string) {
@@ -63,6 +67,7 @@ function geoFromIp(ip?: string) {
   if (ip.startsWith("119.")) return "Vietnam";
   if (ip.startsWith("81.")) return "Russia";
   if (ip.startsWith("95.")) return "Kazakhstan";
+  if (ip.startsWith("46.")) return "Kazakhstan";
   return "Unknown";
 }
 
@@ -71,6 +76,7 @@ function asnFromIp(ip?: string) {
   if (ip.startsWith("119.")) return "VNPT";
   if (ip.startsWith("81.")) return "Ростелеком";
   if (ip.startsWith("95.")) return "Kazakhtelecom";
+  if (ip.startsWith("46.")) return "Kazakhtelecom";
   return "Unknown";
 }
 
@@ -82,7 +88,69 @@ function severityBadge(sev?: string) {
   return "text-gray-200 border-[#1E2A45]";
 }
 
-type MitreItem = { technique: string; name: string; why: string };
+function getEventTimeRaw(item: any) {
+  return (
+    item?.event_time ||
+    item?.timestamp ||
+    item?.start_time ||
+    item?.created_at ||
+    null
+  );
+}
+
+function getEventTitle(item: any) {
+  if (item?.title) return item.title;
+
+  if (item?.type === "audit") {
+    return item?.action || "Audit event";
+  }
+
+  if (item?.type === "session") {
+    return `Session #${item?.session_id ?? "?"}`;
+  }
+
+  if (item?.type === "incident") {
+    return `Incident #${item?.incident_id ?? "?"}`;
+  }
+
+  return "Event";
+}
+
+function getEventSubtitle(item: any) {
+  if (item?.subtitle) return item.subtitle;
+
+  if (item?.type === "audit") {
+    return item?.user || "";
+  }
+
+  if (item?.type === "session") {
+    return [item?.system, item?.status].filter(Boolean).join(" · ");
+  }
+
+  if (item?.type === "incident") {
+    return item?.summary || "";
+  }
+
+  return "";
+}
+
+function getTimelineKey(item: any, index: number) {
+  return [
+    item?.type || "event",
+    item?.incident_id ?? "",
+    item?.session_id ?? "",
+    item?.action ?? "",
+    item?.timestamp ?? "",
+    item?.event_time ?? "",
+    index,
+  ].join("-");
+}
+
+type MitreItem = {
+  technique: string;
+  name: string;
+  why: string;
+};
 
 export default function IncidentDetails() {
   const { id } = useParams<{ id: string }>();
@@ -100,9 +168,6 @@ export default function IncidentDetails() {
     return Number.isFinite(n) ? n : null;
   }, [id]);
 
-  // ============================
-  // LOAD INCIDENT + UEBA V3 (READ-ONLY)
-  // ============================
   useEffect(() => {
     if (!token || !incidentId) return;
 
@@ -111,15 +176,17 @@ export default function IncidentDetails() {
         setLoading(true);
         setError(null);
 
-        // 1️⃣ Incident header
         const res = await fetch(`${API_URL}/incidents/${incidentId}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
-        if (!res.ok) throw new Error(`Failed to load incident (${res.status})`);
+
+        if (!res.ok) {
+          throw new Error(`Failed to load incident (${res.status})`);
+        }
+
         const data = await res.json();
         setIncident(data);
 
-        // 2️⃣ UEBA v3 (optional)
         try {
           const v3 = await fetchIncidentTimelineV3(incidentId);
           setTimelineV3(v3);
@@ -127,7 +194,6 @@ export default function IncidentDetails() {
           setTimelineV3(null);
         }
 
-        // 3️⃣ SOC actions history (audit-based, safe)
         try {
           const a = await fetchIncidentActions(incidentId);
           setActions(a);
@@ -144,18 +210,22 @@ export default function IncidentDetails() {
     load();
   }, [incidentId, token]);
 
-  // ============================
-  // DERIVED (NO HOOKS BELOW RETURNS)
-  // ============================
   const ueba = timelineV3?.ueba;
   const signals = timelineV3?.signals || [];
   const timeline = timelineV3?.timeline || [];
+  const incidentContext = (timelineV3 as any)?.incident_context || {};
 
-  // ============================
-  // ENRICHMENT (UI-ONLY, SAFE)
-  // ============================
+  const displayedCreatedAt = useMemo(() => {
+    return incidentContext?.created_at || safeDate(incident?.created_at) || "—";
+  }, [incidentContext, incident]);
+
+  const displayedClosedAt = useMemo(() => {
+    return incidentContext?.closed_at || safeDate(incident?.closed_at) || null;
+  }, [incidentContext, incident]);
+
   const attackStages = useMemo(() => {
     if (!incident) return [];
+
     const list: string[] = [];
 
     actions.forEach((a) => {
@@ -164,8 +234,9 @@ export default function IncidentDetails() {
       if (a.action === "LOGIN_RISK_POST_AUTH") list.push("Account takeover");
       if (a.action === "PASSWORD_CHANGED") list.push("Credential rotation");
       if (a.action === "user.password_reset") list.push("Password reset");
-      if (a.action === "user.password_reset" || a.action === "PASSWORD_CHANGED")
+      if (a.action === "user.password_reset" || a.action === "PASSWORD_CHANGED") {
         list.push("Recovery / rotation");
+      }
     });
 
     if ((incident.correlation_id || "").toLowerCase().includes("auth_compromise")) {
@@ -177,10 +248,9 @@ export default function IncidentDetails() {
 
   const mitre = useMemo<MitreItem[]>(() => {
     if (!incident) return [];
-    const out: MitreItem[] = [];
-    
 
-    
+    const out: MitreItem[] = [];
+
     const add = (technique: string, name: string, why: string) => {
       const key = `${technique}|${name}`;
       if (!out.some((x) => `${x.technique}|${x.name}` === key)) {
@@ -188,12 +258,15 @@ export default function IncidentDetails() {
       }
     };
 
-    const explain = timelineV3?.ueba?.explain || [];
-    explain.forEach((line) => {
+    const explain = (timelineV3 as any)?.ueba?.explain || [];
+
+    explain.forEach((line: string) => {
       const l = (line || "").toLowerCase();
+
       if (l.includes("privileged user") || l.includes("admin")) {
         add("T1078", "Valid Accounts", "Privileged account involvement");
       }
+
       if (l.includes("correlation")) {
         add(
           "T1589",
@@ -204,15 +277,23 @@ export default function IncidentDetails() {
     });
 
     const actionSet = new Set(actions.map((a) => a.action));
+
     if (actionSet.has("LOGIN_FAIL")) {
       add("T1110", "Brute Force", "Multiple failed login attempts observed");
     }
+
     if (actionSet.has("LOGIN_SUCCESS") && actionSet.has("LOGIN_FAIL")) {
       add("T1078", "Valid Accounts", "Successful authentication after failures");
     }
+
     if (actionSet.has("PASSWORD_CHANGED") || actionSet.has("user.password_reset")) {
-      add("T1098", "Account Manipulation", "Password change / reset activity recorded");
+      add(
+        "T1098",
+        "Account Manipulation",
+        "Password change / reset activity recorded"
+      );
     }
+
     if (actionSet.has("LOGIN_RISK_POST_AUTH")) {
       add(
         "T1556",
@@ -224,29 +305,6 @@ export default function IncidentDetails() {
     return out;
   }, [actions, timelineV3, incident]);
 
-
-  // ✅ ДОБАВИТЬ ЭТОТ БЛОК
-const graph = useMemo(() => {
-  if (!incident) {
-    return { nodes: [], edges: [] };
-  }
-
-  const nodes = [
-    { id: "user", label: incident.user || "—" },
-    { id: "ip", label: incident.ip || "—" },
-    { id: "system", label: incident.system || "—" },
-    { id: "incident", label: `Incident #${incident.id}` },
-  ];
-
-  const edges = [
-    { from: "user", to: "ip" },
-    { from: "ip", to: "system" },
-    { from: "system", to: "incident" },
-  ];
-
-  return { nodes, edges };
-}, [incident]);
-
   const ioc = useMemo(() => {
     if (!incident) {
       return {
@@ -257,17 +315,12 @@ const graph = useMemo(() => {
         correlation_id: "—",
       };
     }
-    
-    const ip = incident.ip || "—";
-    const user = incident.user || "—";
-    const system = incident.system || "—";
 
-    let fingerprint = "—";
-    const cid = incident.correlation_id || "";
-    if (cid) {
-      // best-effort only (keeps UI stable)
-      fingerprint = cid;
-    }
+    const ip = incidentContext?.source_ip || incident.ip || "—";
+    const user = incidentContext?.user || incident.user || "—";
+    const system = incidentContext?.system || incident.system || "—";
+    const fingerprint =
+      incidentContext?.fingerprint || incident.correlation_id || "—";
 
     return {
       ip,
@@ -276,11 +329,8 @@ const graph = useMemo(() => {
       fingerprint,
       correlation_id: incident.correlation_id || "—",
     };
-  }, [incident]);
+  }, [incident, incidentContext]);
 
-  // ============================
-  // RENDER
-  // ============================
   if (loading) {
     return <div className="p-8 text-sm text-gray-400">Loading incident…</div>;
   }
@@ -307,9 +357,10 @@ const graph = useMemo(() => {
           <h1 className="text-2xl font-semibold text-white">
             Incident #{incident.id}
           </h1>
+
           <div className="mt-2 text-sm text-gray-400">
-            Created: {incident.created_at}
-            {incident.closed_at && <> · Closed: {incident.closed_at}</>}
+            Created: {displayedCreatedAt}
+            {displayedClosedAt && <> · Closed: {displayedClosedAt}</>}
           </div>
         </div>
 
@@ -342,9 +393,9 @@ const graph = useMemo(() => {
           </div>
         </div>
 
-        {/* Risk score (enhanced) */}
         <div className="col-span-2">
           <div className="text-sm text-gray-400 mb-1">Risk score</div>
+
           <div className="flex items-center gap-4">
             <div className="text-lg font-semibold text-white">
               {incident.risk_score}
@@ -380,17 +431,24 @@ const graph = useMemo(() => {
         <div className="grid grid-cols-3 gap-4 text-sm">
           <div>
             <div className="text-gray-400">User</div>
-            <div className="text-white">{incident.user}</div>
+            <div className="text-white">{incidentContext?.user || incident.user || "—"}</div>
           </div>
 
           <div>
             <div className="text-gray-400">System</div>
-            <div className="text-white">{incident.system}</div>
+            <div className="text-white">{incidentContext?.system || incident.system || "—"}</div>
           </div>
 
           <div>
             <div className="text-gray-400">Source IP</div>
-            <div className="text-white">{incident.ip}</div>
+            <div className="text-white">{incidentContext?.source_ip || incident.ip || "Unknown"}</div>
+          </div>
+
+          <div className="col-span-3">
+            <div className="text-gray-400">Device</div>
+            <div className="text-white break-all">
+              {incidentContext?.user_agent || "Unknown"}
+            </div>
           </div>
         </div>
 
@@ -400,153 +458,132 @@ const graph = useMemo(() => {
       </div>
 
       {/* IOC PANEL */}
-<div className="border border-[#1E2A45] rounded-xl bg-[#121A33] p-6 space-y-4">
-  <div className="text-sm text-gray-400 font-semibold">
-    Indicators of Compromise
-  </div>
+      <div className="border border-[#1E2A45] rounded-xl bg-[#121A33] p-6 space-y-4">
+        <div className="text-sm text-gray-400 font-semibold">
+          Indicators of Compromise
+        </div>
 
-  <div className="grid grid-cols-3 gap-4 text-sm">
+        <div className="grid grid-cols-3 gap-4 text-sm">
+          <div>
+            <div className="text-gray-400">Source IP</div>
+            <div className="flex items-center gap-2 text-white break-all">
+              {ioc.ip}
+              <button
+                onClick={() => copy(ioc.ip)}
+                className="text-xs text-gray-400 hover:text-white"
+              >
+                copy
+              </button>
+              <button
+                onClick={() => pivot("/soc", ioc.ip, navigate)}
+                className="text-xs text-blue-400 hover:text-blue-200"
+              >
+                investigate
+              </button>
+            </div>
+          </div>
 
-    <div>
-      <div className="text-gray-400">Source IP</div>
-      <div className="flex items-center gap-2 text-white break-all">
-        {ioc.ip}
-        <button
-          onClick={() => copy(ioc.ip)}
-          className="text-xs text-gray-400 hover:text-white"
-        >
-          copy
-        </button>
+          <div>
+            <div className="text-gray-400">Target User</div>
+            <div className="flex items-center gap-2 text-white">
+              {ioc.user}
+              <button
+                onClick={() => copy(ioc.user)}
+                className="text-xs text-gray-400 hover:text-white"
+              >
+                copy
+              </button>
+            </div>
+          </div>
 
-        <button
-          onClick={() => pivot("/soc", ioc.ip, navigate)}
-          className="text-xs text-blue-400 hover:text-blue-200"
-        >
-          investigate
-        </button>
+          <div>
+            <div className="text-gray-400">System</div>
+            <div className="flex items-center gap-2 text-white">
+              {ioc.system}
+              <button
+                onClick={() => copy(ioc.system)}
+                className="text-xs text-gray-400 hover:text-white"
+              >
+                copy
+              </button>
+            </div>
+          </div>
+
+          <div className="col-span-3">
+            <div className="text-gray-400">Correlation fingerprint</div>
+            <div className="flex items-center gap-2 text-xs text-white break-all">
+              {ioc.fingerprint}
+              <button
+                onClick={() => copy(ioc.fingerprint)}
+                className="text-xs text-gray-400 hover:text-white"
+              >
+                copy
+              </button>
+              <button
+                onClick={() => pivot("/soc", ioc.fingerprint, navigate)}
+                className="text-xs text-blue-400 hover:text-blue-200"
+              >
+                investigate
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
-    </div>
 
-    <div>
-      <div className="text-gray-400">Target User</div>
-      <div className="flex items-center gap-2 text-white">
-        {ioc.user}
-        <button
-          onClick={() => copy(ioc.user)}
-          className="text-xs text-gray-400 hover:text-white"
-        >
-          copy
-        </button>
-      </div>
-    </div>
-
-    <div>
-      <div className="text-gray-400">System</div>
-      <div className="flex items-center gap-2 text-white">
-        {ioc.system}
-        <button
-          onClick={() => copy(ioc.system)}
-          className="text-xs text-gray-400 hover:text-white"
-        >
-          copy
-        </button>
-      </div>
-    </div>
-
-    <div className="col-span-3">
-      <div className="text-gray-400">Correlation fingerprint</div>
-      <div className="flex items-center gap-2 text-xs text-white break-all">
-        {ioc.fingerprint}
-        <button
-          onClick={() => copy(ioc.fingerprint)}
-          className="text-xs text-gray-400 hover:text-white"
-        >
-          copy
-        </button>
-
-        <button
-          onClick={() => pivot("/soc", ioc.fingerprint, navigate)}
-          className="text-xs text-blue-400 hover:text-blue-200"
-        >
-          investigate
-        </button>
-      </div>
-    </div>
-
-  </div>
-</div>
-   
       {/* IP INTELLIGENCE */}
-<div className="border border-[#1E2A45] rounded-xl bg-[#121A33] p-6 space-y-4">
-  <div className="text-sm text-gray-400 font-semibold">
-    IP Intelligence
-  </div>
+      <div className="border border-[#1E2A45] rounded-xl bg-[#121A33] p-6 space-y-4">
+        <div className="text-sm text-gray-400 font-semibold">IP Intelligence</div>
 
-  <div className="grid grid-cols-3 gap-4 text-sm">
+        <div className="grid grid-cols-3 gap-4 text-sm">
+          <div>
+            <div className="text-gray-400">IP</div>
+            <div className="text-white">{ioc.ip}</div>
+          </div>
 
-    <div>
-      <div className="text-gray-400">IP</div>
-      <div className="text-white">{ioc.ip}</div>
-    </div>
+          <div>
+            <div className="text-gray-400">Geo</div>
+            <div className="text-white">{geoFromIp(ioc.ip)}</div>
+          </div>
 
-    <div>
-      <div className="text-gray-400">Geo</div>
-      <div className="text-white">
-        {geoFromIp(ioc.ip)}
+          <div>
+            <div className="text-gray-400">ASN</div>
+            <div className="text-white">{asnFromIp(ioc.ip)}</div>
+          </div>
+        </div>
       </div>
-    </div>
 
-    <div>
-      <div className="text-gray-400">ASN</div>
-      <div className="text-white">
-        {asnFromIp(ioc.ip)}
-      </div>
-    </div>
-
-  </div>
-</div> 
-    
       {/* THREAT GRAPH */}
-<div className="border border-[#1E2A45] rounded-xl bg-[#121A33] p-6 space-y-4">
-  <div className="text-sm text-gray-400 font-semibold">
-    Threat Graph
-  </div>
+      <div className="border border-[#1E2A45] rounded-xl bg-[#121A33] p-6 space-y-4">
+        <div className="text-sm text-gray-400 font-semibold">Threat Graph</div>
 
-  <div className="overflow-x-auto">
-    <svg width="600" height="120">
+        <div className="overflow-x-auto">
+          <svg width="700" height="120">
+            <line x1="80" y1="60" x2="220" y2="60" stroke="#2A3A5A" strokeWidth="2" />
+            <line x1="300" y1="60" x2="440" y2="60" stroke="#2A3A5A" strokeWidth="2" />
+            <line x1="520" y1="60" x2="660" y2="60" stroke="#2A3A5A" strokeWidth="2" />
 
-      {/* edges */}
-      <line x1="80" y1="60" x2="220" y2="60" stroke="#2A3A5A" strokeWidth="2"/>
-      <line x1="300" y1="60" x2="440" y2="60" stroke="#2A3A5A" strokeWidth="2"/>
-      <line x1="520" y1="60" x2="640" y2="60" stroke="#2A3A5A" strokeWidth="2"/>
+            <rect x="0" y="40" width="160" height="40" rx="6" fill="#0E1A3A" stroke="#1E2A45" />
+            <text x="80" y="65" textAnchor="middle" fill="white" fontSize="12">
+              {ioc.user}
+            </text>
 
-      {/* user */}
-      <rect x="0" y="40" width="160" height="40" rx="6" fill="#0E1A3A" stroke="#1E2A45"/>
-      <text x="80" y="65" textAnchor="middle" fill="white" fontSize="12">
-        {ioc.user}
-      </text>
+            <rect x="160" y="40" width="160" height="40" rx="6" fill="#0E1A3A" stroke="#1E2A45" />
+            <text x="240" y="65" textAnchor="middle" fill="white" fontSize="12">
+              {ioc.ip}
+            </text>
 
-      {/* ip */}
-      <rect x="160" y="40" width="160" height="40" rx="6" fill="#0E1A3A" stroke="#1E2A45"/>
-      <text x="240" y="65" textAnchor="middle" fill="white" fontSize="12">
-        {ioc.ip}
-      </text>
+            <rect x="320" y="40" width="160" height="40" rx="6" fill="#0E1A3A" stroke="#1E2A45" />
+            <text x="400" y="65" textAnchor="middle" fill="white" fontSize="12">
+              {ioc.system}
+            </text>
 
-      {/* system */}
-      <rect x="320" y="40" width="160" height="40" rx="6" fill="#0E1A3A" stroke="#1E2A45"/>
-      <text x="400" y="65" textAnchor="middle" fill="white" fontSize="12">
-        {ioc.system}
-      </text>
-
-      {/* incident */}
-      <rect x="480" y="40" width="160" height="40" rx="6" fill="#0E1A3A" stroke="#1E2A45"/>
-      <text x="560" y="65" textAnchor="middle" fill="white" fontSize="12">
-        Incident #{incident.id}
-      </text>
-
-    </svg>
-  </div>
-</div>
+            <rect x="480" y="40" width="180" height="40" rx="6" fill="#0E1A3A" stroke="#1E2A45" />
+            <text x="570" y="65" textAnchor="middle" fill="white" fontSize="12">
+              Incident #{incident.id}
+            </text>
+          </svg>
+        </div>
+      </div>
 
       {/* MITRE ATT&CK */}
       <div className="border border-[#1E2A45] rounded-xl bg-[#121A33] p-6 space-y-4">
@@ -612,16 +649,15 @@ const graph = useMemo(() => {
           <div>
             <div className="text-sm text-gray-400">Window</div>
             <div className="text-sm text-white">
-              expand: {timelineV3?.window_minutes?.sessions_expand ?? "—"}m ·
-              fallback:{" "}
-              {timelineV3?.window_minutes?.fallback_around_incident ?? "—"}m
+              expand: {(timelineV3 as any)?.window_minutes?.sessions_expand ?? "—"}m ·
+              fallback: {(timelineV3 as any)?.window_minutes?.fallback_around_incident ?? "—"}m
             </div>
           </div>
         </div>
 
-        {ueba?.explain?.length ? (
+        {(ueba as any)?.explain?.length ? (
           <ul className="pt-2 text-sm text-gray-400 space-y-1">
-            {ueba.explain.map((x) => (
+            {(ueba as any).explain.map((x: string) => (
               <li key={x}>• {x}</li>
             ))}
           </ul>
@@ -637,7 +673,7 @@ const graph = useMemo(() => {
         {signals.length === 0 ? (
           <div className="text-sm text-gray-500">No signals.</div>
         ) : (
-          signals.map((s) => (
+          signals.map((s: any) => (
             <div
               key={s.code}
               className="border border-[#1E2A45] rounded-lg p-4 bg-[#0E1A3A]"
@@ -681,27 +717,49 @@ const graph = useMemo(() => {
         )}
       </div>
 
-      {/* TIMELINE — FACTS ONLY */}
+      {/* TIMELINE */}
       <div className="border border-[#1E2A45] rounded-xl bg-[#121A33] p-6 space-y-4">
         <div className="text-sm text-gray-400 font-semibold">Incident Timeline</div>
 
         {timeline.length === 0 ? (
           <div className="text-sm text-gray-500">No timeline data.</div>
         ) : (
-          <ul className="text-sm text-gray-300 space-y-2">
-            {timeline.map((e: any, i: number) => (
-              <li key={i}>
-                •{" "}
-                {e.type === "session"
-                  ? `Session #${e.session_id} (${e.status})`
-                  : `Incident created (${e.severity})`}
-              </li>
-            ))}
-          </ul>
+          <div className="space-y-3">
+            {timeline.map((e: any, i: number) => {
+              const timeRaw = getEventTimeRaw(e);
+              const title = getEventTitle(e);
+              const subtitle = getEventSubtitle(e);
+
+              return (
+                <div
+                  key={getTimelineKey(e, i)}
+                  className="border border-[#1E2A45] rounded-lg p-3 bg-[#0E1A3A]"
+                >
+                  <div className="text-xs text-gray-400">
+                    {safeDate(timeRaw) || "—"}
+                  </div>
+
+                  <div className="mt-1 text-sm font-semibold text-white">
+                    {title}
+                  </div>
+
+                  {subtitle ? (
+                    <div className="mt-1 text-xs text-gray-300">{subtitle}</div>
+                  ) : null}
+
+                  {e?.type === "audit" && e?.meta?.ip ? (
+                    <div className="mt-2 text-xs text-gray-400">
+                      IP: {e.meta.ip}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
         )}
       </div>
 
-      {/* ACTIONS HISTORY (AUDIT) */}
+      {/* ACTIONS HISTORY */}
       <div className="border border-[#1E2A45] rounded-xl bg-[#121A33] p-6 space-y-4">
         <div className="text-sm text-gray-400 font-semibold">SOC Actions History</div>
 

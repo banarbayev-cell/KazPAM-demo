@@ -2,7 +2,8 @@ export type IncidentStatus =
   | "OPEN"
   | "INVESTIGATING"
   | "CLOSED"
-  | "RESOLVED"; // backend-compatible
+  | "RESOLVED"
+  | "ESCALATED";
 
 export interface IncidentAction {
   type:

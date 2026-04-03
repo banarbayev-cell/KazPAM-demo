@@ -61,6 +61,123 @@ function safeTime(value?: string) {
   });
 }
 
+function tryParseJson(value: any) {
+  if (!value) return null;
+  if (typeof value === "object") return value;
+
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
+function extractSourceMeta(details: any) {
+  const d = tryParseJson(details);
+  const source = d?.source ?? null;
+
+  return {
+    ip:
+      d?.source_ip ||
+      d?.ip ||
+      d?.client_ip ||
+      source?.ip ||
+      null,
+    userAgent:
+      d?.user_agent ||
+      d?.device ||
+      source?.user_agent ||
+      null,
+    fingerprint:
+      d?.fingerprint ||
+      source?.fingerprint ||
+      null,
+  };
+}
+
+function parseCorrelationMeta(correlationId?: string | null) {
+  if (!correlationId) {
+    return {
+      ip: null as string | null,
+      userAgent: null as string | null,
+      fingerprint: null as string | null,
+    };
+  }
+
+  // auth_compromise:user@x.kz:81.88.148.18|Mozilla/...:1770
+  const parts = correlationId.split(":");
+  if (parts.length < 3) {
+    return {
+      ip: null,
+      userAgent: null,
+      fingerprint: null,
+    };
+  }
+
+  const payload = parts.slice(2).join(":");
+  const lastColonIndex = payload.lastIndexOf(":");
+  const body = lastColonIndex >= 0 ? payload.slice(0, lastColonIndex) : payload;
+
+  const pipeIndex = body.indexOf("|");
+  if (pipeIndex === -1) {
+    return {
+      ip: body || null,
+      userAgent: null,
+      fingerprint: body || null,
+    };
+  }
+
+  const ip = body.slice(0, pipeIndex) || null;
+  const userAgent = body.slice(pipeIndex + 1) || null;
+
+  return {
+    ip,
+    userAgent,
+    fingerprint: body || null,
+  };
+}
+
+function normalizeDisplay(value?: string | null) {
+  const v = (value || "").trim();
+  if (!v) return "—";
+
+  const lower = v.toLowerCase();
+  if (lower === "unknown" || lower === "null" || lower === "undefined") {
+    return "—";
+  }
+
+  return v;
+}
+
+function geoFromIp(ip?: string | null) {
+  const value = normalizeDisplay(ip);
+  if (value === "—") return "—";
+
+  if (value.startsWith("119.")) return "Vietnam";
+  if (value.startsWith("81.")) return "Russia";
+  if (value.startsWith("95.")) return "Kazakhstan";
+  if (value.startsWith("46.")) return "Kazakhstan";
+  if (value.startsWith("145.")) return "Kazakhstan";
+  if (value.startsWith("188.")) return "Kazakhstan";
+  if (value.startsWith("212.")) return "Kazakhstan";
+
+  return "—";
+}
+
+function formatDevice(userAgent?: string | null) {
+  const raw = normalizeDisplay(userAgent);
+  if (raw === "—") return "—";
+
+  const parsed = parseUserAgent(raw);
+  if (!parsed) return raw;
+
+  const normalizedParsed = parsed.trim().toLowerCase();
+  if (normalizedParsed === "unknown") {
+    return raw;
+  }
+
+  return parsed;
+}
 
 
 type RbacError =
@@ -381,50 +498,117 @@ if (!alreadyRestoredThisSession) {
   // SOC FILTER (MVP)
   // ============================
   const suspiciousLogs = useMemo(() => {
-    return auditLogs.filter((log) =>
-      ["LOGIN", "DENY", "FAILED", "PRIVILEGE", "FORBIDDEN"].some((k) =>
+    const base = auditLogs.filter((log) =>
+      ["LOGIN", "DENY", "FAILED", "PRIVILEGE", "FORBIDDEN", "PASSWORD"].some((k) =>
         log.action?.toUpperCase().includes(k)
       )
     );
-  }, [auditLogs]);
+
+    const active = summary?.incident;
+    if (!active) return base;
+
+    const parsedCorrelation = parseCorrelationMeta(active.correlation_id);
+    const targetIp =
+      normalizeDisplay(active.ip) !== "—"
+        ? active.ip
+        : parsedCorrelation.ip;
+
+    const targetUser = (active.user || "").toLowerCase();
+    const createdAtMs = active.created_at ? new Date(active.created_at).getTime() : NaN;
+    const windowMs = 15 * 60 * 1000;
+
+    const scoped = base.filter((log) => {
+      const src = extractSourceMeta(log.details);
+
+    const sameUser =
+      !!targetUser && (log.user || "").toLowerCase() === targetUser;
+
+    const sameIp =
+      !!targetIp && normalizeDisplay(src.ip) !== "—" && src.ip === targetIp;
+
+    const ts = log.timestamp ? new Date(log.timestamp).getTime() : NaN;
+    const inWindow =
+      Number.isFinite(createdAtMs) && Number.isFinite(ts)
+        ? Math.abs(ts - createdAtMs) <= windowMs
+        : true;
+
+    return (sameUser || sameIp) && inWindow;
+  });
+
+  return scoped.length ? scoped : base;
+}, [auditLogs, summary]);
 
   // ============================
   // BUILD RECORD FOR MODAL
   // ============================
   const record = useMemo(() => {
-    const firstWithIp = suspiciousLogs.find((log) => {
-      try {
-        const d =
-          typeof log.details === "string" ? JSON.parse(log.details) : log.details;
-        return d?.source_ip;
-      } catch {
-        return false;
-      }
-    });
+  const active = summary?.incident;
+  const correlationMeta = parseCorrelationMeta(active?.correlation_id);
 
-    const first = firstWithIp || suspiciousLogs[0];
+  const enriched = suspiciousLogs.map((log) => ({
+    log,
+    src: extractSourceMeta(log.details),
+  }));
 
-    const rawDetails = first?.details;
-    let details: any = null;
+  const prioritized = [...enriched].sort((a, b) => {
+    const aAction = (a.log.action || "").toUpperCase();
+    const bAction = (b.log.action || "").toUpperCase();
 
-    try {
-      details = typeof rawDetails === "string" ? JSON.parse(rawDetails) : rawDetails;
-    } catch {
-      details = null;
-    }
+    const aPriority =
+      aAction.includes("LOGIN_FAIL") || aAction.includes("LOGIN_SUCCESS") ? 2 : 1;
+    const bPriority =
+      bAction.includes("LOGIN_FAIL") || bAction.includes("LOGIN_SUCCESS") ? 2 : 1;
 
-    return {
-      user: first?.user || "unknown",
-      ip: details?.source_ip || details?.source?.ip || "unknown",
-      location: details?.location || "Unknown",
-      device: parseUserAgent(details?.device || details?.source?.user_agent),
+    if (aPriority !== bPriority) return bPriority - aPriority;
 
-      // ВАЖНО: используем timestamp (как вы фиксировали)
-      events: suspiciousLogs.map((e) =>
-        sanitizeText(`${safeTime(e.timestamp) || e.timestamp} — ${e.action}`)
-      ),
-    };
-  }, [suspiciousLogs]);
+    const aTs = a.log.timestamp ? new Date(a.log.timestamp).getTime() : 0;
+    const bTs = b.log.timestamp ? new Date(b.log.timestamp).getTime() : 0;
+
+    return bTs - aTs;
+  });
+
+  const firstWithContext =
+    prioritized.find((item) => normalizeDisplay(item.src.ip) !== "—") ||
+    prioritized.find((item) => normalizeDisplay(item.src.userAgent) !== "—") ||
+    null;
+
+  const bestIp =
+    normalizeDisplay(active?.ip) !== "—"
+      ? active?.ip
+      : correlationMeta.ip || firstWithContext?.src.ip || null;
+
+  const bestUserAgent =
+    correlationMeta.userAgent || firstWithContext?.src.userAgent || null;
+
+  const eventWhitelist = new Set([
+    "LOGIN_FAIL",
+    "LOGIN_SUCCESS",
+    "LOGIN_RISK_EVALUATED",
+    "LOGIN_RISK_POST_AUTH",
+    "PASSWORD_CHANGED",
+    "PASSWORD_RESET_REQUEST",
+    "PASSWORD_RESET_ISSUED",
+    "PASSWORD_CHANGE_FAIL",
+  ]);
+
+  const events = suspiciousLogs
+    .filter((e) => eventWhitelist.has((e.action || "").toUpperCase()))
+    .sort((a, b) => {
+      const aTs = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+      const bTs = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+      return bTs - aTs;
+    })
+    .slice(0, 50)
+    .map((e) => sanitizeText(`${safeTime(e.timestamp) || e.timestamp} — ${e.action}`));
+
+  return {
+    user: normalizeDisplay(active?.user || firstWithContext?.log.user || "—"),
+    ip: normalizeDisplay(bestIp),
+    location: geoFromIp(bestIp),
+    device: formatDevice(bestUserAgent),
+    events,
+  };
+}, [summary, suspiciousLogs]);
 
   // ============================
   // RISK SCORE

@@ -350,23 +350,23 @@ export default function IncidentDetails() {
   }
 
   return (
-    <div className="p-8 space-y-8">
+    <div className="min-h-screen bg-gray-100 p-8 space-y-8 text-[#0A0F24]">
       {/* HEADER */}
-      <div className="flex items-start justify-between">
+      <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-white">
+          <h1 className="text-2xl font-semibold text-[#0A0F24]">
             Incident #{incident.id}
           </h1>
 
-          <div className="mt-2 text-sm text-gray-400">
+          <div className="mt-2 text-sm text-gray-600">
             Created: {displayedCreatedAt}
-            {displayedClosedAt && <> · Closed: {displayedClosedAt}</>}
+            {displayedClosedAt ? <> · Closed: {displayedClosedAt}</> : <> · Closed: —</>}
           </div>
         </div>
 
         <button
           onClick={() => navigate("/soc")}
-          className="text-sm text-gray-400 hover:text-white"
+          className="px-4 py-2 rounded-lg border border-[#D7DEED] bg-white text-sm text-[#0A0F24] hover:bg-gray-50"
         >
           ← Back to SOC
         </button>

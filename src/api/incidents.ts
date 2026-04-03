@@ -1,7 +1,7 @@
 // src/api/incidents.ts
 import { api } from "../services/api";
 
-export type IncidentStatus = "OPEN" | "INVESTIGATING" | "RESOLVED" | "CLOSED";
+export type IncidentStatus = "OPEN" | "INVESTIGATING" | "RESOLVED" | "CLOSED" | "ESCALATED";
 export type IncidentSeverity = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 
 export interface IncidentItem {

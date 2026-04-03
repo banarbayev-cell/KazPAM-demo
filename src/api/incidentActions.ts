@@ -9,12 +9,26 @@ export type IncidentAction = {
   details?: any;
 };
 
+function detailsContainIncidentId(details: any, incidentId: number) {
+  const text =
+    typeof details === "string"
+      ? details
+      : JSON.stringify(details ?? {});
+
+  return (
+    text.includes(`"incident_id": ${incidentId}`) ||
+    text.includes(`"incident_id":${incidentId}`) ||
+    text.includes(`\\"incident_id\\": ${incidentId}`) ||
+    text.includes(`\\"incident_id\\":${incidentId}`)
+  );
+}
+
 export async function fetchIncidentActions(incidentId: number) {
   const token = useAuth.getState().token;
   if (!token) throw new Error("No auth token");
 
   const res = await fetch(
-    `${API_URL}/audit/logs?category=incident&incident_id=${incidentId}`,
+    `${API_URL}/audit/logs?incident_id=${incidentId}`,
     {
       headers: {
         Authorization: `Bearer ${token}`,
@@ -26,5 +40,15 @@ export async function fetchIncidentActions(incidentId: number) {
     throw new Error("Failed to load incident actions");
   }
 
-  return (await res.json()) as IncidentAction[];
+  const data = (await res.json()) as IncidentAction[];
+
+  return (Array.isArray(data) ? data : []).filter((item) => {
+    const action = String(item?.action ?? "").toUpperCase();
+
+    return (
+      action.startsWith("INCIDENT_") ||
+      action.startsWith("SOC_") ||
+      detailsContainIncidentId(item?.details, incidentId)
+    );
+  });
 }

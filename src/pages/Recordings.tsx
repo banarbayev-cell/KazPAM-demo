@@ -1,8 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import Header from "../components/Header";
 import Sidebar from "../components/ui/sidebar";
-import { fetchRecordings, Recording } from "../api/recordings";
+import {
+  fetchRecordings,
+  Recording,
+  downloadRecording,
+} from "../api/recordings";
 
 function formatDuration(seconds: number, status: Recording["status"]) {
   if (status === "PROCESSING" && (!seconds || seconds <= 0)) {
@@ -57,6 +62,7 @@ export default function Recordings() {
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [downloadingId, setDownloadingId] = useState<number | null>(null);
 
   const navigate = useNavigate();
 
@@ -108,6 +114,18 @@ export default function Recordings() {
     });
   }, [recordings, search, statusFilter]);
 
+  const handleDownload = async (recordingId: number) => {
+    try {
+      setDownloadingId(recordingId);
+      await downloadRecording(recordingId);
+      toast.success(`Запись #${recordingId} скачана`);
+    } catch (e: any) {
+      toast.error(e?.message || "Не удалось скачать запись");
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
   return (
     <div className="flex h-screen bg-gray-100">
       <Sidebar />
@@ -121,7 +139,7 @@ export default function Recordings() {
               <div>
                 <h1 className="text-3xl font-bold text-gray-900">Записи сессий</h1>
                 <p className="text-sm text-gray-600 mt-1">
-                  Replay-каталог с живым статусом, длительностью и размером
+                  Replay-каталог с живым статусом, длительностью, размером и скачиванием
                 </p>
               </div>
 
@@ -204,16 +222,28 @@ export default function Recordings() {
                           </span>
                         </td>
                         <td className="p-4">
-                          {(r.status === "READY" || r.status === "PROCESSING") ? (
-                            <button
-                              onClick={() => navigate(`/recordings/${r.id}`)}
-                              className="px-4 py-2 bg-[#0052FF] hover:bg-blue-700 text-white rounded"
-                            >
-                              Просмотреть
-                            </button>
-                          ) : (
-                            <span className="text-gray-400">Недоступно</span>
-                          )}
+                          <div className="flex flex-col gap-2">
+                            {(r.status === "READY" || r.status === "PROCESSING") ? (
+                              <button
+                                onClick={() => navigate(`/recordings/${r.id}`)}
+                                className="px-4 py-2 bg-[#0052FF] hover:bg-blue-700 text-white rounded"
+                              >
+                                Просмотреть
+                              </button>
+                            ) : (
+                              <span className="text-gray-400">Недоступно</span>
+                            )}
+
+                            {r.status === "READY" && (
+                              <button
+                                onClick={() => handleDownload(r.id)}
+                                disabled={downloadingId === r.id}
+                                className="px-4 py-2 bg-[#1A243F] hover:bg-[#223055] text-white rounded disabled:bg-gray-600"
+                              >
+                                {downloadingId === r.id ? "Скачивание..." : "Скачать"}
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}

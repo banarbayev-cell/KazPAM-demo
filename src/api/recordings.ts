@@ -1,5 +1,7 @@
 // src/api/recordings.ts
 import { api } from "../services/api";
+import { API_URL } from "./config";
+import { useAuth } from "../store/auth";
 
 export interface Recording {
   id: number;
@@ -62,4 +64,38 @@ export async function fetchRecordingMeta(
     size: data?.size ?? null,
     status: (data?.status ?? "PROCESSING") as "READY" | "PROCESSING" | "FAILED",
   };
+}
+
+export async function downloadRecording(recordingId: number): Promise<void> {
+  const token = useAuth.getState().token;
+  if (!token) {
+    throw new Error("No auth token");
+  }
+
+  const res = await fetch(`${API_URL}/recordings/${recordingId}/download`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || "Не удалось скачать запись");
+  }
+
+  const blob = await res.blob();
+  const url = window.URL.createObjectURL(blob);
+
+  const disposition = res.headers.get("Content-Disposition") || "";
+  const match = disposition.match(/filename="?([^"]+)"?/i);
+  const filename = match?.[1] || `recording_${recordingId}.log`;
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+
+  window.URL.revokeObjectURL(url);
 }

@@ -1,6 +1,7 @@
-import { Play, Pause } from "lucide-react";
+import { Play, Pause, Download } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { toast } from "sonner";
 import Header from "../components/Header";
 import Sidebar from "../components/ui/sidebar";
 import {
@@ -8,6 +9,7 @@ import {
   fetchRecordingMeta,
   RecordingEvent,
   RecordingMeta,
+  downloadRecording,
 } from "../api/recordings";
 
 function formatDuration(seconds?: number | null) {
@@ -59,10 +61,11 @@ export default function SessionReplay() {
   const [events, setEvents] = useState<RecordingEvent[]>([]);
   const [cursor, setCursor] = useState(0);
   const [playing, setPlaying] = useState(false);
-  const [speed, setSpeed] = useState(1);
 
+  const [speed, setSpeed] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [downloading, setDownloading] = useState(false);
 
   const consoleRef = useRef<HTMLDivElement | null>(null);
 
@@ -122,6 +125,18 @@ export default function SessionReplay() {
 
   const currentEvent = events[cursor] ?? null;
 
+  const handleDownload = async () => {
+    try {
+      setDownloading(true);
+      await downloadRecording(recordingId);
+      toast.success(`Запись #${recordingId} скачана`);
+    } catch (e: any) {
+      toast.error(e?.message || "Не удалось скачать запись");
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   return (
     <div className="flex h-screen bg-gray-100">
       <Sidebar />
@@ -141,12 +156,23 @@ export default function SessionReplay() {
                 </p>
               </div>
 
-              <button
-                onClick={() => navigate("/recordings")}
-                className="px-4 py-2 bg-[#0052FF] hover:bg-blue-700 text-white rounded"
-              >
-                Назад
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleDownload}
+                  disabled={downloading || !meta || meta.status !== "READY"}
+                  className="px-4 py-2 bg-[#1A243F] hover:bg-[#223055] text-white rounded disabled:bg-gray-600 flex items-center gap-2"
+                >
+                  <Download size={16} />
+                  {downloading ? "Скачивание..." : "Скачать"}
+                </button>
+
+                <button
+                  onClick={() => navigate("/recordings")}
+                  className="px-4 py-2 bg-[#0052FF] hover:bg-blue-700 text-white rounded"
+                >
+                  Назад
+                </button>
+              </div>
             </div>
 
             {loading ? (

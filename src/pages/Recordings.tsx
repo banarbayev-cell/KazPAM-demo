@@ -86,17 +86,6 @@ export default function Recordings() {
     loadRecordings();
   }, []);
 
-  useEffect(() => {
-    const hasProcessing = recordings.some((r) => r.status === "PROCESSING");
-    if (!hasProcessing) return;
-
-    const t = setInterval(() => {
-      loadRecordings();
-    }, 10000);
-
-    return () => clearInterval(t);
-  }, [recordings]);
-
   const filtered = useMemo<Recording[]>(() => {
     const safeRecordings = Array.isArray(recordings) ? recordings : [];
     const q = search.trim().toLowerCase();

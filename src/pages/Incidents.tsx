@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -15,6 +15,8 @@ import {
   getNextIncidentStatusLabel,
 } from "../utils/incidentUi";
 
+const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
+
 export default function Incidents() {
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -27,10 +29,29 @@ export default function Incidents() {
   const [severity, setSeverity] = useState(searchParams.get("severity") || "all");
   const [q, setQ] = useState(searchParams.get("q") || "");
 
+  const initialPage = Number(searchParams.get("page") || "1");
+  const initialPageSize = Number(searchParams.get("page_size") || "25");
+
+  const [page, setPage] = useState(
+    Number.isFinite(initialPage) && initialPage > 0 ? initialPage : 1
+  );
+  const [pageSize, setPageSize] = useState(
+    PAGE_SIZE_OPTIONS.includes(initialPageSize) ? initialPageSize : 25
+  );
+
   useEffect(() => {
     const nextStatus = searchParams.get("status") || "all";
     const nextSeverity = searchParams.get("severity") || "all";
     const nextQ = searchParams.get("q") || "";
+
+    const nextPageRaw = Number(searchParams.get("page") || "1");
+    const nextPage =
+      Number.isFinite(nextPageRaw) && nextPageRaw > 0 ? nextPageRaw : 1;
+
+    const nextPageSizeRaw = Number(searchParams.get("page_size") || "25");
+    const nextPageSize = PAGE_SIZE_OPTIONS.includes(nextPageSizeRaw)
+      ? nextPageSizeRaw
+      : 25;
 
     if (nextStatus !== status) {
       setStatus(nextStatus);
@@ -43,20 +64,34 @@ export default function Incidents() {
     if (nextQ !== q) {
       setQ(nextQ);
     }
+
+    if (nextPage !== page) {
+      setPage(nextPage);
+    }
+
+    if (nextPageSize !== pageSize) {
+      setPageSize(nextPageSize);
+    }
   }, [searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const updateFilters = (next: {
+  const setQueryState = (next: {
     q?: string;
     status?: string;
     severity?: string;
+    page?: number;
+    pageSize?: number;
   }) => {
     const nextQ = next.q ?? q;
     const nextStatus = next.status ?? status;
     const nextSeverity = next.severity ?? severity;
+    const nextPage = next.page ?? page;
+    const nextPageSize = next.pageSize ?? pageSize;
 
     setQ(nextQ);
     setStatus(nextStatus);
     setSeverity(nextSeverity);
+    setPage(nextPage);
+    setPageSize(nextPageSize);
 
     const params = new URLSearchParams();
 
@@ -72,7 +107,42 @@ export default function Incidents() {
       params.set("severity", nextSeverity);
     }
 
+    if (nextPage > 1) {
+      params.set("page", String(nextPage));
+    }
+
+    if (nextPageSize !== 25) {
+      params.set("page_size", String(nextPageSize));
+    }
+
     setSearchParams(params, { replace: true });
+  };
+
+  const updateFilters = (next: {
+    q?: string;
+    status?: string;
+    severity?: string;
+  }) => {
+    setQueryState({
+      q: next.q ?? q,
+      status: next.status ?? status,
+      severity: next.severity ?? severity,
+      page: 1,
+      pageSize,
+    });
+  };
+
+  const changePage = (nextPage: number) => {
+    setQueryState({
+      page: nextPage,
+    });
+  };
+
+  const changePageSize = (nextPageSize: number) => {
+    setQueryState({
+      page: 1,
+      pageSize: nextPageSize,
+    });
   };
 
   const load = async () => {
@@ -102,6 +172,23 @@ export default function Incidents() {
 
     return () => clearTimeout(timer);
   }, [status, severity, q]);
+
+  const totalItems = items.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+
+  useEffect(() => {
+    if (page > totalPages) {
+      changePage(totalPages);
+    }
+  }, [page, totalPages]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const pagedItems = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return items.slice(start, start + pageSize);
+  }, [items, page, pageSize]);
+
+  const pageFrom = totalItems === 0 ? 0 : (page - 1) * pageSize + 1;
+  const pageTo = totalItems === 0 ? 0 : Math.min(page * pageSize, totalItems);
 
   const handleChangeStatus = async (item: IncidentItem) => {
     const targetStatus = getNextIncidentStatus(item.status);
@@ -171,8 +258,27 @@ export default function Incidents() {
       </div>
 
       <div className="bg-[#121A33] border border-[#1E2A45] rounded-2xl overflow-hidden">
-        <div className="px-4 py-3 border-b border-[#1E2A45] text-sm text-gray-300">
-          {loading ? "Загрузка incidents..." : `Всего: ${items.length}`}
+        <div className="px-4 py-3 border-b border-[#1E2A45] text-sm text-gray-300 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            {loading
+              ? "Загрузка incidents..."
+              : `Всего: ${totalItems} · Показано: ${pageFrom}-${pageTo} · Страница ${page} из ${totalPages}`}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-300">На странице:</span>
+            <select
+              value={pageSize}
+              onChange={(e) => changePageSize(Number(e.target.value))}
+              className="rounded-lg bg-[#0E1A3A] border border-[#24314F] px-3 py-2 text-sm text-white outline-none"
+            >
+              {PAGE_SIZE_OPTIONS.map((size) => (
+                <option key={size} value={size}>
+                  {size}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {error && (
@@ -199,14 +305,14 @@ export default function Incidents() {
             </thead>
 
             <tbody className="text-white">
-              {items.length === 0 && !loading ? (
+              {pagedItems.length === 0 && !loading ? (
                 <tr>
                   <td colSpan={10} className="px-4 py-8 text-center text-gray-400">
                     Инциденты не найдены
                   </td>
                 </tr>
               ) : (
-                items.map((item) => (
+                pagedItems.map((item) => (
                   <tr key={item.id} className="border-t border-[#1E2A45] align-top">
                     <td className="px-4 py-3 font-semibold">#{item.id}</td>
 
@@ -272,6 +378,50 @@ export default function Incidents() {
               )}
             </tbody>
           </table>
+        </div>
+
+        <div className="border-t border-[#1E2A45] px-4 py-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="text-sm text-gray-300">
+            Показано: {pageFrom}-{pageTo} из {totalItems}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => changePage(1)}
+              disabled={page <= 1}
+              className="px-3 py-2 rounded-lg bg-[#0E1A3A] border border-[#24314F] text-sm text-white disabled:opacity-50"
+            >
+              «
+            </button>
+
+            <button
+              onClick={() => changePage(page - 1)}
+              disabled={page <= 1}
+              className="px-3 py-2 rounded-lg bg-[#0E1A3A] border border-[#24314F] text-sm text-white disabled:opacity-50"
+            >
+              Назад
+            </button>
+
+            <div className="px-3 py-2 rounded-lg bg-[#0E1A3A] border border-[#24314F] text-sm text-white min-w-[90px] text-center">
+              {page} / {totalPages}
+            </div>
+
+            <button
+              onClick={() => changePage(page + 1)}
+              disabled={page >= totalPages}
+              className="px-3 py-2 rounded-lg bg-[#0E1A3A] border border-[#24314F] text-sm text-white disabled:opacity-50"
+            >
+              Вперёд
+            </button>
+
+            <button
+              onClick={() => changePage(totalPages)}
+              disabled={page >= totalPages}
+              className="px-3 py-2 rounded-lg bg-[#0E1A3A] border border-[#24314F] text-sm text-white disabled:opacity-50"
+            >
+              »
+            </button>
+          </div>
         </div>
       </div>
     </div>

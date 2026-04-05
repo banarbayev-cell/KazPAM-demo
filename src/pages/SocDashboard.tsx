@@ -242,6 +242,16 @@ function getSeverityLabel(severity?: "low" | "medium" | "high") {
   return "—";
 }
 
+function getIncidentId(value: any): number | null {
+  const raw =
+    value?.incident_id ??
+    value?.backendId ??
+    value?.id ??
+    null;
+
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
 
 export default function SocDashboard() {
   // 🔐 Каноничный источник токена + ролей. ВАЖНО: один раз, в самом верху.
@@ -268,7 +278,14 @@ export default function SocDashboard() {
   const [incident, setIncident] = useState<Incident | null>(null);
   const [summary, setSummary] = useState<SocSummaryResponse | null>(null);
 
-  
+  const activeIncidentId = useMemo(() => {
+    return getIncidentId(summary?.incident) ?? getIncidentId(incident);
+  }, [summary, incident]);
+
+  const openIncidentDetails = (incidentId: number) => {
+    localStorage.setItem(SOC_INCIDENT_STORAGE_KEY, String(incidentId));
+    navigate(`/soc/incidents/${incidentId}`);
+  };
   
   // ============================
   // LOAD INITIAL COMMANDS
@@ -667,11 +684,20 @@ if (!alreadyRestoredThisSession) {
   const handleInvestigate = async () => {
     setRbacError(null);
 
-    if (summary?.incident) {
-  setIncident(mapBackendIncidentToUi(summary.incident));
-  setInvestigationOpen(true);
-  return;
-}
+      if (summary?.incident) {
+        const mapped = mapBackendIncidentToUi(summary.incident);
+        setIncident(mapped);
+
+        const incidentId = getIncidentId(summary.incident);
+      if (incidentId) {
+        localStorage.setItem(SOC_INCIDENT_STORAGE_KEY, String(incidentId));
+        navigate(`/soc/incidents/${incidentId}`);
+        return;
+      }
+
+      setInvestigationOpen(true);
+      return;
+    }
 
     // если токена нет — не пытаемся ходить в API (иначе 401)
     if (!token) {
@@ -682,7 +708,7 @@ if (!alreadyRestoredThisSession) {
     // если уже есть сохранённый инцидент — не создаём новый
     const savedId = localStorage.getItem(SOC_INCIDENT_STORAGE_KEY);
     if (savedId) {
-      setInvestigationOpen(true);
+      navigate(`/soc/incidents/${savedId}`);
       return;
     }
 
@@ -711,6 +737,9 @@ if (!alreadyRestoredThisSession) {
         });
         // ✅ сохраняем якорь дела
         localStorage.setItem(SOC_INCIDENT_STORAGE_KEY, String(existing.id));
+        navigate(`/soc/incidents/${existing.id}`);
+        return;
+
       } else {
         // 3️⃣ нет активного — создаём в backend
         const createRes = await fetch(`${API_URL}/incidents/`, {
@@ -742,9 +771,10 @@ if (!alreadyRestoredThisSession) {
 
         // ✅ сохраняем якорь дела (created доступен только здесь)
         localStorage.setItem(SOC_INCIDENT_STORAGE_KEY, String(created.id));
+        navigate(`/soc/incidents/${created.id}`);
+        return;
       }
 
-      setInvestigationOpen(true);
     } catch (e) {
       console.error("SOC investigate error:", e);
     }
@@ -752,7 +782,16 @@ if (!alreadyRestoredThisSession) {
 
   return (
     <div className="p-8 space-y-8">
-      <div className="flex justify-end">
+      <div className="flex justify-end gap-3">
+        {activeIncidentId && (
+          <button
+            onClick={() => openIncidentDetails(activeIncidentId)}
+            className="px-4 py-2 rounded-lg border border-[#1E2A45] bg-[#0E1A3A] text-sm text-white hover:bg-[#12224A]"
+          >
+            Открыть incident #{activeIncidentId}
+          </button>
+        )}
+
         <button
           onClick={() => navigate("/soc/incidents")}
           className="px-4 py-2 rounded-lg border border-[#1E2A45] bg-[#121A33] text-sm text-white hover:bg-[#1A243F]"
@@ -774,6 +813,11 @@ if (!alreadyRestoredThisSession) {
             navigate(`/soc?q=${encodeURIComponent(q)}`);
             return;
           }
+
+          if (activeIncidentId) {
+            openIncidentDetails(activeIncidentId);
+            return;
+          }  
 
           handleInvestigate();
 

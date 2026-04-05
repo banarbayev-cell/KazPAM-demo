@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { mfaApi } from "../../api/mfa";
 
 interface MFAConfirmProps {
   open: boolean;
@@ -9,91 +10,8 @@ interface MFAConfirmProps {
   defaultMethod?: "totp" | "email";
 }
 
-function getAuthToken(): string | null {
-  const keys = ["token", "access_token", "jwt", "auth_token"];
-  for (const k of keys) {
-    const v = localStorage.getItem(k);
-    if (v && v.trim()) return v;
-  }
-
-  const jsonKeys = ["auth", "authStore", "kazpam_auth", "session"];
-  for (const k of jsonKeys) {
-    const raw = localStorage.getItem(k);
-    if (!raw) continue;
-    try {
-      const obj = JSON.parse(raw);
-      const possible =
-        obj?.token ||
-        obj?.access_token ||
-        obj?.jwt ||
-        obj?.state?.token ||
-        obj?.state?.access_token;
-      if (possible && String(possible).trim()) return String(possible);
-    } catch {
-      // ignore
-    }
-  }
-
-  return null;
-}
-
-async function verifyMfaBackend(
-  code: string,
-  method: "totp" | "email"
-): Promise<void> {
-  const token = getAuthToken();
-  if (!token) {
-    throw new Error("JWT не найден. Войдите в систему и повторите попытку.");
-  }
-
-  const res = await fetch("/api/mfa/verify", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({
-      code,
-      method,
-    }),
-  });
-
-  if (!res.ok) {
-    let msg = `Ошибка MFA verify (${res.status})`;
-    try {
-      const data = await res.json();
-      msg = data?.detail || data?.message || msg;
-    } catch {
-      // ignore
-    }
-    throw new Error(msg);
-  }
-}
-
-async function sendEmailMfaCode(): Promise<void> {
-  const token = getAuthToken();
-  if (!token) {
-    throw new Error("JWT не найден. Войдите в систему и повторите попытку.");
-  }
-
-  const res = await fetch("/api/mfa/email/send", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-  });
-
-  if (!res.ok) {
-    let msg = `Ошибка отправки email MFA (${res.status})`;
-    try {
-      const data = await res.json();
-      msg = data?.detail || data?.message || msg;
-    } catch {
-      // ignore
-    }
-    throw new Error(msg);
-  }
+function sanitizeCode(value: string): string {
+  return value.replace(/\D/g, "").slice(0, 8);
 }
 
 export default function MFAConfirmModal({
@@ -110,16 +28,19 @@ export default function MFAConfirmModal({
   const [emailSent, setEmailSent] = useState(false);
 
   useEffect(() => {
-    if (open) {
-      setCode("");
-      setErr(null);
-      setLoading(false);
-      setMethod(defaultMethod);
-      setEmailSent(false);
-    }
+    if (!open) return;
+
+    setCode("");
+    setErr(null);
+    setLoading(false);
+    setMethod(defaultMethod);
+    setEmailSent(false);
   }, [open, defaultMethod]);
 
-  const canSubmit = useMemo(() => code.trim().length >= 6 && !loading, [code, loading]);
+  const canSubmit = useMemo(() => {
+    const trimmed = code.trim();
+    return trimmed.length >= 6 && !loading;
+  }, [code, loading]);
 
   if (!open) return null;
 
@@ -128,7 +49,7 @@ export default function MFAConfirmModal({
     setLoading(true);
 
     try {
-      await sendEmailMfaCode();
+      await mfaApi.sendEmailCode();
       setEmailSent(true);
     } catch (e: any) {
       setErr(e?.message || "Не удалось отправить код на email");
@@ -138,42 +59,55 @@ export default function MFAConfirmModal({
   };
 
   const handleVerify = async () => {
-  const trimmed = code.trim();
-  if (trimmed.length < 6) {
-    setErr("Введите корректный код (минимум 6 символов).");
-    return;
-  }
+    const trimmed = code.trim();
 
-  setErr(null);
-  setLoading(true);
-
-  try {
-    // Для TOTP можно оставить backend verify,
-    // для email НЕ вызываем /mfa/verify, а передаём код дальше в reveal endpoint
-    if (verifyMode === "backend" && method === "totp") {
-      await verifyMfaBackend(trimmed, method);
+    if (trimmed.length < 6) {
+      setErr("Введите корректный код (минимум 6 цифр).");
+      return;
     }
 
-    onSuccess(trimmed);
-    onClose();
-  } catch (e: any) {
-    setErr(e?.message || "❌ Неверный код");
-  } finally {
-    setLoading(false);
-  }
-};
+    setErr(null);
+    setLoading(true);
+
+    try {
+      /**
+       * ВАЖНО:
+       * Для TOTP оставляем backend verify.
+       * Для email сохраняем текущую архитектуру:
+       * код передаётся дальше в onSuccess, где его использует нужный endpoint.
+       */
+      if (verifyMode === "backend" && method === "totp") {
+        await mfaApi.verify(trimmed, "totp");
+      }
+
+      onSuccess(trimmed);
+      onClose();
+    } catch (e: any) {
+      setErr(e?.message || "Неверный код подтверждения");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const helperText =
+    method === "email"
+      ? "Мы отправим одноразовый код на вашу почту."
+      : "Введите код из приложения Google Authenticator.";
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-[9999]">
-      <div className="bg-white rounded-xl shadow-2xl w-[420px] p-6 border border-gray-200">
-        <h2 className="text-2xl font-bold text-gray-900 mb-3">Подтверждение личности</h2>
-        <p className="text-gray-600 mb-5">
-          Выберите способ подтверждения и введите одноразовый код.
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50">
+      <div className="w-[420px] rounded-xl border border-gray-200 bg-white p-6 shadow-2xl">
+        <h2 className="mb-2 text-2xl font-bold text-gray-900">
+          Подтверждение личности
+        </h2>
+
+        <p className="mb-5 text-sm text-gray-600">
+          Для продолжения подтвердите действие вторым фактором.
         </p>
 
         <div className="mb-4">
-          <div className="text-sm font-medium text-gray-700 mb-2">
-            Выберите метод подтверждения
+          <div className="mb-2 text-sm font-medium text-gray-700">
+            Способ подтверждения
           </div>
 
           <div className="flex flex-col gap-2">
@@ -186,6 +120,7 @@ export default function MFAConfirmModal({
                 onChange={() => {
                   setMethod("totp");
                   setErr(null);
+                  setCode("");
                 }}
                 disabled={loading}
               />
@@ -201,6 +136,7 @@ export default function MFAConfirmModal({
                 onChange={() => {
                   setMethod("email");
                   setErr(null);
+                  setCode("");
                 }}
                 disabled={loading}
               />
@@ -209,19 +145,23 @@ export default function MFAConfirmModal({
           </div>
         </div>
 
+        <div className="mb-4 rounded-lg bg-gray-50 px-3 py-2 text-sm text-gray-600">
+          {helperText}
+        </div>
+
         {method === "email" && (
           <div className="mb-4">
             <button
               type="button"
               onClick={handleSendEmailCode}
-              className="px-4 py-2 bg-gray-200 rounded-lg font-medium hover:bg-gray-300 disabled:opacity-60"
+              className="rounded-lg bg-gray-200 px-4 py-2 font-medium hover:bg-gray-300 disabled:opacity-60"
               disabled={loading}
             >
               {emailSent ? "Отправить код повторно" : "Отправить код на email"}
             </button>
 
             {emailSent && (
-              <div className="text-sm text-green-600 mt-2">
+              <div className="mt-2 text-sm text-green-600">
                 Код отправлен на вашу почту.
               </div>
             )}
@@ -230,23 +170,29 @@ export default function MFAConfirmModal({
 
         <input
           type="text"
+          inputMode="numeric"
+          autoComplete="one-time-code"
           value={code}
-          onChange={(e) => setCode(e.target.value)}
+          onChange={(e) => setCode(sanitizeCode(e.target.value))}
           placeholder={
             method === "email"
               ? "Введите код из email"
-              : "Введите код из Google Authenticator"
+              : "Введите код из приложения"
           }
-          className="w-full border border-gray-300 rounded-lg p-3 mb-3 text-lg focus:ring-2 focus:ring-blue-500 outline-none"
+          className="mb-2 w-full rounded-lg border border-gray-300 p-3 text-lg outline-none focus:ring-2 focus:ring-blue-500"
           disabled={loading}
         />
 
-        {err && <div className="text-sm text-red-600 mb-4">{err}</div>}
+        <div className="mb-3 text-xs text-gray-500">
+          Обычно код состоит из 6 цифр.
+        </div>
+
+        {err && <div className="mb-4 text-sm text-red-600">{err}</div>}
 
         <div className="flex justify-end gap-3">
           <button
             onClick={onClose}
-            className="px-5 py-2 bg-gray-200 rounded-lg font-medium hover:bg-gray-300"
+            className="rounded-lg bg-gray-200 px-5 py-2 font-medium hover:bg-gray-300"
             disabled={loading}
           >
             Отмена
@@ -254,7 +200,7 @@ export default function MFAConfirmModal({
 
           <button
             onClick={handleVerify}
-            className="px-5 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-60"
+            className="rounded-lg bg-blue-600 px-5 py-2 font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
             disabled={!canSubmit}
           >
             {loading ? "Проверка..." : "Подтвердить"}

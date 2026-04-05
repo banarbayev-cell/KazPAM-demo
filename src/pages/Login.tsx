@@ -1,14 +1,46 @@
 import { FormEvent, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../store/auth";
 import { API_URL } from "../api/config";
 import PasswordResetModal from "../components/modals/PasswordResetModal";
 
+function normalizeErrorMessage(detail: string | null | undefined): string {
+  const text = String(detail || "").trim().toLowerCase();
+
+  if (!text) {
+    return "Доступ ограничен политиками безопасности или требуется MFA";
+  }
+
+  if (
+    text.includes("mfa") ||
+    text.includes("2fa") ||
+    text.includes("second factor") ||
+    text.includes("two-factor") ||
+    text.includes("otp") ||
+    text.includes("totp")
+  ) {
+    return "Требуется подтверждение второго фактора (MFA)";
+  }
+
+  if (
+    text.includes("policy") ||
+    text.includes("security") ||
+    text.includes("forbidden") ||
+    text.includes("blocked") ||
+    text.includes("доступ") ||
+    text.includes("полит")
+  ) {
+    return "Доступ ограничен политиками безопасности";
+  }
+
+  return detail || "Ошибка входа";
+}
+
 export default function Login() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   const login = useAuth((state) => state.login);
-  const mustChangePassword = useAuth((state) => state.mustChangePassword);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -19,11 +51,14 @@ export default function Login() {
   const [resetMessage, setResetMessage] = useState<string | null>(null);
   const [resetOpen, setResetOpen] = useState(false);
 
+  const passwordChanged = searchParams.get("passwordChanged") === "1";
+
   // ================= LOGIN =================
   const handleLogin = async (e: FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setLoginError(null);
+    setResetMessage(null);
 
     try {
       const formData = new URLSearchParams();
@@ -40,21 +75,28 @@ export default function Login() {
 
       if (!response.ok) {
         let message = "Ошибка входа";
+        let detail: string | null = null;
+
+        try {
+          const err = await response.json();
+          if (typeof err?.detail === "string") {
+            detail = err.detail;
+          } else if (typeof err?.message === "string") {
+            detail = err.message;
+          }
+        } catch {
+          // ignore json parse error
+        }
 
         if (response.status === 401) {
           message = "Неверный логин или пароль";
         } else if (response.status === 403) {
-          message =
-            "Доступ ограничен политиками безопасности или требуется MFA";
+          message = normalizeErrorMessage(detail);
         } else {
-          try {
-            const err = await response.json();
-            message = err.detail || message;
-          } catch {}
+          message = detail || message;
         }
 
         setLoginError(message);
-        setLoading(false);
         return;
       }
 
@@ -62,27 +104,18 @@ export default function Login() {
 
       if (!data.access_token) {
         setLoginError("Сервер не выдал токен доступа");
-        setLoading(false);
         return;
       }
 
-      /**
-       * 🔐 ВАЖНО
-       * login() кладёт mustChangePassword в store
-       */
       await login(data.access_token);
 
-      /**
-       * PAM LOGIC
-       */
       if (useAuth.getState().mustChangePassword) {
         navigate("/force-change-password", { replace: true });
       } else {
         navigate("/dashboard", { replace: true });
       }
-
     } catch (err: any) {
-      setLoginError(err.message || "Ошибка соединения");
+      setLoginError(err?.message || "Ошибка соединения");
     } finally {
       setLoading(false);
     }
@@ -130,6 +163,12 @@ export default function Login() {
         <p className="text-center text-xs text-white/50 mb-6 tracking-wide">
           Privileged Access Management · Made in Kazakhstan
         </p>
+
+        {passwordChanged && (
+          <div className="mb-4 rounded-lg border border-green-500/30 bg-green-500/10 px-4 py-3 text-sm text-green-300 text-center">
+            Пароль успешно изменён. Войдите снова с новым паролем.
+          </div>
+        )}
 
         <input
           type="email"

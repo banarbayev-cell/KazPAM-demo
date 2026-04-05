@@ -1,8 +1,9 @@
 // src/components/modals/ChangePasswordModal.tsx
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { API_URL } from "../../api/config";
 import { useAuth } from "../../store/auth";
+import { invalidateAuthSession } from "../../services/api";
 
 interface Props {
   open: boolean;
@@ -25,6 +26,8 @@ export default function ChangePasswordModal({ open, onClose }: Props) {
   const [showNew, setShowNew] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
+  const logoutTimerRef = useRef<number | null>(null);
+
   // 🔐 password policy
   const passwordRules = {
     length: newPassword.length >= 8,
@@ -33,17 +36,48 @@ export default function ChangePasswordModal({ open, onClose }: Props) {
     special: /[^A-Za-z0-9]/.test(newPassword),
   };
 
-  const passwordScore =
-    Object.values(passwordRules).filter(Boolean).length;
+  const passwordScore = Object.values(passwordRules).filter(Boolean).length;
 
-  if (!open) return null;
+  const clearLogoutTimer = () => {
+    if (logoutTimerRef.current !== null) {
+      window.clearTimeout(logoutTimerRef.current);
+      logoutTimerRef.current = null;
+    }
+  };
 
   const resetForm = () => {
     setOldPassword("");
     setNewPassword("");
     setConfirm("");
     setError(null);
+    setMessage(null);
+    setLoading(false);
+    setShowOld(false);
+    setShowNew(false);
+    setShowConfirm(false);
   };
+
+  const handleClose = () => {
+    clearLogoutTimer();
+    resetForm();
+    onClose();
+  };
+
+  useEffect(() => {
+    if (!open) {
+      clearLogoutTimer();
+      resetForm();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  useEffect(() => {
+    return () => {
+      clearLogoutTimer();
+    };
+  }, []);
+
+  if (!open) return null;
 
   const handleSubmit = async () => {
     setError(null);
@@ -64,6 +98,11 @@ export default function ChangePasswordModal({ open, onClose }: Props) {
       return;
     }
 
+    if (oldPassword === newPassword) {
+      setError("Новый пароль должен отличаться от текущего");
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -71,7 +110,7 @@ export default function ChangePasswordModal({ open, onClose }: Props) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
+          Authorization: token ? `Bearer ${token}` : "",
         },
         body: JSON.stringify({
           current_password: oldPassword,
@@ -100,13 +139,16 @@ export default function ChangePasswordModal({ open, onClose }: Props) {
       setOldPassword("");
       setNewPassword("");
       setConfirm("");
+      setError(null);
 
-      // logout через 2 секунды
-      setTimeout(() => {
+      clearLogoutTimer();
+      logoutTimerRef.current = window.setTimeout(() => {
+        invalidateAuthSession();
+        localStorage.removeItem("access_token");
+        localStorage.removeItem("refresh_token");
         logout();
-        window.location.href = "/login";
+        window.location.replace("/login?passwordChanged=1");
       }, 2000);
-
     } catch {
       setError("Сервер недоступен");
     } finally {
@@ -116,9 +158,7 @@ export default function ChangePasswordModal({ open, onClose }: Props) {
 
   return (
     <div className="fixed inset-0 z-[100000] flex items-center justify-center bg-black/60">
-
       <div className="w-[420px] bg-[#121A33] border border-[#1E2A45] rounded-2xl p-6">
-
         <h2 className="text-xl font-bold text-white mb-4">
           Смена пароля
         </h2>
@@ -141,7 +181,6 @@ export default function ChangePasswordModal({ open, onClose }: Props) {
           Показать пароль
         </label>
 
-
         {/* NEW PASSWORD */}
         <input
           type={showNew ? "text" : "password"}
@@ -162,19 +201,18 @@ export default function ChangePasswordModal({ open, onClose }: Props) {
 
         {/* PASSWORD STRENGTH */}
         <div className="mb-3">
-
           <div className="flex gap-1 mb-2">
-            {[1,2,3,4].map(i => (
+            {[1, 2, 3, 4].map((i) => (
               <div
                 key={i}
-                className={`h-2 flex-1 rounded 
-                ${passwordScore >= i ? "bg-green-500" : "bg-gray-700"}`}
+                className={`h-2 flex-1 rounded ${
+                  passwordScore >= i ? "bg-green-500" : "bg-gray-700"
+                }`}
               />
             ))}
           </div>
 
           <div className="text-xs text-gray-400 space-y-1">
-
             <div className={passwordRules.length ? "text-green-400" : ""}>
               • минимум 8 символов
             </div>
@@ -190,11 +228,8 @@ export default function ChangePasswordModal({ open, onClose }: Props) {
             <div className={passwordRules.special ? "text-green-400" : ""}>
               • спецсимвол
             </div>
-
           </div>
-
         </div>
-
 
         {/* CONFIRM PASSWORD */}
         <input
@@ -214,7 +249,6 @@ export default function ChangePasswordModal({ open, onClose }: Props) {
           Показать пароль
         </label>
 
-
         {/* ERROR */}
         {error && (
           <div className="text-red-400 text-sm mb-2">{error}</div>
@@ -227,21 +261,18 @@ export default function ChangePasswordModal({ open, onClose }: Props) {
           </div>
         )}
 
-
         {/* BUTTONS */}
         <div className="flex justify-end gap-2 mt-4">
-
           <button
-            onClick={() => {
-              resetForm();
-              onClose();
-            }}
+            type="button"
+            onClick={handleClose}
             className="px-4 py-2 rounded-lg bg-gray-600 text-white hover:bg-gray-500 transition"
           >
             Отмена
           </button>
 
           <button
+            type="button"
             disabled={
               loading ||
               passwordScore < 3 ||
@@ -252,11 +283,8 @@ export default function ChangePasswordModal({ open, onClose }: Props) {
           >
             {loading ? "Смена..." : "Сменить"}
           </button>
-
         </div>
-
       </div>
-
     </div>
   );
 }

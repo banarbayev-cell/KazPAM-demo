@@ -24,6 +24,39 @@ interface User {
   is_active: boolean;
 }
 
+function extractApiErrorMessage(err: unknown): string {
+  const raw = String((err as any)?.message || "").trim();
+
+  if (!raw) return "Неизвестная ошибка";
+
+  if (raw === "Unauthorized") {
+    return "Сессия истекла. Войдите заново";
+  }
+
+  if (raw === "Forbidden") {
+    return "Недостаточно прав для выполнения действия";
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (typeof parsed?.detail === "string" && parsed.detail.trim()) {
+      return parsed.detail.trim();
+    }
+  } catch {
+    // ignore
+  }
+
+  const normalized = raw
+    .replace(/^"+|"+$/g, "")
+    .replace(/^\{|\}$/g, "")
+    .trim();
+
+  if (normalized.includes("MFA")) return normalized;
+  if (normalized.includes("detail")) return normalized;
+
+  return normalized;
+}
+
 export default function Users() {
   const [users, setUsers] = useState<User[]>([]);
   const [openModal, setOpenModal] = useState(false);
@@ -97,12 +130,15 @@ export default function Users() {
   // ------------------------------
   // PAGINATION
   // ------------------------------
-  const totalPages = Math.ceil(filtered.length / rowsPerPage);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / rowsPerPage));
   const indexOfLast = currentPage * rowsPerPage;
   const indexOfFirst = indexOfLast - rowsPerPage;
   const currentRows = filtered.slice(indexOfFirst, indexOfLast);
 
-  const goToPage = (page: number) => setCurrentPage(page);
+  const goToPage = (page: number) => {
+    const safePage = Math.min(Math.max(page, 1), totalPages);
+    setCurrentPage(safePage);
+  };
 
   // ------------------------------
   // CREATE USER
@@ -178,9 +214,25 @@ export default function Users() {
     try {
       await api.post(`/users/${userId}/reset-mfa`);
       toast.success(`MFA для ${email} сброшена`);
-      fetchUsers();
-    } catch {
-      toast.error(`Ошибка сброса MFA для ${email}`);
+      toast.info(
+        `Пользователь ${email} должен заново настроить второй фактор при следующем входе`,
+        { duration: 7000 }
+      );
+      await fetchUsers();
+    } catch (err: unknown) {
+      const message = extractApiErrorMessage(err);
+
+      if (message === "Сессия истекла. Войдите заново") {
+        toast.error(message);
+        return;
+      }
+
+      if (message === "Недостаточно прав для выполнения действия") {
+        toast.error(message);
+        return;
+      }
+
+      toast.error(`Ошибка сброса MFA для ${email}: ${message}`);
     }
   };
 
@@ -222,17 +274,6 @@ export default function Users() {
   const fetchEffectiveRoles = async (userId: number) => {
     setEffectiveLoading(true);
     try {
-      /**
-       * ВАЖНО:
-       * Этот endpoint должен вернуть роли пользователя в "расширенном" виде:
-       * roles[] -> policies[] -> permissions[]
-       *
-       * Рекомендованный вариант:
-       *   GET /roles/?user_id=123
-       *
-       * Если у тебя другой endpoint - меняешь только ЭТУ строку,
-       * остальная архитектура и UI останутся неизменны.
-       */
       const data = await api.get<any[]>(`/roles/?user_id=${userId}`);
       setEffectiveRoles(Array.isArray(data) ? data : []);
     } catch (err) {
@@ -366,7 +407,6 @@ export default function Users() {
                       }}
                     />
 
-                    {/* NEW: Safe extra button, does not touch ActionMenuUser */}
                     <button
                       onClick={() => {
                         setEffectivePermsUser(user);
@@ -473,7 +513,6 @@ export default function Users() {
         loading={deleteLoading}
       />
 
-      {/* NEW: Effective permissions modal (read-only, safe) */}
       <EffectivePermissionsModal
         isOpen={isEffectivePermsOpen}
         loading={effectiveLoading}

@@ -1,18 +1,40 @@
 import { FormEvent, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { useAuth } from "../store/auth";
-import { api } from "../services/api";
-import { invalidateAuthSession } from "../services/api";
+import { api, invalidateAuthSession } from "../services/api";
+
+function extractApiErrorMessage(err: unknown): string {
+  const raw = String((err as any)?.message || "").trim();
+
+  if (!raw) return "Не удалось изменить пароль";
+
+  if (raw === "Unauthorized") {
+    return "Сессия недействительна. Войдите заново";
+  }
+
+  if (raw === "Forbidden") {
+    return "Доступ запрещён";
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (typeof parsed?.detail === "string" && parsed.detail.trim()) {
+      return parsed.detail.trim();
+    }
+  } catch {
+    // ignore
+  }
+
+  return raw;
+}
 
 export default function ForceChangePassword() {
-  const navigate = useNavigate();
   const logout = useAuth((s) => s.logout);
   const user = useAuth((s) => s.user);
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
   const [confirm, setConfirm] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -22,6 +44,11 @@ export default function ForceChangePassword() {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    if (!currentPassword.trim()) {
+      setError("Введите текущий временный пароль");
+      return;
+    }
 
     if (newPassword !== confirm) {
       setError("Пароли не совпадают");
@@ -33,46 +60,43 @@ export default function ForceChangePassword() {
       return;
     }
 
+    if (currentPassword === newPassword) {
+      setError("Новый пароль должен отличаться от текущего");
+      return;
+    }
+
     setLoading(true);
 
     try {
-      /**
-       * backend endpoint:
-       * POST /users/{user_id}/reset-password
-       * ResetPasswordRequest
-       */
       await api.post(`/auth/change-password`, {
-  current_password: currentPassword,
-  new_password: newPassword,
-});
+        current_password: currentPassword,
+        new_password: newPassword,
+      });
 
-// 1️⃣ Мгновенно убиваем API
-invalidateAuthSession();
+      // 1) мгновенно останавливаем дальнейшие API запросы старой сессии
+      invalidateAuthSession();
 
-// 2️⃣ Чистим storage
-localStorage.removeItem("access_token");
-localStorage.removeItem("refresh_token");
+      // 2) чистим localStorage
+      localStorage.removeItem("access_token");
+      localStorage.removeItem("refresh_token");
 
-// 3️⃣ Zustand
-logout();
+      // 3) чистим Zustand store
+      logout();
 
-// 4️⃣ Без history — только replace
-window.location.replace("/login?passwordChanged=1");
-
-
-
-    } catch (e: any) {
-      setError(e?.message || "Не удалось изменить пароль");
+      // 4) полный redirect без history
+      window.location.replace("/login?passwordChanged=1");
+    } catch (e: unknown) {
+      setError(extractApiErrorMessage(e));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="h-screen w-full bg-[#0A0F24] flex items-center justify-center">
+    <div className="h-screen w-full bg-[#0A0F24] flex items-center justify-center px-4">
       <form
         onSubmit={handleSubmit}
-        className="w-[440px] p-10 rounded-2xl bg-white/5 backdrop-blur-xl border border-white/10"
+        className="w-full max-w-[440px] p-10 rounded-2xl bg-white/5 backdrop-blur-xl border border-white/10"
       >
         <h1 className="text-3xl font-bold text-white text-center mb-2">
           Требуется смена пароля
@@ -87,7 +111,6 @@ window.location.replace("/login?passwordChanged=1");
         <p className="text-center text-[#3BE3FD] text-xs mb-6">
           Используйте временный пароль, полученный в письме
         </p>
- 
 
         <input
           type={showPassword ? "text" : "password"}
@@ -117,18 +140,21 @@ window.location.replace("/login?passwordChanged=1");
         />
 
         <div className="flex items-center mb-6 pl-1">
-  <input
-    type="checkbox"
-    checked={showPassword}
-    onChange={() => setShowPassword(prev => !prev)}
-    className="w-4 h-4 cursor-pointer accent-[#0052FF]"
-  />
-  <label className="ml-2 text-sm text-white/80 cursor-pointer select-none hover:text-white">
-    Показать пароль
-  </label>
-</div>
+          <input
+            id="show-pass-force"
+            type="checkbox"
+            checked={showPassword}
+            onChange={() => setShowPassword((prev) => !prev)}
+            className="w-4 h-4 cursor-pointer accent-[#0052FF]"
+          />
+          <label
+            htmlFor="show-pass-force"
+            className="ml-2 text-sm text-white/80 cursor-pointer select-none hover:text-white"
+          >
+            Показать пароль
+          </label>
+        </div>
 
-       
         {error && (
           <div className="mb-4 text-red-400 text-sm text-center">{error}</div>
         )}

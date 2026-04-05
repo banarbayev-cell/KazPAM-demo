@@ -32,8 +32,6 @@ export default function Header() {
   const [sessionMinutes, setSessionMinutes] = useState(0);
   const [activeSessions, setActiveSessions] = useState(0);
 
-  const [passwordChanged, setPasswordChanged] = useState(false);
-
   const displayName = user?.email || "user";
   const avatar = displayName?.[0]?.toUpperCase() || "U";
 
@@ -145,17 +143,6 @@ export default function Header() {
       );
     };
   }, [authToken, isInitialized]);
-
-  // SUCCESS TOAST
-  useEffect(() => {
-    if (!passwordChanged) return;
-
-    const t = window.setTimeout(() => {
-      setPasswordChanged(false);
-    }, 3000);
-
-    return () => window.clearTimeout(t);
-  }, [passwordChanged]);
 
   const handleLogout = () => {
     localStorage.removeItem("kazpam_session_start");
@@ -276,12 +263,6 @@ export default function Header() {
               )}
             </div>
           </div>
-
-          {passwordChanged && (
-            <div className="absolute right-6 top-20 bg-green-900 border border-green-600 text-green-300 px-4 py-2 rounded-lg shadow-lg text-sm animate-fadeIn">
-              Пароль успешно сменён
-            </div>
-          )}
         </div>
       </header>
 
@@ -295,7 +276,6 @@ export default function Header() {
         open={passwordOpen}
         onClose={() => {
           setPasswordOpen(false);
-          setPasswordChanged(true);
         }}
       />
     </>

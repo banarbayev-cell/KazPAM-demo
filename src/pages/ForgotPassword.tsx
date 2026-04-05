@@ -2,8 +2,6 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { apiFetch } from "../services/api";
 
-
-
 export default function ForgotPassword() {
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
@@ -13,20 +11,25 @@ export default function ForgotPassword() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+
+    if (!email || !email.includes("@")) {
+      setError("Введите корректный email");
+      return;
+    }
+
     setLoading(true);
 
     try {
       await apiFetch("/auth/password-reset/request", {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-  },
-  body: JSON.stringify({ email }),
-});
-
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email }),
+      });
 
       setSent(true);
-    } catch (err: any) {
+    } catch {
       setError("Не удалось отправить письмо. Попробуйте позже.");
     } finally {
       setLoading(false);
@@ -35,58 +38,67 @@ export default function ForgotPassword() {
 
   if (sent) {
     return (
-      <div className="max-w-md mx-auto mt-24 bg-white p-6 rounded shadow">
-        <h1 className="text-xl font-semibold mb-4">
-          Проверьте почту
-        </h1>
-        <p className="text-gray-600 mb-6">
-          Если такой email зарегистрирован, мы отправили инструкции
-          по восстановлению пароля.
-        </p>
+      <div className="h-screen w-full bg-[#0A0F24] flex items-center justify-center px-4">
+        <div className="w-full max-w-md rounded-2xl bg-white/5 backdrop-blur-xl border border-white/10 p-8 text-white">
+          <h1 className="text-2xl font-bold text-center mb-3">
+            Проверьте почту
+          </h1>
 
-        <Link
-          to="/login"
-          className="text-blue-600 hover:underline text-sm"
-        >
-          ← Вернуться к входу
-        </Link>
+          <p className="text-sm text-white/70 text-center mb-6">
+            Если такой email зарегистрирован, мы отправили временный пароль.
+            После входа система попросит вас установить новый безопасный пароль.
+          </p>
+
+          <Link
+            to="/login"
+            className="block w-full text-center py-3 rounded-lg bg-[#0052FF] font-semibold hover:bg-[#1f6bff] transition"
+          >
+            Вернуться ко входу
+          </Link>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-md mx-auto mt-24 bg-white p-6 rounded shadow">
-      <h1 className="text-xl font-semibold mb-4">
-        Восстановление пароля
-      </h1>
+    <div className="h-screen w-full bg-[#0A0F24] flex items-center justify-center px-4">
+      <div className="w-full max-w-md rounded-2xl bg-white/5 backdrop-blur-xl border border-white/10 p-8 text-white">
+        <h1 className="text-3xl font-bold text-center mb-2">
+          Восстановление пароля
+        </h1>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <input
-          type="email"
-          required
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="w-full border rounded px-3 py-2"
-        />
+        <p className="text-center text-sm text-white/60 mb-6">
+          Укажите email. Если аккаунт существует, мы отправим временный пароль.
+        </p>
 
-        {error && (
-          <p className="text-red-600 text-sm">{error}</p>
-        )}
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <input
+            type="email"
+            required
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="w-full p-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-[#3BE3FD]"
+          />
 
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full bg-blue-600 text-white py-2 rounded disabled:opacity-50"
-        >
-          {loading ? "Отправка..." : "Отправить письмо"}
-        </button>
-      </form>
+          {error && (
+            <p className="text-sm text-red-400 text-center">{error}</p>
+          )}
 
-      <div className="mt-4 text-sm">
-        <Link to="/login" className="text-blue-600 hover:underline">
-          ← Назад к входу
-        </Link>
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full py-3 bg-[#0052FF] rounded-lg text-white font-semibold disabled:opacity-50 hover:bg-[#1f6bff] transition"
+          >
+            {loading ? "Отправка..." : "Отправить временный пароль"}
+          </button>
+        </form>
+
+        <div className="mt-5 text-center text-sm">
+          <Link to="/login" className="text-[#3BE3FD] hover:text-white transition">
+            ← Назад ко входу
+          </Link>
+        </div>
       </div>
     </div>
   );

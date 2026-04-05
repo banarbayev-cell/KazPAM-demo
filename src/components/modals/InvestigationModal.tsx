@@ -23,6 +23,7 @@ import PlaybookCard from "../soc/PlaybookCard";
 import { detectPlaybookFromTimeline } from "../../soc/playbooks/detectPlaybook";
 import { useNavigate } from "react-router-dom";
 import { formatKzDateTime } from "../../utils/time";
+import { getIncidentStatusBadgeClass } from "../../utils/incidentUi";
 
 interface InvestigationModalProps {
   isOpen: boolean;
@@ -64,24 +65,6 @@ function riskBadgeClass(level: RiskLevel) {
   }
 
   return "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30";
-}
-
-function statusBadgeClass(status?: string) {
-  const s = (status || "").toUpperCase();
-
-  if (s === "OPEN" || s === "ESCALATED") {
-    return "bg-red-500/20 text-red-300 border border-red-500/30";
-  }
-
-  if (s === "INVESTIGATING") {
-    return "bg-yellow-500/20 text-yellow-300 border border-yellow-500/30";
-  }
-
-  if (s === "RESOLVED" || s === "CLOSED") {
-    return "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30";
-  }
-
-  return "bg-[#0E1A3A] text-gray-300 border border-[#24314F]";
 }
 
 export default function InvestigationModal({
@@ -225,7 +208,7 @@ export default function InvestigationModal({
                   <div className="text-xs text-gray-400">Status</div>
                   <div className="mt-1">
                     <span
-                      className={`inline-flex px-2 py-1 rounded-md text-xs font-semibold ${statusBadgeClass(
+                      className={`inline-flex px-2 py-1 rounded-md text-xs font-semibold ${getIncidentStatusBadgeClass(
                         incident?.status
                       )}`}
                     >
@@ -371,7 +354,7 @@ export default function InvestigationModal({
               />
 
               <div className="mt-2 text-xs text-gray-400">
-                Этот комментарий нужен для осмысленного закрытия инцидента
+                Этот комментарий нужен для осмысленного перевода инцидента в RESOLVED
               </div>
             </div>
           </div>
@@ -454,17 +437,17 @@ export default function InvestigationModal({
                       await updateIncidentStatus(incident.backendId, "RESOLVED");
                       onClose();
                     } catch (e) {
-                      console.error("Failed to close incident", e);
+                      console.error("Failed to resolve incident", e);
                     }
                   }}
                   className="bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white px-5 py-2 rounded-lg font-semibold"
                 >
-                  Закрыть инцидент
+                  Отметить как решённый
                 </button>
               </div>
 
               <div className="text-xs text-gray-400">
-                Для закрытия инцидента нужен комментарий аналитика SOC
+                Для перевода инцидента в RESOLVED нужен комментарий аналитика
               </div>
             </div>
           </div>

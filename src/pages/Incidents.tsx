@@ -1,72 +1,79 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 
 import {
   fetchIncidents,
   updateIncidentStatus,
   type IncidentItem,
-  type IncidentStatus,
 } from "../api/incidents";
 import { formatKzDateTime } from "../utils/time";
-
-function statusClass(status: string) {
-  const s = (status || "").toUpperCase();
-
-  if (s === "OPEN" || s === "ESCALATED") {
-    return "bg-red-500/20 text-red-300 border border-red-500/30";
-  }
-
-  if (s === "INVESTIGATING") {
-    return "bg-yellow-500/20 text-yellow-300 border border-yellow-500/30";
-  }
-
-  if (s === "RESOLVED" || s === "CLOSED") {
-    return "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30";
-  }
-
-  return "bg-[#0E1A3A] text-gray-300 border border-[#24314F]";
-}
-
-function severityClass(severity: string) {
-  const s = (severity || "").toUpperCase();
-
-  if (s === "CRITICAL") {
-    return "bg-red-500/20 text-red-300 border border-red-500/30";
-  }
-
-  if (s === "HIGH") {
-    return "bg-orange-500/20 text-orange-300 border border-orange-500/30";
-  }
-
-  if (s === "MEDIUM") {
-    return "bg-yellow-500/20 text-yellow-300 border border-yellow-500/30";
-  }
-
-  return "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30";
-}
-
-function nextStatus(item: IncidentItem): IncidentStatus {
-  if (item.status === "OPEN" || item.status === "ESCALATED") return "INVESTIGATING";
-  if (item.status === "INVESTIGATING") return "CLOSED";
-  return "OPEN";
-}
-
-function nextStatusLabel(item: IncidentItem) {
-  if (item.status === "OPEN") return "В работу";
-  if (item.status === "INVESTIGATING") return "Закрыть";
-  return "Переоткрыть";
-}
+import {
+  getIncidentSeverityBadgeClass,
+  getIncidentStatusBadgeClass,
+  getNextIncidentStatus,
+  getNextIncidentStatusLabel,
+} from "../utils/incidentUi";
 
 export default function Incidents() {
+  const [searchParams, setSearchParams] = useSearchParams();
+
   const [items, setItems] = useState<IncidentItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const [status, setStatus] = useState("all");
-  const [severity, setSeverity] = useState("all");
-  const [q, setQ] = useState("");
+  const [status, setStatus] = useState(searchParams.get("status") || "all");
+  const [severity, setSeverity] = useState(searchParams.get("severity") || "all");
+  const [q, setQ] = useState(searchParams.get("q") || "");
+
+  useEffect(() => {
+    const nextStatus = searchParams.get("status") || "all";
+    const nextSeverity = searchParams.get("severity") || "all";
+    const nextQ = searchParams.get("q") || "";
+
+    if (nextStatus !== status) {
+      setStatus(nextStatus);
+    }
+
+    if (nextSeverity !== severity) {
+      setSeverity(nextSeverity);
+    }
+
+    if (nextQ !== q) {
+      setQ(nextQ);
+    }
+  }, [searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const updateFilters = (next: {
+    q?: string;
+    status?: string;
+    severity?: string;
+  }) => {
+    const nextQ = next.q ?? q;
+    const nextStatus = next.status ?? status;
+    const nextSeverity = next.severity ?? severity;
+
+    setQ(nextQ);
+    setStatus(nextStatus);
+    setSeverity(nextSeverity);
+
+    const params = new URLSearchParams();
+
+    if (nextQ.trim()) {
+      params.set("q", nextQ.trim());
+    }
+
+    if (nextStatus !== "all") {
+      params.set("status", nextStatus);
+    }
+
+    if (nextSeverity !== "all") {
+      params.set("severity", nextSeverity);
+    }
+
+    setSearchParams(params, { replace: true });
+  };
 
   const load = async () => {
     try {
@@ -97,7 +104,7 @@ export default function Incidents() {
   }, [status, severity, q]);
 
   const handleChangeStatus = async (item: IncidentItem) => {
-    const targetStatus = nextStatus(item);
+    const targetStatus = getNextIncidentStatus(item.status);
 
     try {
       setBusyId(item.id);
@@ -132,14 +139,14 @@ export default function Incidents() {
       <div className="bg-[#121A33] border border-[#1E2A45] rounded-2xl p-4 grid grid-cols-1 md:grid-cols-4 gap-3">
         <input
           value={q}
-          onChange={(e) => setQ(e.target.value)}
+          onChange={(e) => updateFilters({ q: e.target.value })}
           placeholder="Поиск: user / system / ip / summary / correlation_id"
           className="md:col-span-2 rounded-lg bg-[#0E1A3A] border border-[#24314F] px-3 py-2 text-white outline-none"
         />
 
         <select
           value={status}
-          onChange={(e) => setStatus(e.target.value)}
+          onChange={(e) => updateFilters({ status: e.target.value })}
           className="rounded-lg bg-[#0E1A3A] border border-[#24314F] px-3 py-2 text-white outline-none"
         >
           <option value="all">Все статусы</option>
@@ -152,7 +159,7 @@ export default function Incidents() {
 
         <select
           value={severity}
-          onChange={(e) => setSeverity(e.target.value)}
+          onChange={(e) => updateFilters({ severity: e.target.value })}
           className="rounded-lg bg-[#0E1A3A] border border-[#24314F] px-3 py-2 text-white outline-none"
         >
           <option value="all">Все severity</option>
@@ -160,7 +167,6 @@ export default function Incidents() {
           <option value="MEDIUM">MEDIUM</option>
           <option value="HIGH">HIGH</option>
           <option value="CRITICAL">CRITICAL</option>
-          <option value="ESCALATED">ESCALATED</option>
         </select>
       </div>
 
@@ -211,12 +217,16 @@ export default function Incidents() {
                       })}
                     </td>
 
-                    <td className="px-4 py-3">{item.user}</td>
-                    <td className="px-4 py-3">{item.system}</td>
-                    <td className="px-4 py-3">{item.ip}</td>
+                    <td className="px-4 py-3">{item.user || "—"}</td>
+                    <td className="px-4 py-3">{item.system || "—"}</td>
+                    <td className="px-4 py-3">{item.ip || "—"}</td>
 
                     <td className="px-4 py-3">
-                      <span className={`inline-flex px-2 py-1 rounded-md text-xs font-semibold ${severityClass(item.severity)}`}>
+                      <span
+                        className={`inline-flex px-2 py-1 rounded-md text-xs font-semibold ${getIncidentSeverityBadgeClass(
+                          item.severity
+                        )}`}
+                      >
                         {item.severity}
                       </span>
                     </td>
@@ -224,7 +234,11 @@ export default function Incidents() {
                     <td className="px-4 py-3">{item.risk_score}</td>
 
                     <td className="px-4 py-3">
-                      <span className={`inline-flex px-2 py-1 rounded-md text-xs font-semibold ${statusClass(item.status)}`}>
+                      <span
+                        className={`inline-flex px-2 py-1 rounded-md text-xs font-semibold ${getIncidentStatusBadgeClass(
+                          item.status
+                        )}`}
+                      >
                         {item.status}
                       </span>
                     </td>
@@ -234,7 +248,7 @@ export default function Incidents() {
                     </td>
 
                     <td className="px-4 py-3">
-                      <div className="flex flex-col gap-2 min-w-[150px]">
+                      <div className="flex flex-col gap-2 min-w-[180px]">
                         <Link
                           to={`/soc/incidents/${item.id}`}
                           className="px-3 py-2 rounded-lg bg-[#0E1A3A] border border-[#24314F] text-center hover:bg-[#12224A]"
@@ -247,7 +261,9 @@ export default function Incidents() {
                           disabled={busyId === item.id}
                           className="px-3 py-2 rounded-lg bg-[#1E2A45] border border-[#2D3A5A] hover:bg-[#25365D] disabled:opacity-50"
                         >
-                          {busyId === item.id ? "Обновление..." : nextStatusLabel(item)}
+                          {busyId === item.id
+                            ? "Обновление..."
+                            : getNextIncidentStatusLabel(item.status)}
                         </button>
                       </div>
                     </td>

@@ -1,33 +1,16 @@
-// src/pages/IncidentDetails.tsx
-
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { API_URL } from "../api/config";
+
 import { useAuth } from "../store/auth";
 import { fetchIncidentTimelineV3, TimelineV3 } from "../api/incidentsV3";
 import { fetchIncidentActions, IncidentAction } from "../api/incidentActions";
+import { fetchIncident, type IncidentItem } from "../api/incidents";
 import { formatKzDateTime } from "../utils/time";
-
-type IncidentStatus =
-  | "OPEN"
-  | "INVESTIGATING"
-  | "RESOLVED"
-  | "CLOSED"
-  | "ESCALATED";
-
-interface BackendIncident {
-  id: number;
-  status: IncidentStatus;
-  severity: string;
-  risk_score: number;
-  user: string;
-  system: string;
-  ip: string;
-  summary?: string;
-  created_at: string;
-  closed_at?: string | null;
-  correlation_id?: string | null;
-}
+import {
+  getIncidentRiskBarClass,
+  getIncidentSeverityBadgeClass,
+  getIncidentStatusBadgeClass,
+} from "../utils/incidentUi";
 
 function uebaBadge(level?: string) {
   const l = (level || "").toUpperCase();
@@ -35,14 +18,6 @@ function uebaBadge(level?: string) {
   if (l === "HIGH") return "text-yellow-300 border-yellow-500/30";
   if (l === "MEDIUM") return "text-blue-300 border-blue-500/30";
   return "text-gray-200 border-[#1E2A45]";
-}
-
-function riskColor(score: number) {
-  if (!Number.isFinite(score)) return "bg-gray-600";
-  if (score >= 90) return "bg-red-500";
-  if (score >= 70) return "bg-orange-500";
-  if (score >= 40) return "bg-yellow-500";
-  return "bg-green-500";
 }
 
 function safeDate(value?: string | null) {
@@ -57,7 +32,7 @@ function copy(value: string) {
   navigator.clipboard.writeText(value);
 }
 
-function pivot(path: string, value: string, navigate: any) {
+function pivot(path: string, value: string, navigate: (path: string) => void) {
   if (!value || value === "—") return;
   navigate(`${path}?q=${encodeURIComponent(value)}`);
 }
@@ -78,14 +53,6 @@ function asnFromIp(ip?: string) {
   if (ip.startsWith("95.")) return "Kazakhtelecom";
   if (ip.startsWith("46.")) return "Kazakhtelecom";
   return "Unknown";
-}
-
-function severityBadge(sev?: string) {
-  const s = (sev || "").toUpperCase();
-  if (s === "CRITICAL") return "text-red-300 border-red-500/30";
-  if (s === "HIGH") return "text-orange-300 border-orange-500/30";
-  if (s === "MEDIUM") return "text-yellow-300 border-yellow-500/30";
-  return "text-gray-200 border-[#1E2A45]";
 }
 
 function getEventTimeRaw(item: any) {
@@ -157,7 +124,7 @@ export default function IncidentDetails() {
   const navigate = useNavigate();
   const token = useAuth((s) => s.token);
 
-  const [incident, setIncident] = useState<BackendIncident | null>(null);
+  const [incident, setIncident] = useState<IncidentItem | null>(null);
   const [timelineV3, setTimelineV3] = useState<TimelineV3 | null>(null);
   const [actions, setActions] = useState<IncidentAction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -176,32 +143,23 @@ export default function IncidentDetails() {
         setLoading(true);
         setError(null);
 
-        const res = await fetch(`${API_URL}/incidents/${incidentId}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-
-        if (!res.ok) {
-          throw new Error(`Failed to load incident (${res.status})`);
-        }
-
-        const data = await res.json();
+        const data = await fetchIncident(incidentId);
         setIncident(data);
 
-        try {
-          const v3 = await fetchIncidentTimelineV3(incidentId);
-          setTimelineV3(v3);
-        } catch {
-          setTimelineV3(null);
-        }
+        const [timelineResult, actionsResult] = await Promise.allSettled([
+          fetchIncidentTimelineV3(incidentId),
+          fetchIncidentActions(incidentId),
+        ]);
 
-        try {
-          const a = await fetchIncidentActions(incidentId);
-          setActions(a);
-        } catch {
-          setActions([]);
-        }
+        setTimelineV3(
+          timelineResult.status === "fulfilled" ? timelineResult.value : null
+        );
+
+        setActions(
+          actionsResult.status === "fulfilled" ? actionsResult.value : []
+        );
       } catch (e: any) {
-        setError(e.message || "Failed to load incident");
+        setError(e?.message || "Failed to load incident");
       } finally {
         setLoading(false);
       }
@@ -216,11 +174,11 @@ export default function IncidentDetails() {
   const incidentContext = (timelineV3 as any)?.incident_context || {};
 
   const displayedCreatedAt = useMemo(() => {
-    return incidentContext?.created_at || safeDate(incident?.created_at) || "—";
+    return safeDate(incidentContext?.created_at ?? incident?.created_at) || "—";
   }, [incidentContext, incident]);
 
   const displayedClosedAt = useMemo(() => {
-    return incidentContext?.closed_at || safeDate(incident?.closed_at) || null;
+    return safeDate(incidentContext?.closed_at ?? incident?.closed_at) || null;
   }, [incidentContext, incident]);
 
   const attackStages = useMemo(() => {
@@ -229,12 +187,15 @@ export default function IncidentDetails() {
     const list: string[] = [];
 
     actions.forEach((a) => {
-      if (a.action === "LOGIN_FAIL") list.push("Brute force");
-      if (a.action === "LOGIN_SUCCESS") list.push("Credential access");
-      if (a.action === "LOGIN_RISK_POST_AUTH") list.push("Account takeover");
-      if (a.action === "PASSWORD_CHANGED") list.push("Credential rotation");
-      if (a.action === "user.password_reset") list.push("Password reset");
-      if (a.action === "user.password_reset" || a.action === "PASSWORD_CHANGED") {
+      const action = String(a.action || "").toUpperCase();
+
+      if (action === "LOGIN_FAIL") list.push("Brute force");
+      if (action === "LOGIN_SUCCESS") list.push("Credential access");
+      if (action === "LOGIN_RISK_POST_AUTH") list.push("Account takeover");
+      if (action === "PASSWORD_CHANGED") list.push("Credential rotation");
+      if (action === "USER.PASSWORD_RESET") list.push("Password reset");
+
+      if (action === "USER.PASSWORD_RESET" || action === "PASSWORD_CHANGED") {
         list.push("Recovery / rotation");
       }
     });
@@ -276,7 +237,7 @@ export default function IncidentDetails() {
       }
     });
 
-    const actionSet = new Set(actions.map((a) => a.action));
+    const actionSet = new Set(actions.map((a) => String(a.action || "").toUpperCase()));
 
     if (actionSet.has("LOGIN_FAIL")) {
       add("T1110", "Brute Force", "Multiple failed login attempts observed");
@@ -286,7 +247,7 @@ export default function IncidentDetails() {
       add("T1078", "Valid Accounts", "Successful authentication after failures");
     }
 
-    if (actionSet.has("PASSWORD_CHANGED") || actionSet.has("user.password_reset")) {
+    if (actionSet.has("PASSWORD_CHANGED") || actionSet.has("USER.PASSWORD_RESET")) {
       add(
         "T1098",
         "Account Manipulation",
@@ -340,10 +301,10 @@ export default function IncidentDetails() {
       <div className="p-8 space-y-4">
         <div className="text-red-400">{error || "Incident not found"}</div>
         <button
-          onClick={() => navigate("/soc")}
+          onClick={() => navigate("/soc/incidents")}
           className="text-sm text-gray-400 hover:text-white"
         >
-          ← Back to SOC
+          ← Back to Incidents
         </button>
       </div>
     );
@@ -351,7 +312,6 @@ export default function IncidentDetails() {
 
   return (
     <div className="min-h-screen bg-gray-100 p-8 space-y-8 text-[#0A0F24]">
-      {/* HEADER */}
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold text-[#0A0F24]">
@@ -365,26 +325,33 @@ export default function IncidentDetails() {
         </div>
 
         <button
-          onClick={() => navigate("/soc")}
+          onClick={() => navigate("/soc/incidents")}
           className="px-4 py-2 rounded-lg border border-[#D7DEED] bg-white text-sm text-[#0A0F24] hover:bg-gray-50"
         >
-          ← Back to SOC
+          ← Back to Incidents
         </button>
       </div>
 
-      {/* SUMMARY */}
       <div className="border border-[#1E2A45] rounded-xl bg-[#121A33] p-6 grid grid-cols-2 gap-6">
         <div>
           <div className="text-sm text-gray-400">Status</div>
-          <div className="text-lg font-semibold text-white">{incident.status}</div>
+          <div className="mt-1">
+            <span
+              className={`inline-flex px-2 py-1 rounded-md text-xs font-semibold ${getIncidentStatusBadgeClass(
+                incident.status
+              )}`}
+            >
+              {incident.status}
+            </span>
+          </div>
         </div>
 
         <div>
           <div className="text-sm text-gray-400">Severity</div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 mt-1">
             <div className="text-lg font-semibold text-white">{incident.severity}</div>
             <span
-              className={`px-2 py-1 text-xs rounded border ${severityBadge(
+              className={`px-2 py-1 text-xs rounded border ${getIncidentSeverityBadgeClass(
                 incident.severity
               )}`}
             >
@@ -403,7 +370,7 @@ export default function IncidentDetails() {
 
             <div className="flex-1 h-3 bg-[#0E1A3A] rounded-full overflow-hidden border border-[#1E2A45]">
               <div
-                className={`h-full ${riskColor(incident.risk_score)}`}
+                className={`h-full ${getIncidentRiskBarClass(incident.risk_score)}`}
                 style={{
                   width: `${Math.max(0, Math.min(100, incident.risk_score))}%`,
                 }}
@@ -424,7 +391,6 @@ export default function IncidentDetails() {
         </div>
       </div>
 
-      {/* CONTEXT */}
       <div className="border border-[#1E2A45] rounded-xl bg-[#121A33] p-6 space-y-4">
         <div className="text-sm text-gray-400 font-semibold">Context</div>
 
@@ -457,7 +423,6 @@ export default function IncidentDetails() {
         )}
       </div>
 
-      {/* IOC PANEL */}
       <div className="border border-[#1E2A45] rounded-xl bg-[#121A33] p-6 space-y-4">
         <div className="text-sm text-gray-400 font-semibold">
           Indicators of Compromise
@@ -475,7 +440,7 @@ export default function IncidentDetails() {
                 copy
               </button>
               <button
-                onClick={() => pivot("/soc", ioc.ip, navigate)}
+                onClick={() => pivot("/soc/incidents", ioc.ip, navigate)}
                 className="text-xs text-blue-400 hover:text-blue-200"
               >
                 investigate
@@ -520,7 +485,7 @@ export default function IncidentDetails() {
                 copy
               </button>
               <button
-                onClick={() => pivot("/soc", ioc.fingerprint, navigate)}
+                onClick={() => pivot("/soc/incidents", ioc.fingerprint, navigate)}
                 className="text-xs text-blue-400 hover:text-blue-200"
               >
                 investigate
@@ -530,7 +495,6 @@ export default function IncidentDetails() {
         </div>
       </div>
 
-      {/* IP INTELLIGENCE */}
       <div className="border border-[#1E2A45] rounded-xl bg-[#121A33] p-6 space-y-4">
         <div className="text-sm text-gray-400 font-semibold">IP Intelligence</div>
 
@@ -552,7 +516,6 @@ export default function IncidentDetails() {
         </div>
       </div>
 
-      {/* THREAT GRAPH */}
       <div className="border border-[#1E2A45] rounded-xl bg-[#121A33] p-6 space-y-4">
         <div className="text-sm text-gray-400 font-semibold">Threat Graph</div>
 
@@ -585,7 +548,6 @@ export default function IncidentDetails() {
         </div>
       </div>
 
-      {/* MITRE ATT&CK */}
       <div className="border border-[#1E2A45] rounded-xl bg-[#121A33] p-6 space-y-4">
         <div className="text-sm text-gray-400 font-semibold">MITRE ATT&CK</div>
 
@@ -611,7 +573,6 @@ export default function IncidentDetails() {
         )}
       </div>
 
-      {/* UEBA SUMMARY */}
       <div className="border border-[#1E2A45] rounded-xl bg-[#121A33] p-6 space-y-4">
         <div className="flex items-center justify-between">
           <div className="text-sm text-gray-400 font-semibold">UEBA Summary</div>
@@ -666,7 +627,6 @@ export default function IncidentDetails() {
         )}
       </div>
 
-      {/* SIGNALS */}
       <div className="border border-[#1E2A45] rounded-xl bg-[#121A33] p-6 space-y-4">
         <div className="text-sm text-gray-400 font-semibold">Signals</div>
 
@@ -697,7 +657,6 @@ export default function IncidentDetails() {
         )}
       </div>
 
-      {/* ATTACK CHAIN */}
       <div className="border border-[#1E2A45] rounded-xl bg-[#121A33] p-6 space-y-4">
         <div className="text-sm text-gray-400 font-semibold">Attack chain</div>
 
@@ -717,7 +676,6 @@ export default function IncidentDetails() {
         )}
       </div>
 
-      {/* TIMELINE */}
       <div className="border border-[#1E2A45] rounded-xl bg-[#121A33] p-6 space-y-4">
         <div className="text-sm text-gray-400 font-semibold">Incident Timeline</div>
 
@@ -759,9 +717,10 @@ export default function IncidentDetails() {
         )}
       </div>
 
-      {/* ACTIONS HISTORY */}
       <div className="border border-[#1E2A45] rounded-xl bg-[#121A33] p-6 space-y-4">
-        <div className="text-sm text-gray-400 font-semibold">SOC Actions History</div>
+        <div className="text-sm text-gray-400 font-semibold">
+          Audit & Response History
+        </div>
 
         {actions.length === 0 ? (
           <div className="text-sm text-gray-500">
@@ -774,9 +733,9 @@ export default function IncidentDetails() {
                 key={a.id}
                 className="border border-[#1E2A45] rounded-lg p-3 bg-[#0E1A3A]"
               >
-                <div className="flex justify-between">
+                <div className="flex justify-between gap-4">
                   <span className="font-semibold text-white">{a.action}</span>
-                  <span className="text-xs text-gray-400">
+                  <span className="text-xs text-gray-400 whitespace-nowrap">
                     {safeDate(a.timestamp)}
                   </span>
                 </div>

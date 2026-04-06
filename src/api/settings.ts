@@ -28,6 +28,17 @@ export interface Settings {
 
   siem_webhook_url?: string;
 
+  // NEW
+  siem_auth_type?: string | null;
+  siem_auth_token_configured?: boolean;
+  siem_headers_json?: string | null;
+
+  siem_last_test_at?: string | null;
+  siem_last_success_at?: string | null;
+  siem_last_delivery_attempt_at?: string | null;
+  siem_last_delivery_status?: string | null;
+  siem_last_error?: string | null;
+
   radius_enabled: boolean;
   radius_secret_configured?: boolean;
 }
@@ -49,6 +60,11 @@ export interface SettingsIntegrationsPayload {
 
   siem_webhook_url?: string;
 
+  // NEW
+  siem_auth_type?: string | null;
+  siem_auth_token?: string;
+  siem_headers_json?: string | null;
+
   radius_enabled?: boolean;
   radius_secret?: string;
 }
@@ -60,6 +76,16 @@ export interface ADTestPayload {
   bind_password?: string;
   base_dn?: string;
   use_ssl?: boolean;
+}
+
+export interface SIEMTestResponse {
+  status: "success" | "failed" | string;
+  http_status?: number;
+  message?: string;
+  last_test_at?: string | null;
+  last_success_at?: string | null;
+  last_delivery_status?: string | null;
+  last_error?: string | null;
 }
 
 const getHeaders = () => {
@@ -129,7 +155,7 @@ export const settingsApi = {
     return json;
   },
 
-  testSiem: async (webhook_url?: string) => {
+  testSiem: async (webhook_url?: string): Promise<SIEMTestResponse> => {
     const res = await fetch(`${API_URL}/settings/integrations/siem/test`, {
       method: "POST",
       headers: getHeaders(),

@@ -10,7 +10,13 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { settingsApi, Settings, SettingsIntegrationsPayload, ADTestPayload } from "../api/settings";
+import {
+  settingsApi,
+  Settings,
+  SettingsIntegrationsPayload,
+  ADTestPayload,
+  SIEMTestResponse,
+} from "../api/settings";
 import LdapRoleMappingsCard from "@/components/settings/LdapRoleMappingsCard";
 import LdapSyncCard from "@/components/settings/LdapSyncCard";
 
@@ -26,6 +32,9 @@ export default function SettingsPage() {
   const [testingAd, setTestingAd] = useState(false);
   const [adTestResult, setAdTestResult] = useState<any | null>(null);
   const [adTestError, setAdTestError] = useState<string | null>(null);
+  const [testingSiem, setTestingSiem] = useState(false);
+  const [siemTestResult, setSiemTestResult] = useState<SIEMTestResponse | null>(null);
+  const [siemTestError, setSiemTestError] = useState<string | null>(null);
 
   useEffect(() => {
     loadSettings();
@@ -44,6 +53,26 @@ export default function SettingsPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const refreshSiemStatus = async () => {
+    const latest = await settingsApi.get();
+
+    setData((prev) =>
+      prev
+        ? {
+           ...prev,
+           siem_auth_type: latest.siem_auth_type,
+           siem_auth_token_configured: latest.siem_auth_token_configured,
+           siem_headers_json: latest.siem_headers_json,
+           siem_last_test_at: latest.siem_last_test_at,
+           siem_last_success_at: latest.siem_last_success_at,
+           siem_last_delivery_attempt_at: latest.siem_last_delivery_attempt_at,
+           siem_last_delivery_status: latest.siem_last_delivery_status,
+           siem_last_error: latest.siem_last_error,
+          }
+        : prev
+    );
   };
 
   const save = async (section: "general" | "security" | "integrations", payload: any) => {
@@ -93,6 +122,35 @@ export default function SettingsPage() {
     }
   };
 
+  const handleTestSiem = async () => {
+    if (!data) return;
+
+    setTestingSiem(true);
+    setSiemTestError(null);
+    setSiemTestResult(null);
+
+    try {
+      const res = await settingsApi.testSiem(data.siem_webhook_url?.trim());
+      setSiemTestResult(res);
+
+      await refreshSiemStatus();
+
+      toast.success(res.message || "SIEM webhook успешно проверен");
+    } catch (e: any) {
+      setSiemTestError(e?.message || "Ошибка теста SIEM");
+
+      try {
+        await refreshSiemStatus();
+      } catch {
+      // ничего не ломаем, просто не обновим блок статуса
+      }
+
+      toast.error(e?.message || "Ошибка теста SIEM");
+    } finally {
+      setTestingSiem(false);
+    }
+  };
+
   const update = (field: keyof SettingsFormData, value: any) => {
     setData((prev) => (prev ? { ...prev, [field]: value } : null));
   };
@@ -133,6 +191,28 @@ export default function SettingsPage() {
   if (loading || !data) {
     return <div className="p-8 text-gray-500">Загрузка конфигурации KazPAM...</div>;
   }
+
+  const getSiemStatusBadgeClass = (status?: string | null) => {
+    const normalized = (status || "").toLowerCase();
+
+    if (normalized === "success") {
+      return "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30";
+    }
+
+    if (normalized === "failed") {
+      return "bg-red-500/20 text-red-300 border border-red-500/30";
+    }
+
+    return "bg-[#0E1A3A] text-gray-400 border border-[#24314F]";
+  };
+
+  const getSiemStatusLabel = (status?: string | null) => {
+    const normalized = (status || "").toLowerCase();
+
+    if (normalized === "success") return "SUCCESS";
+    if (normalized === "failed") return "FAILED";
+    return "NO DATA";
+  };
 
   return (
     <div className="w-full min-h-screen bg-gray-100 text-black p-6 pb-24">
@@ -383,13 +463,79 @@ export default function SettingsPage() {
                 <Activity size={18} className="text-gray-300" />
                 <h3 className="font-semibold text-white">SIEM Log Forwarding</h3>
               </div>
+
               <Input
                 label="Адрес приёма событий SIEM (Splunk/QRadar)"
                 value={data.siem_webhook_url}
                 onChange={(v: any) => update("siem_webhook_url", v)}
                 placeholder="https://siem-collector..."
               />
+
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <button
+                  onClick={handleTestSiem}
+                  disabled={testingSiem}
+                  className="text-xs px-3 py-2 bg-blue-600/20 text-blue-300 hover:bg-blue-600/30 rounded border border-blue-500/30 transition disabled:opacity-50"
+                >
+                  {testingSiem ? "Проверка SIEM..." : "Проверить SIEM"}
+                </button>
+
+                <span
+                  className={`inline-flex px-2.5 py-1 rounded-md text-xs font-semibold ${getSiemStatusBadgeClass(
+                    data.siem_last_delivery_status
+                  )}`}
+                >
+                  {getSiemStatusLabel(data.siem_last_delivery_status)}
+                  </span>    
             </div>
+
+              <div className="mt-4 bg-[#121A33] border border-white/10 rounded-xl p-4 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-white font-medium">Последний результат SIEM</div>
+                  <div className="text-xs text-gray-400">
+                    Auth: {data.siem_auth_type || "none"}
+                  </div>
+                </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                <div className="rounded-lg border border-[#24314F] bg-[#0E1A3A] p-3">
+                  <div className="text-xs text-gray-400 mb-1">Последний статус</div>
+                  <div className="text-white">{getSiemStatusLabel(data.siem_last_delivery_status)}</div>
+                </div>
+
+              <div className="rounded-lg border border-[#24314F] bg-[#0E1A3A] p-3">
+                <div className="text-xs text-gray-400 mb-1">Последний тест</div>
+                  <div className="text-white">{data.siem_last_test_at || "—"}</div>
+                </div>
+
+              <div className="rounded-lg border border-[#24314F] bg-[#0E1A3A] p-3">
+                <div className="text-xs text-gray-400 mb-1">Последняя попытка доставки</div>
+                <div className="text-white">{data.siem_last_delivery_attempt_at || "—"}</div>
+              </div>
+
+              <div className="rounded-lg border border-[#24314F] bg-[#0E1A3A] p-3">
+                <div className="text-xs text-gray-400 mb-1">Последний успешный тест</div>
+                <div className="text-white">{data.siem_last_success_at || "—"}</div>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-[#24314F] bg-[#0E1A3A] p-3">
+             <div className="text-xs text-gray-400 mb-1">Последняя ошибка</div>
+             <div className="text-sm text-red-300 break-words">
+               {data.siem_last_error || siemTestError || "—"}
+             </div>
+           </div>
+
+            {siemTestResult?.message && (
+              <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-3">
+                <div className="text-xs text-emerald-300 font-medium mb-1">Результат текущего теста</div>
+                <div className="text-sm text-emerald-200 break-words">
+                  {siemTestResult.message}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
 
             <div>
               <div className="flex items-center justify-between mb-3">

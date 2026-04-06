@@ -25,6 +25,7 @@ import { API_URL } from "../api/config";
 type SettingsFormData = Settings & {
   ad_bind_password?: string;
   radius_secret?: string;
+  siem_auth_token?: string;
 };
 
 export default function SettingsPage() {
@@ -52,6 +53,7 @@ export default function SettingsPage() {
         ...res,
         ad_bind_password: "",
         radius_secret: "",
+        siem_auth_token: "",
       });
     } catch {
       toast.error("Ошибка загрузки настроек");
@@ -225,6 +227,8 @@ export default function SettingsPage() {
       ad_require_mapped_role: data.ad_require_mapped_role,
 
       siem_webhook_url: data.siem_webhook_url,
+      siem_auth_type: data.siem_auth_type,
+      siem_headers_json: data.siem_headers_json,
 
       radius_enabled: data.radius_enabled,
     };
@@ -235,6 +239,10 @@ export default function SettingsPage() {
 
     if (data.radius_secret?.trim()) {
       payload.radius_secret = data.radius_secret.trim();
+    }
+    
+    if (data.siem_auth_token?.trim()) {
+      payload.siem_auth_token = data.siem_auth_token.trim();
     }
 
     return payload;
@@ -523,6 +531,48 @@ export default function SettingsPage() {
                 placeholder="https://siem-collector..."
               />
 
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Select
+                  label="Auth Type"
+                  value={data.siem_auth_type || "none"}
+                  onChange={(v: any) => update("siem_auth_type", v)}
+                >
+                  <option value="none">None</option>
+                  <option value="bearer">Bearer</option>
+                  <option value="token">Authorization Token</option>
+                  <option value="api_key">X-API-Key</option>
+                  <option value="custom">Custom Headers</option>
+                </Select>
+
+                <Input
+                  label="Auth Token"
+                  type="password"
+                  value={data.siem_auth_token}
+                  onChange={(v: any) => update("siem_auth_token", v)}
+                  placeholder={
+                    data.siem_auth_token_configured
+                      ? "Токен уже сохранён. Введите новый только если хотите обновить"
+                      : "Введите токен, если нужен"
+                  }
+                />
+
+                <div className="md:col-span-2">
+                  <label className="block text-sm text-gray-400 mb-1.5 font-medium">
+                    Custom Headers JSON
+                  </label>
+                  <textarea
+                    value={data.siem_headers_json || ""}
+                    onChange={(e) => update("siem_headers_json", e.target.value)}
+                    rows={5}
+                    placeholder='{"Authorization":"Splunk abc123","X-Source":"KazPAM"}'
+                    className="w-full bg-[#0E1A3A] border border-[#2A3B55] rounded-lg px-4 py-3 text-white placeholder-gray-600 focus:border-[#0052FF] focus:ring-1 focus:ring-blue-500 focus:outline-none transition-all resize-none"
+                  />
+                  <div className="mt-1 text-xs text-gray-500">
+                    Для custom-интеграций можно передать дополнительные HTTP headers в JSON-формате.
+                  </div>
+                 </div>
+                </div>
+
               <div className="mt-4 flex flex-wrap items-center gap-3">
                 <button
                   onClick={handleTestSiem}
@@ -553,7 +603,7 @@ export default function SettingsPage() {
                 <div className="flex items-center justify-between gap-3">
                   <div className="text-white font-medium">Последний результат SIEM</div>
                   <div className="text-xs text-gray-400">
-                    Auth: {data.siem_auth_type || "none"}
+                    Auth: {data.siem_auth_type || "none"} · Token: {data.siem_auth_token_configured ? "configured" : "not set"}
                   </div>
                 </div>
 

@@ -16,6 +16,7 @@ import {
   SettingsIntegrationsPayload,
   ADTestPayload,
   SIEMTestResponse,
+  SIEMExportResponse,
 } from "../api/settings";
 import LdapRoleMappingsCard from "@/components/settings/LdapRoleMappingsCard";
 import LdapSyncCard from "@/components/settings/LdapSyncCard";
@@ -35,6 +36,9 @@ export default function SettingsPage() {
   const [testingSiem, setTestingSiem] = useState(false);
   const [siemTestResult, setSiemTestResult] = useState<SIEMTestResponse | null>(null);
   const [siemTestError, setSiemTestError] = useState<string | null>(null);
+  const [exportingSiem, setExportingSiem] = useState(false);
+  const [siemExportResult, setSiemExportResult] = useState<SIEMExportResponse | null>(null);
+  const [siemExportError, setSiemExportError] = useState<string | null>(null);
 
   useEffect(() => {
     loadSettings();
@@ -148,6 +152,35 @@ export default function SettingsPage() {
       toast.error(e?.message || "Ошибка теста SIEM");
     } finally {
       setTestingSiem(false);
+    }
+  };
+
+  const handleExportSiem = async () => {
+    if (!data) return;
+
+    setExportingSiem(true);
+    setSiemExportError(null);
+    setSiemExportResult(null);
+
+    try {
+      const res = await settingsApi.exportSiemNow(data.siem_webhook_url?.trim());
+      setSiemExportResult(res);
+
+      await refreshSiemStatus();
+
+      toast.success(res.message || "SIEM export успешно отправлен");
+    } catch (e: any) {
+      setSiemExportError(e?.message || "Ошибка ручного экспорта SIEM");
+
+      try {
+        await refreshSiemStatus();
+      } catch {
+        // не ломаем страницу
+      }
+
+      toast.error(e?.message || "Ошибка ручного экспорта SIEM");
+    } finally {
+      setExportingSiem(false);
     }
   };
 
@@ -480,6 +513,14 @@ export default function SettingsPage() {
                   {testingSiem ? "Проверка SIEM..." : "Проверить SIEM"}
                 </button>
 
+                <button
+                  onClick={handleExportSiem}
+                  disabled={exportingSiem}
+                  className="text-xs px-3 py-2 bg-purple-600/20 text-purple-300 hover:bg-purple-600/30 rounded border border-purple-500/30 transition disabled:opacity-50"
+                >
+                  {exportingSiem ? "Экспорт SIEM..." : "Export now"}
+                </button>
+
                 <span
                   className={`inline-flex px-2.5 py-1 rounded-md text-xs font-semibold ${getSiemStatusBadgeClass(
                     data.siem_last_delivery_status
@@ -531,6 +572,31 @@ export default function SettingsPage() {
                 <div className="text-xs text-emerald-300 font-medium mb-1">Результат текущего теста</div>
                 <div className="text-sm text-emerald-200 break-words">
                   {siemTestResult.message}
+                </div>
+              </div>
+            )} 
+            
+            {siemExportResult?.message && (
+             <div className="rounded-lg border border-purple-500/20 bg-purple-500/10 p-3">
+               <div className="text-xs text-purple-300 font-medium mb-1">
+                 Результат ручного экспорта
+                </div>
+                <div className="text-sm text-purple-200 break-words">
+                  {siemExportResult.message}
+                  {typeof siemExportResult.exported_events === "number"
+                    ? ` · событий: ${siemExportResult.exported_events}`
+                    : ""}
+                </div>
+              </div>
+            )}
+
+            {siemExportError && (
+              <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-3">
+                <div className="text-xs text-red-300 font-medium mb-1">
+                  Ошибка ручного экспорта
+                </div>
+                <div className="text-sm text-red-200 break-words">
+                  {siemExportError}
                 </div>
               </div>
             )}

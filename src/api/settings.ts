@@ -88,6 +88,16 @@ export interface SIEMTestResponse {
   last_error?: string | null;
 }
 
+export interface SIEMExportResponse {
+  status: "success" | "failed" | string;
+  http_status?: number;
+  exported_events?: number;
+  message?: string;
+  last_success_at?: string | null;
+  last_delivery_status?: string | null;
+  last_error?: string | null;
+}
+
 const getHeaders = () => {
   const token = localStorage.getItem("access_token");
   return {

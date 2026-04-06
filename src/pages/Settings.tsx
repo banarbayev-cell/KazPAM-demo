@@ -20,6 +20,7 @@ import {
 } from "../api/settings";
 import LdapRoleMappingsCard from "@/components/settings/LdapRoleMappingsCard";
 import LdapSyncCard from "@/components/settings/LdapSyncCard";
+import { API_URL } from "../api/config";
 
 type SettingsFormData = Settings & {
   ad_bind_password?: string;
@@ -163,12 +164,30 @@ export default function SettingsPage() {
     setSiemExportResult(null);
 
     try {
-      const res = await settingsApi.exportSiemNow(data.siem_webhook_url?.trim());
-      setSiemExportResult(res);
+      const token = localStorage.getItem("access_token");
+      
+      const res = await fetch(`${API_URL}/settings/integrations/siem/export-now`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: token ? `Bearer ${token}` : "",
+        },
+        body: JSON.stringify({
+          webhook_url: data.siem_webhook_url?.trim(),
+        }),
+      });
+
+      const json = await res.json();
+      
+      if (!res.ok) {
+        throw new Error(json.detail || "Ошибка ручного экспорта SIEM");
+      }
+
+      setSiemExportResult(json);
 
       await refreshSiemStatus();
 
-      toast.success(res.message || "SIEM export успешно отправлен");
+      toast.success(json.message || "SIEM export успешно отправлен");
     } catch (e: any) {
       setSiemExportError(e?.message || "Ошибка ручного экспорта SIEM");
 
@@ -575,7 +594,7 @@ export default function SettingsPage() {
                 </div>
               </div>
             )} 
-            
+
             {siemExportResult?.message && (
              <div className="rounded-lg border border-purple-500/20 bg-purple-500/10 p-3">
                <div className="text-xs text-purple-300 font-medium mb-1">

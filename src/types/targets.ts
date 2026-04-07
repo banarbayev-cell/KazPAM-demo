@@ -1,3 +1,5 @@
+export type TargetProtocol = "ssh" | "rdp" | "https";
+
 export type SSHAuthMode =
   | "gateway_key"
   | "vault_password"
@@ -9,7 +11,7 @@ export interface Target {
   host: string;
   port: number;
   os_type: string;
-  protocol: string;
+  protocol: TargetProtocol;
   ssh_auth_mode: SSHAuthMode;
   username?: string | null;
   vault_secret_id?: number | null;
@@ -32,7 +34,7 @@ export interface TargetCreatePayload {
   host: string;
   port: number;
   os_type: string;
-  protocol: string;
+  protocol: TargetProtocol;
   ssh_auth_mode: SSHAuthMode;
   username?: string;
   requires_vault_secret: boolean;
@@ -52,7 +54,7 @@ export interface TargetUpdatePayload {
   host?: string;
   port?: number;
   os_type?: string;
-  protocol?: string;
+  protocol?: TargetProtocol;
   ssh_auth_mode?: SSHAuthMode;
   username?: string;
   requires_vault_secret?: boolean;

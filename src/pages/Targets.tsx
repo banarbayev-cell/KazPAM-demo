@@ -17,6 +17,7 @@ import type {
   TargetCreatePayload,
   TargetUpdatePayload,
   SSHAuthMode,
+  TargetProtocol,
 } from "@/types/targets";
 
 type TargetFormState = {
@@ -24,7 +25,7 @@ type TargetFormState = {
   host: string;
   port: string;
   os_type: string;
-  protocol: string;
+  protocol: TargetProtocol;
   ssh_auth_mode: SSHAuthMode;
   username: string;
   vault_secret_id: string;
@@ -72,7 +73,7 @@ function formFromTarget(target: Target): TargetFormState {
     host: target.host ?? "",
     port: String(target.port ?? 22),
     os_type: target.os_type ?? "linux",
-    protocol: target.protocol ?? "ssh",
+    protocol: toTargetProtocol(target.protocol ?? "ssh"),
     ssh_auth_mode: target.ssh_auth_mode ?? "gateway_key",
     username: target.username ?? "",
     vault_secret_id:
@@ -96,13 +97,52 @@ function normalizeTtl(raw: string): number {
   return Math.max(1, Math.min(240, parsed));
 }
 
+function toTargetProtocol(value: string): TargetProtocol {
+  const normalized = (value || "").trim().toLowerCase();
+
+  if (normalized === "rdp") return "rdp";
+  if (normalized === "https") return "https";
+  return "ssh";
+}
+
+type TargetProtocolFilter = "all" | "ssh" | "rdp" | "https";
+
+function defaultPortForProtocol(protocol: string): number {
+  switch ((protocol || "").toLowerCase()) {
+    case "rdp":
+      return 3389;
+    case "https":
+      return 443;
+    case "ssh":
+    default:
+      return 22;
+  }
+}
+
+function nextSuggestedPort(nextProtocol: string, currentPort: string): string {
+  const protocol = (nextProtocol || "").toLowerCase();
+
+  if (protocol === "rdp") {
+    return currentPort === "22" || currentPort === "443" ? "3389" : currentPort;
+  }
+
+  if (protocol === "https") {
+    return currentPort === "22" || currentPort === "3389" ? "443" : currentPort;
+  }
+
+  return currentPort === "3389" || currentPort === "443" ? "22" : currentPort;
+}
+
+
 function buildPayload(form: TargetFormState): TargetCreatePayload {
+  const protocol = toTargetProtocol(form.protocol);
+
   return {
     name: form.name.trim(),
     host: form.host.trim(),
-    port: Number(form.port) || (form.protocol === "rdp" ? 3389 : 22),
+    port: Number(form.port) || defaultPortForProtocol(protocol),
     os_type: form.os_type.trim() || "linux",
-    protocol: form.protocol.trim() || "ssh",
+    protocol,
     ssh_auth_mode: form.ssh_auth_mode,
     username: form.username.trim() || undefined,
     requires_vault_secret: form.requires_vault_secret,
@@ -117,12 +157,14 @@ function buildPayload(form: TargetFormState): TargetCreatePayload {
 }
 
 function buildUpdatePayload(form: TargetFormState): TargetUpdatePayload {
+  const protocol = toTargetProtocol(form.protocol);
+
   return {
     name: form.name.trim(),
     host: form.host.trim(),
-    port: Number(form.port) || (form.protocol === "rdp" ? 3389 : 22),
+    port: Number(form.port) || defaultPortForProtocol(protocol),
     os_type: form.os_type.trim() || "linux",
-    protocol: form.protocol.trim() || "ssh",
+    protocol,
     ssh_auth_mode: form.ssh_auth_mode,
     username: form.username.trim() || undefined,
     requires_vault_secret: form.requires_vault_secret,
@@ -174,9 +216,7 @@ export default function Targets() {
   const [submitting, setSubmitting] = useState(false);
 
   const [search, setSearch] = useState("");
-  const [protocolFilter, setProtocolFilter] = useState<"all" | "ssh" | "rdp">(
-    "all"
-  );
+  const [protocolFilter, setProtocolFilter] = useState<TargetProtocolFilter>("all");
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [createForm, setCreateForm] = useState<TargetFormState>(emptyForm);
@@ -369,13 +409,14 @@ export default function Targets() {
           <select
             value={protocolFilter}
             onChange={(e) =>
-              setProtocolFilter(e.target.value as "all" | "ssh" | "rdp")
+              setProtocolFilter(e.target.value as TargetProtocolFilter)
             }
             className="border rounded-md px-3 py-2 text-sm bg-white text-black"
           >
             <option value="all">Все протоколы</option>
             <option value="ssh">SSH</option>
             <option value="rdp">RDP</option>
+            <option value="https">HTTPS</option>
           </select>
 
           <div className="ml-auto text-sm text-gray-600">
@@ -468,6 +509,10 @@ export default function Targets() {
                         {target.protocol === "ssh"
                           ? securityChip(`SSH ${target.ssh_auth_mode}`, "gray")
                           : null}
+
+                        {target.protocol === "https"
+                          ? securityChip("HTTPS web target", "blue")
+                          : null}  
                       </div>
                     </td>
                     <td className="px-4 py-3">
@@ -584,21 +629,21 @@ export default function Targets() {
                   <select
                     value={createForm.protocol}
                     onChange={(e) =>
-                      setCreateForm((s) => ({
-                        ...s,
-                        protocol: e.target.value,
-                        port:
-                          e.target.value === "rdp"
-                            ? "3389"
-                            : s.port === "3389"
-                            ? "22"
-                            : s.port,
-                      }))
+                      setCreateForm((s) => {
+                        const protocol = toTargetProtocol(e.target.value);
+                        
+                        return {
+                          ...s,
+                          protocol,
+                          port: nextSuggestedPort(protocol, s.port),
+                         }; 
+                      })
                     }
                     className="w-full p-2 rounded bg-[#0E1A3A] border border-[#1E2A45] text-white"
                   >
                     <option value="ssh">ssh</option>
                     <option value="rdp">rdp</option>
+                    <option value="https">https</option>
                   </select>
                 </div>
 
@@ -852,23 +897,21 @@ export default function Targets() {
                   <select
                     value={editForm.protocol}
                     onChange={(e) =>
-                      setEditForm((s) => ({
-                        ...s,
-                        protocol: e.target.value,
-                        port:
-                          e.target.value === "rdp"
-                            ? s.port === "22"
-                              ? "3389"
-                              : s.port
-                            : s.port === "3389"
-                            ? "22"
-                            : s.port,
-                      }))
+                      setEditForm((s) => {
+                        const protocol = toTargetProtocol(e.target.value);
+
+                        return {
+                          ...s,
+                          protocol,
+                          port: nextSuggestedPort(protocol, s.port),
+                        };  
+                      })
                     }
                     className="w-full p-2 rounded bg-[#0E1A3A] border border-[#1E2A45] text-white"
                   >
                     <option value="ssh">ssh</option>
                     <option value="rdp">rdp</option>
+                    <option value="https">https</option>
                   </select>
                 </div>
 

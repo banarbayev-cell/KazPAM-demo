@@ -41,7 +41,7 @@ export async function unbindTargetVaultSecret(
 }
 
 export async function listAccessibleTargets(
-  protocol?: "ssh" | "rdp"
+  protocol?: "ssh" | "rdp" | "https"
 ): Promise<Target[]> {
   const query = protocol ? `?protocol=${protocol}` : "";
   return api.get<Target[]>(`/targets/accessible${query}`);

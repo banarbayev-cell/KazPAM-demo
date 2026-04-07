@@ -28,7 +28,6 @@ export interface Settings {
 
   siem_webhook_url?: string;
 
-  // NEW
   siem_auth_type?: string | null;
   siem_auth_token_configured?: boolean;
   siem_headers_json?: string | null;
@@ -38,6 +37,8 @@ export interface Settings {
   siem_last_delivery_attempt_at?: string | null;
   siem_last_delivery_status?: string | null;
   siem_last_error?: string | null;
+  siem_last_delivery_operation?: string | null;
+  siem_last_exported_events?: number | null;
 
   radius_enabled: boolean;
   radius_secret_configured?: boolean;
@@ -59,8 +60,6 @@ export interface SettingsIntegrationsPayload {
   ad_require_mapped_role?: boolean;
 
   siem_webhook_url?: string;
-
-  // NEW
   siem_auth_type?: string | null;
   siem_auth_token?: string;
   siem_headers_json?: string | null;
@@ -86,6 +85,8 @@ export interface SIEMTestResponse {
   last_success_at?: string | null;
   last_delivery_status?: string | null;
   last_error?: string | null;
+  last_delivery_operation?: string | null;
+  last_exported_events?: number | null;
 }
 
 export interface SIEMExportResponse {
@@ -96,6 +97,8 @@ export interface SIEMExportResponse {
   last_success_at?: string | null;
   last_delivery_status?: string | null;
   last_error?: string | null;
+  last_delivery_operation?: string | null;
+  last_exported_events?: number | null;
 }
 
 const getHeaders = () => {
@@ -174,6 +177,18 @@ export const settingsApi = {
 
     const json = await res.json();
     if (!res.ok) throw new Error(json.detail || "Ошибка теста SIEM");
+    return json;
+  },
+
+  exportSiemNow: async (webhook_url?: string): Promise<SIEMExportResponse> => {
+    const res = await fetch(`${API_URL}/settings/integrations/siem/export-now`, {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify({ webhook_url }),
+    });
+
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.detail || "Ошибка ручного экспорта SIEM");
     return json;
   },
 };

@@ -18,7 +18,6 @@ import {
   type SIEMTestResponse,
   type SIEMExportResponse,
 } from "../api/settings";
-import { API_URL } from "../api/config";
 import LdapRoleMappingsCard from "@/components/settings/LdapRoleMappingsCard";
 import LdapSyncCard from "@/components/settings/LdapSyncCard";
 
@@ -80,6 +79,8 @@ export default function SettingsPage() {
             siem_last_delivery_attempt_at: latest.siem_last_delivery_attempt_at,
             siem_last_delivery_status: latest.siem_last_delivery_status,
             siem_last_error: latest.siem_last_error,
+            siem_last_delivery_operation: latest.siem_last_delivery_operation,
+            siem_last_exported_events: latest.siem_last_exported_events,
           }
         : prev
     );
@@ -168,28 +169,10 @@ export default function SettingsPage() {
     setSiemExportResult(null);
 
     try {
-      const token = localStorage.getItem("access_token");
-
-      const res = await fetch(`${API_URL}/settings/integrations/siem/export-now`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: token ? `Bearer ${token}` : "",
-        },
-        body: JSON.stringify({
-          webhook_url: data.siem_webhook_url?.trim(),
-        }),
-      });
-
-      const json = await res.json();
-
-      if (!res.ok) {
-        throw new Error(json.detail || "Ошибка ручного экспорта SIEM");
-      }
-
-      setSiemExportResult(json);
+      const res = await settingsApi.exportSiemNow(data.siem_webhook_url?.trim());
+      setSiemExportResult(res);
       await refreshSiemStatus();
-      toast.success(json.message || "SIEM export успешно отправлен");
+      toast.success(res.message || "SIEM export успешно отправлен");
     } catch (e: any) {
       setSiemExportError(e?.message || "Ошибка ручного экспорта SIEM");
       try {
@@ -290,6 +273,15 @@ export default function SettingsPage() {
     if (normalized === "success") return "SUCCESS";
     if (normalized === "failed") return "FAILED";
     return "NO DATA";
+  };
+
+  const getSiemOperationLabel = (operation?: string | null) => {
+    const normalized = (operation || "").toLowerCase();
+
+    if (normalized === "test") return "TEST";
+    if (normalized === "export_now") return "EXPORT NOW";
+
+    return "—";
   };
 
   if (loading || !data) {
@@ -643,11 +635,18 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 text-sm">
                   <div className="rounded-lg border border-[#24314F] bg-[#0E1A3A] p-3">
                     <div className="text-xs text-gray-400 mb-1">Последний статус</div>
                     <div className="text-white">
                       {getSiemStatusLabel(data.siem_last_delivery_status)}
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-[#24314F] bg-[#0E1A3A] p-3">
+                    <div className="text-xs text-gray-400 mb-1">Последняя операция</div>
+                    <div className="text-white">
+                      {getSiemOperationLabel(data.siem_last_delivery_operation)}
                     </div>
                   </div>
 
@@ -664,8 +663,17 @@ export default function SettingsPage() {
                   </div>
 
                   <div className="rounded-lg border border-[#24314F] bg-[#0E1A3A] p-3">
-                    <div className="text-xs text-gray-400 mb-1">Последний успешный тест</div>
+                    <div className="text-xs text-gray-400 mb-1">Последняя успешная доставка</div>
                     <div className="text-white">{data.siem_last_success_at || "—"}</div>
+                  </div>
+
+                  <div className="rounded-lg border border-[#24314F] bg-[#0E1A3A] p-3">
+                    <div className="text-xs text-gray-400 mb-1">Событий в последнем экспорте</div>
+                    <div className="text-white">
+                      {typeof data.siem_last_exported_events === "number"
+                        ? data.siem_last_exported_events
+                        : "—"}
+                    </div>
                   </div>
                 </div>
 

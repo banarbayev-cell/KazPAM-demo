@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   Settings as SettingsIcon,
   Shield,
@@ -12,15 +12,15 @@ import { toast } from "sonner";
 
 import {
   settingsApi,
-  Settings,
-  SettingsIntegrationsPayload,
-  ADTestPayload,
-  SIEMTestResponse,
-  SIEMExportResponse,
+  type Settings,
+  type SettingsIntegrationsPayload,
+  type ADTestPayload,
+  type SIEMTestResponse,
+  type SIEMExportResponse,
 } from "../api/settings";
+import { API_URL } from "../api/config";
 import LdapRoleMappingsCard from "@/components/settings/LdapRoleMappingsCard";
 import LdapSyncCard from "@/components/settings/LdapSyncCard";
-import { API_URL } from "../api/config";
 
 type SettingsFormData = Settings & {
   ad_bind_password?: string;
@@ -32,18 +32,21 @@ export default function SettingsPage() {
   const [data, setData] = useState<SettingsFormData | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
+
   const [testingAd, setTestingAd] = useState(false);
   const [adTestResult, setAdTestResult] = useState<any | null>(null);
   const [adTestError, setAdTestError] = useState<string | null>(null);
+
   const [testingSiem, setTestingSiem] = useState(false);
   const [siemTestResult, setSiemTestResult] = useState<SIEMTestResponse | null>(null);
   const [siemTestError, setSiemTestError] = useState<string | null>(null);
+
   const [exportingSiem, setExportingSiem] = useState(false);
   const [siemExportResult, setSiemExportResult] = useState<SIEMExportResponse | null>(null);
   const [siemExportError, setSiemExportError] = useState<string | null>(null);
 
   useEffect(() => {
-    loadSettings();
+    void loadSettings();
   }, []);
 
   const loadSettings = async () => {
@@ -68,21 +71,24 @@ export default function SettingsPage() {
     setData((prev) =>
       prev
         ? {
-           ...prev,
-           siem_auth_type: latest.siem_auth_type,
-           siem_auth_token_configured: latest.siem_auth_token_configured,
-           siem_headers_json: latest.siem_headers_json,
-           siem_last_test_at: latest.siem_last_test_at,
-           siem_last_success_at: latest.siem_last_success_at,
-           siem_last_delivery_attempt_at: latest.siem_last_delivery_attempt_at,
-           siem_last_delivery_status: latest.siem_last_delivery_status,
-           siem_last_error: latest.siem_last_error,
+            ...prev,
+            siem_auth_type: latest.siem_auth_type,
+            siem_auth_token_configured: latest.siem_auth_token_configured,
+            siem_headers_json: latest.siem_headers_json,
+            siem_last_test_at: latest.siem_last_test_at,
+            siem_last_success_at: latest.siem_last_success_at,
+            siem_last_delivery_attempt_at: latest.siem_last_delivery_attempt_at,
+            siem_last_delivery_status: latest.siem_last_delivery_status,
+            siem_last_error: latest.siem_last_error,
           }
         : prev
     );
   };
 
-  const save = async (section: "general" | "security" | "integrations", payload: any) => {
+  const save = async (
+    section: "general" | "security" | "integrations",
+    payload: any
+  ) => {
     setSaving(section);
     try {
       if (section === "general") await settingsApi.updateGeneral(payload);
@@ -139,19 +145,15 @@ export default function SettingsPage() {
     try {
       const res = await settingsApi.testSiem(data.siem_webhook_url?.trim());
       setSiemTestResult(res);
-
       await refreshSiemStatus();
-
       toast.success(res.message || "SIEM webhook успешно проверен");
     } catch (e: any) {
       setSiemTestError(e?.message || "Ошибка теста SIEM");
-
       try {
         await refreshSiemStatus();
       } catch {
-      // ничего не ломаем, просто не обновим блок статуса
+        // keep UI stable
       }
-
       toast.error(e?.message || "Ошибка теста SIEM");
     } finally {
       setTestingSiem(false);
@@ -167,7 +169,7 @@ export default function SettingsPage() {
 
     try {
       const token = localStorage.getItem("access_token");
-      
+
       const res = await fetch(`${API_URL}/settings/integrations/siem/export-now`, {
         method: "POST",
         headers: {
@@ -180,25 +182,21 @@ export default function SettingsPage() {
       });
 
       const json = await res.json();
-      
+
       if (!res.ok) {
         throw new Error(json.detail || "Ошибка ручного экспорта SIEM");
       }
 
       setSiemExportResult(json);
-
       await refreshSiemStatus();
-
       toast.success(json.message || "SIEM export успешно отправлен");
     } catch (e: any) {
       setSiemExportError(e?.message || "Ошибка ручного экспорта SIEM");
-
       try {
         await refreshSiemStatus();
       } catch {
-        // не ломаем страницу
+        // keep UI stable
       }
-
       toast.error(e?.message || "Ошибка ручного экспорта SIEM");
     } finally {
       setExportingSiem(false);
@@ -237,20 +235,40 @@ export default function SettingsPage() {
       payload.ad_bind_password = data.ad_bind_password.trim();
     }
 
-    if (data.radius_secret?.trim()) {
-      payload.radius_secret = data.radius_secret.trim();
-    }
-    
     if (data.siem_auth_token?.trim()) {
       payload.siem_auth_token = data.siem_auth_token.trim();
+    }
+
+    if (data.radius_secret?.trim()) {
+      payload.radius_secret = data.radius_secret.trim();
     }
 
     return payload;
   };
 
-  if (loading || !data) {
-    return <div className="p-8 text-gray-500">Загрузка конфигурации KazPAM...</div>;
-  }
+  const validateSiemHeadersJson = (value?: string | null): string | null => {
+    const raw = (value || "").trim();
+    if (!raw) return null;
+
+    try {
+      const parsed = JSON.parse(raw);
+      if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") {
+        return "SIEM headers JSON must be a valid JSON object";
+      }
+      return null;
+    } catch {
+      return "SIEM headers JSON must be a valid JSON object";
+    }
+  };
+
+  const handleSaveIntegrations = () => {
+    const validationError = validateSiemHeadersJson(data?.siem_headers_json);
+    if (validationError) {
+      toast.error(validationError);
+      return;
+    }
+    void save("integrations", buildIntegrationsPayload());
+  };
 
   const getSiemStatusBadgeClass = (status?: string | null) => {
     const normalized = (status || "").toLowerCase();
@@ -273,6 +291,10 @@ export default function SettingsPage() {
     if (normalized === "failed") return "FAILED";
     return "NO DATA";
   };
+
+  if (loading || !data) {
+    return <div className="p-8 text-gray-500">Загрузка конфигурации KazPAM...</div>;
+  }
 
   return (
     <div className="w-full min-h-screen bg-gray-100 text-black p-6 pb-24">
@@ -351,7 +373,7 @@ export default function SettingsPage() {
                 Требовать второй фактор для всех административных сессий
               </p>
             </div>
-            <Toggle checked={data.mfa_required} onChange={(v: any) => update("mfa_required", v)} />
+            <Toggle checked={data.mfa_required} onChange={(v: boolean) => update("mfa_required", v)} />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -379,7 +401,7 @@ export default function SettingsPage() {
         <Section
           title="Интеграции (Enterprise)"
           icon={<Network className="text-purple-400" />}
-          onSave={() => save("integrations", buildIntegrationsPayload())}
+          onSave={handleSaveIntegrations}
           loading={saving === "integrations"}
         >
           <div className="border-b border-white/10 pb-8 mb-8">
@@ -388,7 +410,7 @@ export default function SettingsPage() {
                 <Server size={18} className="text-gray-300" />
                 <h3 className="text-lg font-semibold text-white">Active Directory / LDAP</h3>
               </div>
-              <Toggle checked={data.ad_enabled} onChange={(v: any) => update("ad_enabled", v)} />
+              <Toggle checked={data.ad_enabled} onChange={(v: boolean) => update("ad_enabled", v)} />
             </div>
 
             {data.ad_enabled && (
@@ -430,7 +452,6 @@ export default function SettingsPage() {
                       onChange={(v: any) => update("ad_bind_password", v)}
                       placeholder="Введите новый пароль только если нужно обновить"
                     />
-                  
                   </div>
 
                   <Input
@@ -490,7 +511,9 @@ export default function SettingsPage() {
                       disabled={testingAd}
                       className="text-xs px-3 py-1.5 bg-blue-600/20 text-blue-300 hover:bg-blue-600/30 rounded border border-blue-500/30 transition"
                     >
-                      {testingAd ? "Проверка..." : "Проверка доступности контроллера домена и корректность параметров подключения"}
+                      {testingAd
+                        ? "Проверка..."
+                        : "Проверка доступности контроллера домена и корректность параметров подключения"}
                     </button>
                   </div>
                 </div>
@@ -560,18 +583,30 @@ export default function SettingsPage() {
                   <label className="block text-sm text-gray-400 mb-1.5 font-medium">
                     Custom Headers JSON
                   </label>
+
                   <textarea
                     value={data.siem_headers_json || ""}
                     onChange={(e) => update("siem_headers_json", e.target.value)}
                     rows={5}
                     placeholder='{"Authorization":"Splunk abc123","X-Source":"KazPAM"}'
-                    className="w-full bg-[#0E1A3A] border border-[#2A3B55] rounded-lg px-4 py-3 text-white placeholder-gray-600 focus:border-[#0052FF] focus:ring-1 focus:ring-blue-500 focus:outline-none transition-all resize-none"
+                    className={`w-full bg-[#0E1A3A] border rounded-lg px-4 py-3 text-white placeholder-gray-600 focus:border-[#0052FF] focus:ring-1 focus:ring-blue-500 focus:outline-none transition-all resize-none ${
+                      validateSiemHeadersJson(data.siem_headers_json)
+                        ? "border-red-500"
+                        : "border-[#2A3B55]"
+                    }`}
                   />
-                  <div className="mt-1 text-xs text-gray-500">
-                    Для custom-интеграций можно передать дополнительные HTTP headers в JSON-формате.
-                  </div>
-                 </div>
+
+                  {validateSiemHeadersJson(data.siem_headers_json) ? (
+                    <div className="mt-2 text-xs text-red-400">
+                      {validateSiemHeadersJson(data.siem_headers_json)}
+                    </div>
+                  ) : (
+                    <div className="mt-1 text-xs text-gray-500">
+                      Для custom-интеграций можно передать дополнительные HTTP headers в JSON-формате.
+                    </div>
+                  )}
                 </div>
+              </div>
 
               <div className="mt-4 flex flex-wrap items-center gap-3">
                 <button
@@ -596,98 +631,103 @@ export default function SettingsPage() {
                   )}`}
                 >
                   {getSiemStatusLabel(data.siem_last_delivery_status)}
-                  </span>    
-            </div>
+                </span>
+              </div>
 
               <div className="mt-4 bg-[#121A33] border border-white/10 rounded-xl p-4 space-y-3">
                 <div className="flex items-center justify-between gap-3">
                   <div className="text-white font-medium">Последний результат SIEM</div>
                   <div className="text-xs text-gray-400">
-                    Auth: {data.siem_auth_type || "none"} · Token: {data.siem_auth_token_configured ? "configured" : "not set"}
+                    Auth: {data.siem_auth_type || "none"} · Token:{" "}
+                    {data.siem_auth_token_configured ? "configured" : "not set"}
                   </div>
                 </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                  <div className="rounded-lg border border-[#24314F] bg-[#0E1A3A] p-3">
+                    <div className="text-xs text-gray-400 mb-1">Последний статус</div>
+                    <div className="text-white">
+                      {getSiemStatusLabel(data.siem_last_delivery_status)}
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-[#24314F] bg-[#0E1A3A] p-3">
+                    <div className="text-xs text-gray-400 mb-1">Последний тест</div>
+                    <div className="text-white">{data.siem_last_test_at || "—"}</div>
+                  </div>
+
+                  <div className="rounded-lg border border-[#24314F] bg-[#0E1A3A] p-3">
+                    <div className="text-xs text-gray-400 mb-1">Последняя попытка доставки</div>
+                    <div className="text-white">
+                      {data.siem_last_delivery_attempt_at || "—"}
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-[#24314F] bg-[#0E1A3A] p-3">
+                    <div className="text-xs text-gray-400 mb-1">Последний успешный тест</div>
+                    <div className="text-white">{data.siem_last_success_at || "—"}</div>
+                  </div>
+                </div>
+
                 <div className="rounded-lg border border-[#24314F] bg-[#0E1A3A] p-3">
-                  <div className="text-xs text-gray-400 mb-1">Последний статус</div>
-                  <div className="text-white">{getSiemStatusLabel(data.siem_last_delivery_status)}</div>
+                  <div className="text-xs text-gray-400 mb-1">Последняя ошибка</div>
+                  <div className="text-sm text-red-300 break-words">
+                    {data.siem_last_error || siemTestError || siemExportError || "—"}
+                  </div>
                 </div>
 
-              <div className="rounded-lg border border-[#24314F] bg-[#0E1A3A] p-3">
-                <div className="text-xs text-gray-400 mb-1">Последний тест</div>
-                  <div className="text-white">{data.siem_last_test_at || "—"}</div>
-                </div>
+                {siemTestResult?.message && (
+                  <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-3">
+                    <div className="text-xs text-emerald-300 font-medium mb-1">
+                      Результат текущего теста
+                    </div>
+                    <div className="text-sm text-emerald-200 break-words">
+                      {siemTestResult.message}
+                    </div>
+                  </div>
+                )}
 
-              <div className="rounded-lg border border-[#24314F] bg-[#0E1A3A] p-3">
-                <div className="text-xs text-gray-400 mb-1">Последняя попытка доставки</div>
-                <div className="text-white">{data.siem_last_delivery_attempt_at || "—"}</div>
-              </div>
+                {siemExportResult?.message && (
+                  <div className="rounded-lg border border-purple-500/20 bg-purple-500/10 p-3">
+                    <div className="text-xs text-purple-300 font-medium mb-1">
+                      Результат ручного экспорта
+                    </div>
+                    <div className="text-sm text-purple-200 break-words">
+                      {siemExportResult.message}
+                      {typeof siemExportResult.exported_events === "number"
+                        ? ` · событий: ${siemExportResult.exported_events}`
+                        : ""}
+                    </div>
+                  </div>
+                )}
 
-              <div className="rounded-lg border border-[#24314F] bg-[#0E1A3A] p-3">
-                <div className="text-xs text-gray-400 mb-1">Последний успешный тест</div>
-                <div className="text-white">{data.siem_last_success_at || "—"}</div>
+                {siemExportError && (
+                  <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-3">
+                    <div className="text-xs text-red-300 font-medium mb-1">
+                      Ошибка ручного экспорта
+                    </div>
+                    <div className="text-sm text-red-200 break-words">
+                      {siemExportError}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
-
-            <div className="rounded-lg border border-[#24314F] bg-[#0E1A3A] p-3">
-             <div className="text-xs text-gray-400 mb-1">Последняя ошибка</div>
-             <div className="text-sm text-red-300 break-words">
-               {data.siem_last_error || siemTestError || "—"}
-             </div>
-           </div>
-
-            {siemTestResult?.message && (
-              <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-3">
-                <div className="text-xs text-emerald-300 font-medium mb-1">Результат текущего теста</div>
-                <div className="text-sm text-emerald-200 break-words">
-                  {siemTestResult.message}
-                </div>
-              </div>
-            )} 
-
-            {siemExportResult?.message && (
-             <div className="rounded-lg border border-purple-500/20 bg-purple-500/10 p-3">
-               <div className="text-xs text-purple-300 font-medium mb-1">
-                 Результат ручного экспорта
-                </div>
-                <div className="text-sm text-purple-200 break-words">
-                  {siemExportResult.message}
-                  {typeof siemExportResult.exported_events === "number"
-                    ? ` · событий: ${siemExportResult.exported_events}`
-                    : ""}
-                </div>
-              </div>
-            )}
-
-            {siemExportError && (
-              <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-3">
-                <div className="text-xs text-red-300 font-medium mb-1">
-                  Ошибка ручного экспорта
-                </div>
-                <div className="text-sm text-red-200 break-words">
-                  {siemExportError}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
 
             <div>
               <div className="flex items-center justify-between mb-3">
                 <h3 className="font-semibold text-white">Аутентификация RADIUS</h3>
-                <Toggle checked={data.radius_enabled} onChange={(v: any) => update("radius_enabled", v)} />
+                <Toggle checked={data.radius_enabled} onChange={(v: boolean) => update("radius_enabled", v)} />
               </div>
 
               {data.radius_enabled && (
-                <>
-                  <Input
-                    label="Shared Secret"
-                    type="password"
-                    value={data.radius_secret}
-                    onChange={(v: any) => update("radius_secret", v)}
-                    placeholder="Введите новый secret только если нужно обновить"
-                  />
-                </>
+                <Input
+                  label="Shared Secret"
+                  type="password"
+                  value={data.radius_secret}
+                  onChange={(v: any) => update("radius_secret", v)}
+                  placeholder="Введите новый secret только если нужно обновить"
+                />
               )}
             </div>
           </div>
@@ -731,7 +771,17 @@ const Input = ({ label, value, onChange, type = "text", placeholder }: any) => (
   </div>
 );
 
-const Select = ({ label, value, onChange, children }: any) => (
+const Select = ({
+  label,
+  value,
+  onChange,
+  children,
+}: {
+  label: string;
+  value?: any;
+  onChange: (value: any) => void;
+  children: ReactNode;
+}) => (
   <div className="w-full">
     <label className="block text-sm text-gray-400 mb-1.5 font-medium">{label}</label>
     <select

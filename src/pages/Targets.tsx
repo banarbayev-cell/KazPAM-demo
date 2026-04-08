@@ -231,6 +231,10 @@ export default function Targets() {
   const [editingTarget, setEditingTarget] = useState<Target | null>(null);
   const [editForm, setEditForm] = useState<TargetFormState>(emptyForm);
 
+  const [breakGlassTarget, setBreakGlassTarget] = useState<Target | null>(null);
+  const [breakGlassReason, setBreakGlassReason] = useState("");
+  const [breakGlassSubmitting, setBreakGlassSubmitting] = useState(false);
+
   async function load() {
     setLoading(true);
     try {
@@ -368,9 +372,18 @@ export default function Targets() {
     }
   }
 
-  async function handleOpenHttps(target: Target) {
+  async function handleOpenHttps(
+    target: Target,
+    options?: {
+      break_glass_requested?: boolean;
+      break_glass_reason?: string;
+    }
+  ) {
     try {
-      const result = await launchWebAccess(target.id);
+      const result = await launchWebAccess(target.id, {
+        break_glass_requested: options?.break_glass_requested ?? false,
+        break_glass_reason: options?.break_glass_reason?.trim() || undefined,
+      });
 
       const opened = window.open(
         result.launch_url,
@@ -383,7 +396,12 @@ export default function Targets() {
         return;
       }
 
-      toast.success(`HTTPS access открыт · target #${target.id}`);
+      toast.success(
+        result.break_glass
+          ? `HTTPS break-glass access открыт · target #${target.id}`
+          : `HTTPS access открыт · target #${target.id}`
+      );
+
       await load();
     } catch (e: any) {
       const message = extractErrorMessage(e);
@@ -407,7 +425,45 @@ export default function Targets() {
         return;
       }
 
+      if (message.includes("Permission denied: use_break_glass")) {
+        toast.error("У вас нет права use_break_glass.");
+        return;
+      }
+
+      if (message.includes("Break-glass is not enabled for this target")) {
+        toast.error("Для этого target break-glass не включён.");
+        return;
+      }
+
+      if (message.includes("Break-glass reason is required")) {
+        toast.error("Для break-glass нужно указать причину.");
+        return;
+      }
+
       toast.error(message || "Ошибка открытия HTTPS access");
+    }
+  }
+
+  async function handleOpenHttpsBreakGlass() {
+    if (!breakGlassTarget) return;
+
+    const reason = breakGlassReason.trim();
+    if (!reason) {
+      toast.error("Укажите причину break-glass.");
+      return;
+    }
+
+    setBreakGlassSubmitting(true);
+    try {
+      await handleOpenHttps(breakGlassTarget, {
+        break_glass_requested: true,
+        break_glass_reason: reason,
+      });
+
+      setBreakGlassTarget(null);
+      setBreakGlassReason("");
+    } finally {
+      setBreakGlassSubmitting(false);
     }
   }
 
@@ -587,6 +643,38 @@ export default function Targets() {
                             className="px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white text-xs"
                           >
                             Запустить RDP
+                          </button>
+                        )}
+
+                        {target.approval_required && canRequestVaultAccess && (
+                          <button
+                            onClick={() => handleRequestApproval(target)}
+                            className="px-3 py-1 rounded bg-[#0052FF] hover:bg-[#0046D8] text-white text-xs"
+                          >
+                            Запросить approval
+                          </button>
+                        )}
+
+                        {target.protocol === "https" && canOpenHttps && (
+                          <button
+                            onClick={() => handleOpenHttps(target)}
+                            disabled={!target.is_active}
+                            className="px-3 py-1 rounded bg-sky-600 hover:bg-sky-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white text-xs"
+                          >
+                            Открыть HTTPS
+                          </button>
+                        )}
+
+                        {target.protocol === "https" && target.break_glass_enabled && canOpenHttps && (
+                          <button
+                            onClick={() => {
+                              setBreakGlassTarget(target);
+                              setBreakGlassReason("");
+                            }}
+                            disabled={!target.is_active}
+                            className="px-3 py-1 rounded bg-red-600 hover:bg-red-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white text-xs"
+                          >
+                            Break-glass
                           </button>
                         )}
 
@@ -1141,7 +1229,59 @@ export default function Targets() {
             </div>
           </div>
         )}
+        {breakGlassTarget && (
+          <div className="fixed inset-0 flex items-center justify-center bg-black/50 z-50">
+            <div className="bg-[#121A33] p-6 rounded-xl border border-[#1E2A45] w-[560px] max-w-[95vw] space-y-4">
+              <h2 className="text-lg font-semibold text-white">
+                Break-glass · HTTPS target #{breakGlassTarget.id}
+              </h2>
+
+              <div className="text-sm text-gray-300 space-y-1">
+                <div>
+                  <span className="text-gray-400">Target:</span>{" "}
+                  {breakGlassTarget.name}
+                </div>
+                <div>
+                  <span className="text-gray-400">Host:</span>{" "}
+                  {breakGlassTarget.host}:{breakGlassTarget.port}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm text-gray-300">
+                  Причина break-glass
+                </label>
+                <textarea
+                  value={breakGlassReason}
+                  onChange={(e) => setBreakGlassReason(e.target.value)}
+                  className="w-full p-2 rounded bg-[#0E1A3A] border border-[#1E2A45] text-white"
+                  placeholder="Например: аварийный доступ к критичному веб-интерфейсу"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  onClick={() => {
+                    setBreakGlassTarget(null);
+                    setBreakGlassReason("");
+                  }}
+                  className="px-3 py-1 rounded bg-gray-600 hover:bg-gray-700 text-white text-sm"
+                >
+                  Отмена
+                </button>
+
+                <button
+                  onClick={handleOpenHttpsBreakGlass}
+                  disabled={breakGlassSubmitting}
+                  className="px-3 py-1 rounded bg-red-600 hover:bg-red-700 disabled:bg-gray-600 text-white text-sm"
+                >
+                  Открыть через Break-glass
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
-    </Access>
-  );
-}
+     </Access>
+    );
+  }

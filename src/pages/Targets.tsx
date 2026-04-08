@@ -12,6 +12,7 @@ import {
   updateTarget,
 } from "@/api/targets";
 import { startRdpSession } from "@/api/rdp";
+import { launchWebAccess } from "@/api/webAccess";
 import type {
   Target,
   TargetCreatePayload,
@@ -19,6 +20,7 @@ import type {
   SSHAuthMode,
   TargetProtocol,
 } from "@/types/targets";
+
 
 type TargetFormState = {
   name: string;
@@ -207,6 +209,11 @@ export default function Targets() {
     user?.permissions?.includes("manage_settings")
   );
   const canStartRdp = Boolean(user?.permissions?.includes("start_rdp_session"));
+  const canOpenHttps = Boolean(
+    user?.permissions?.includes("start_session") ||
+    user?.permissions?.includes("manage_settings")
+  );
+
   const canRequestVaultAccess = Boolean(
     user?.permissions?.includes("request_vault_access")
   );
@@ -358,6 +365,49 @@ export default function Targets() {
       }
 
       toast.error(message || "Ошибка запуска RDP");
+    }
+  }
+
+  async function handleOpenHttps(target: Target) {
+    try {
+      const result = await launchWebAccess(target.id);
+
+      const opened = window.open(
+        result.launch_url,
+        "_blank",
+        "noopener,noreferrer"
+      );
+
+      if (!opened) {
+        toast.success("HTTPS URL подготовлен, но браузер заблокировал новую вкладку.");
+        return;
+      }
+
+      toast.success(`HTTPS access открыт · target #${target.id}`);
+      await load();
+    } catch (e: any) {
+      const message = extractErrorMessage(e);
+
+      if (
+        message.includes("Target requires an active approval grant before launch")
+      ) {
+        toast.error("Для этого HTTPS target нужен approval. Нажмите «Запросить approval».");
+        return;
+      }
+
+      if (
+        message.includes("Target requires a bound vault secret and active approval before launch")
+      ) {
+        toast.error("Для этого HTTPS target сначала нужен привязанный Vault secret.");
+        return;
+      }
+
+      if (message.includes("Target is disabled")) {
+        toast.error("Target отключён.");
+        return;
+      }
+
+      toast.error(message || "Ошибка открытия HTTPS access");
     }
   }
 

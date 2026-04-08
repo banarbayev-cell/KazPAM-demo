@@ -1,4 +1,4 @@
-export type TargetProtocol = "ssh" | "rdp" | "https" | "mssql";
+export type TargetProtocol = "ssh" | "rdp" | "https" | "mssql" | "vnc";
 
 export type SSHAuthMode =
   | "gateway_key"

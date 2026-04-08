@@ -14,6 +14,7 @@ import {
 import { startRdpSession } from "@/api/rdp";
 import { launchWebAccess } from "@/api/webAccess";
 import { launchDbAccess } from "@/api/dbAccess";
+import { launchVncAccess } from "@/api/vncAccess";
 import type {
   Target,
   TargetCreatePayload,
@@ -106,10 +107,11 @@ function toTargetProtocol(value: string): TargetProtocol {
   if (normalized === "rdp") return "rdp";
   if (normalized === "https") return "https";
   if (normalized === "mssql") return "mssql";
+  if (normalized === "vnc") return "vnc";
   return "ssh";
 }
 
-type TargetProtocolFilter = "all" | "ssh" | "rdp" | "https" | "mssql";
+type TargetProtocolFilter = "all" | "ssh" | "rdp" | "https" | "mssql" | "vnc";
 
 function defaultPortForProtocol(protocol: string): number {
   switch ((protocol || "").toLowerCase()) {
@@ -119,6 +121,8 @@ function defaultPortForProtocol(protocol: string): number {
       return 443;
     case "mssql":
       return 1433;  
+    case "vnc":
+      return 5900;  
     case "ssh":
     default:
       return 22;
@@ -129,24 +133,30 @@ function nextSuggestedPort(nextProtocol: string, currentPort: string): string {
   const protocol = (nextProtocol || "").toLowerCase();
 
   if (protocol === "rdp") {
-    return currentPort === "22" || currentPort === "443" || currentPort === "1433"
+    return currentPort === "22" || currentPort === "443" || currentPort === "1433" || currentPort === "5900"
       ? "3389"
       : currentPort;
   }
 
   if (protocol === "https") {
-    return currentPort === "22" || currentPort === "3389" || currentPort === "1433"
+    return currentPort === "22" || currentPort === "3389" || currentPort === "1433" || currentPort === "5900"
       ? "443"
       : currentPort;
   }
 
   if (protocol === "mssql") {
-    return currentPort === "22" || currentPort === "3389" || currentPort === "443"
+    return currentPort === "22" || currentPort === "3389" || currentPort === "443" || currentPort === "5900"
       ? "1433"
       : currentPort;
   }
 
-  return currentPort === "3389" || currentPort === "443" || currentPort === "1433"
+  if (protocol === "vnc") {
+    return currentPort === "22" || currentPort === "3389" || currentPort === "443" || currentPort === "1433"
+      ? "5900"
+      : currentPort;
+  }
+
+  return currentPort === "3389" || currentPort === "443" || currentPort === "1433" || currentPort === "5900"
     ? "22"
     : currentPort;
 }
@@ -255,7 +265,9 @@ export default function Targets() {
   const [dbBreakGlassReason, setDbBreakGlassReason] = useState("");
   const [dbBreakGlassSubmitting, setDbBreakGlassSubmitting] = useState(false);
 
-
+  const [vncBreakGlassTarget, setVncBreakGlassTarget] = useState<Target | null>(null);
+  const [vncBreakGlassReason, setVncBreakGlassReason] = useState("");
+  const [vncBreakGlassSubmitting, setVncBreakGlassSubmitting] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -575,6 +587,93 @@ export default function Targets() {
     }
   }
 
+async function handleOpenVnc(
+  target: Target,
+  options?: {
+    break_glass_requested?: boolean;
+    break_glass_reason?: string;
+  }
+) {
+  try {
+    const result = await launchVncAccess(target.id, {
+      break_glass_requested: options?.break_glass_requested ?? false,
+      break_glass_reason: options?.break_glass_reason?.trim() || undefined,
+    });
+
+    await navigator.clipboard.writeText(`${result.launch_host}:${result.launch_port}`);
+
+    toast.success(
+      result.break_glass
+        ? `VNC break-glass подготовлен · target #${target.id}`
+        : `VNC access подготовлен · target #${target.id}`
+    );
+
+    await load();
+  } catch (e: any) {
+    const message = extractErrorMessage(e);
+
+    if (
+      message.includes("Target requires an active approval grant before launch")
+    ) {
+      toast.error("Для этого VNC target нужен approval. Нажмите «Запросить approval».");
+      return;
+    }
+
+    if (
+      message.includes("Target requires a bound vault secret and active approval before launch")
+    ) {
+      toast.error("Для этого VNC target сначала нужен привязанный Vault secret.");
+      return;
+    }
+
+    if (message.includes("Target is disabled")) {
+      toast.error("Target отключён.");
+      return;
+    }
+
+    if (message.includes("Permission denied: use_break_glass")) {
+      toast.error("У вас нет права use_break_glass.");
+      return;
+    }
+
+    if (message.includes("Break-glass is not enabled for this target")) {
+      toast.error("Для этого VNC target break-glass не включён.");
+      return;
+    }
+
+    if (message.includes("Break-glass reason is required")) {
+      toast.error("Для break-glass нужно указать причину.");
+      return;
+    }
+
+    toast.error(message || "Ошибка подготовки VNC access");
+  }
+}
+
+async function handleOpenVncBreakGlass() {
+  if (!vncBreakGlassTarget) return;
+
+  const reason = vncBreakGlassReason.trim();
+  if (!reason) {
+    toast.error("Укажите причину break-glass.");
+    return;
+  }
+
+  setVncBreakGlassSubmitting(true);
+  try {
+    await handleOpenVnc(vncBreakGlassTarget, {
+      break_glass_requested: true,
+      break_glass_reason: reason,
+    });
+
+    setVncBreakGlassTarget(null);
+    setVncBreakGlassReason("");
+  } finally {
+    setVncBreakGlassSubmitting(false);
+  }
+}
+
+
   function handleRequestApproval(target: Target) {
     if (!target.vault_secret_id) {
       toast.error("Для этого target не привязан Vault secret");
@@ -632,7 +731,7 @@ export default function Targets() {
             <option value="rdp">RDP</option>
             <option value="https">HTTPS</option>
             <option value="mssql">MS SQL</option>
-
+            <option value="vnc">VNC</option>
           </select>
 
           <div className="ml-auto text-sm text-gray-600">
@@ -733,6 +832,10 @@ export default function Targets() {
                         {target.protocol === "mssql"
                           ? securityChip("MS SQL target", "blue")
                           : null}  
+
+                        {target.protocol === "vnc"
+                          ? securityChip("VNC target", "blue")
+                          : null}  
                       </div>
                     </td>
                     <td className="px-4 py-3">
@@ -805,15 +908,38 @@ export default function Targets() {
                         {target.protocol === "mssql" && target.break_glass_enabled && canOpenHttps && (
                           <button
                             onClick={() => {
-                            setDbBreakGlassTarget(target);
-                            setDbBreakGlassReason("");
-                          }}
+                              setDbBreakGlassTarget(target);
+                              setDbBreakGlassReason("");
+                            }}
                             disabled={!target.is_active}
                             className="px-3 py-1 rounded bg-red-600 hover:bg-red-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white text-xs"
                           >
                             Break-glass DB
                           </button>
-                         )}
+                        )}
+
+                        {target.protocol === "vnc" && canOpenHttps && (
+                          <button
+                            onClick={() => handleOpenVnc(target)}
+                            disabled={!target.is_active}
+                            className="px-3 py-1 rounded bg-fuchsia-600 hover:bg-fuchsia-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white text-xs"
+                          >
+                            Подготовить VNC
+                          </button>
+                        )}
+
+                        {target.protocol === "vnc" && target.break_glass_enabled && canOpenHttps && (
+                          <button
+                            onClick={() => {
+                              setVncBreakGlassTarget(target);
+                              setVncBreakGlassReason("");
+                           }}
+                            disabled={!target.is_active}
+                            className="px-3 py-1 rounded bg-red-600 hover:bg-red-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white text-xs"
+                          >
+                            Break-glass VNC
+                          </button>
+                        )} 
                       </div>
                     </td>
                   </tr>
@@ -911,6 +1037,7 @@ export default function Targets() {
                     <option value="rdp">rdp</option>
                     <option value="https">https</option>
                     <option value="mssql">mssql</option>
+                    <option value="vnc">vnc</option>
                   </select>
                 </div>
 
@@ -1180,6 +1307,7 @@ export default function Targets() {
                     <option value="rdp">rdp</option>
                     <option value="https">https</option>
                     <option value="mssql">mssql</option>
+                    <option value="vnc">vnc</option>
                   </select>
                 </div>
 
@@ -1462,8 +1590,60 @@ export default function Targets() {
           </div>
          </div>
         </div>
-      )}
-      </div>
-     </Access>
+        )}
+        {vncBreakGlassTarget && (
+          <div className="fixed inset-0 flex items-center justify-center bg-black/50 z-50">
+            <div className="bg-[#121A33] p-6 rounded-xl border border-[#1E2A45] w-[560px] max-w-[95vw] space-y-4">
+              <h2 className="text-lg font-semibold text-white">
+                Break-glass · VNC target #{vncBreakGlassTarget.id}
+              </h2>
+
+              <div className="text-sm text-gray-300 space-y-1">
+                <div>
+                  <span className="text-gray-400">Target:</span>{" "}
+                  {vncBreakGlassTarget.name}
+                </div>
+                <div>
+                  <span className="text-gray-400">Host:</span>{" "}
+                  {vncBreakGlassTarget.host}:{vncBreakGlassTarget.port}
+                </div>
+               </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm text-gray-300">
+                    Причина break-glass
+                  </label>
+                  <textarea
+                    value={vncBreakGlassReason}
+                    onChange={(e) => setVncBreakGlassReason(e.target.value)}
+                    className="w-full p-2 rounded bg-[#0E1A3A] border border-[#1E2A45] text-white"
+                    placeholder="Например: аварийный доступ к VNC консоли"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    onClick={() => {
+                      setVncBreakGlassTarget(null);
+                      setVncBreakGlassReason("");
+                    }}
+                    className="px-3 py-1 rounded bg-gray-600 hover:bg-gray-700 text-white text-sm"
+                  >
+                    Отмена
+                  </button>
+
+                  <button
+                    onClick={handleOpenVncBreakGlass}
+                    disabled={vncBreakGlassSubmitting}
+                    className="px-3 py-1 rounded bg-red-600 hover:bg-red-700 disabled:bg-gray-600 text-white text-sm"
+                  >
+                    Подготовить через Break-glass
+                  </button>
+                 </div>
+                </div>
+               </div>
+              )}
+        </div>
+      </Access>
     );
   }

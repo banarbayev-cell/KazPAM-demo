@@ -13,6 +13,7 @@ import {
 } from "@/api/targets";
 import { startRdpSession } from "@/api/rdp";
 import { launchWebAccess } from "@/api/webAccess";
+import { launchDbAccess } from "@/api/dbAccess";
 import type {
   Target,
   TargetCreatePayload,
@@ -104,10 +105,11 @@ function toTargetProtocol(value: string): TargetProtocol {
 
   if (normalized === "rdp") return "rdp";
   if (normalized === "https") return "https";
+  if (normalized === "mssql") return "mssql";
   return "ssh";
 }
 
-type TargetProtocolFilter = "all" | "ssh" | "rdp" | "https";
+type TargetProtocolFilter = "all" | "ssh" | "rdp" | "https" | "mssql";
 
 function defaultPortForProtocol(protocol: string): number {
   switch ((protocol || "").toLowerCase()) {
@@ -115,6 +117,8 @@ function defaultPortForProtocol(protocol: string): number {
       return 3389;
     case "https":
       return 443;
+    case "mssql":
+      return 1433;  
     case "ssh":
     default:
       return 22;
@@ -125,14 +129,26 @@ function nextSuggestedPort(nextProtocol: string, currentPort: string): string {
   const protocol = (nextProtocol || "").toLowerCase();
 
   if (protocol === "rdp") {
-    return currentPort === "22" || currentPort === "443" ? "3389" : currentPort;
+    return currentPort === "22" || currentPort === "443" || currentPort === "1433"
+      ? "3389"
+      : currentPort;
   }
 
   if (protocol === "https") {
-    return currentPort === "22" || currentPort === "3389" ? "443" : currentPort;
+    return currentPort === "22" || currentPort === "3389" || currentPort === "1433"
+      ? "443"
+      : currentPort;
   }
 
-  return currentPort === "3389" || currentPort === "443" ? "22" : currentPort;
+  if (protocol === "mssql") {
+    return currentPort === "22" || currentPort === "3389" || currentPort === "443"
+      ? "1433"
+      : currentPort;
+  }
+
+  return currentPort === "3389" || currentPort === "443" || currentPort === "1433"
+    ? "22"
+    : currentPort;
 }
 
 
@@ -467,6 +483,45 @@ export default function Targets() {
     }
   }
 
+  async function handleOpenMssql(target: Target) {
+    try {
+      const result = await launchDbAccess(target.id);
+
+      await navigator.clipboard.writeText(result.connection_string_stub);
+
+      toast.success(
+        result.break_glass
+          ? `MS SQL break-glass подготовлен · target #${target.id}`
+          : `MS SQL connection подготовлен · target #${target.id}`
+      );
+
+      await load();
+    } catch (e: any) {
+      const message = extractErrorMessage(e);
+
+      if (
+        message.includes("Target requires an active approval grant before launch")
+      ) {
+        toast.error("Для этого MS SQL target нужен approval. Нажмите «Запросить approval».");
+        return;
+      }
+
+      if (
+        message.includes("Target requires a bound vault secret and active approval before launch")
+      ) {
+        toast.error("Для этого MS SQL target сначала нужен привязанный Vault secret.");
+        return;
+      }
+
+      if (message.includes("Target is disabled")) {
+        toast.error("Target отключён.");
+        return;
+      }
+
+      toast.error(message || "Ошибка подготовки MS SQL access");
+    }
+  }
+
   function handleRequestApproval(target: Target) {
     if (!target.vault_secret_id) {
       toast.error("Для этого target не привязан Vault secret");
@@ -523,6 +578,8 @@ export default function Targets() {
             <option value="ssh">SSH</option>
             <option value="rdp">RDP</option>
             <option value="https">HTTPS</option>
+            <option value="mssql">MS SQL</option>
+
           </select>
 
           <div className="ml-auto text-sm text-gray-600">
@@ -619,6 +676,10 @@ export default function Targets() {
                         {target.protocol === "https"
                           ? securityChip("HTTPS web target", "blue")
                           : null}  
+                          
+                        {target.protocol === "mssql"
+                          ? securityChip("MS SQL target", "blue")
+                          : null}  
                       </div>
                     </td>
                     <td className="px-4 py-3">
@@ -678,12 +739,13 @@ export default function Targets() {
                           </button>
                         )}
 
-                        {target.approval_required && canRequestVaultAccess && (
+                        {target.protocol === "mssql" && canOpenHttps && (
                           <button
-                            onClick={() => handleRequestApproval(target)}
-                            className="px-3 py-1 rounded bg-[#0052FF] hover:bg-[#0046D8] text-white text-xs"
+                            onClick={() => handleOpenMssql(target)}
+                            disabled={!target.is_active}
+                            className="px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white text-xs"
                           >
-                            Запросить approval
+                            Подготовить MS SQL
                           </button>
                         )}
                       </div>
@@ -782,6 +844,7 @@ export default function Targets() {
                     <option value="ssh">ssh</option>
                     <option value="rdp">rdp</option>
                     <option value="https">https</option>
+                    <option value="mssql">mssql</option>
                   </select>
                 </div>
 
@@ -1050,6 +1113,7 @@ export default function Targets() {
                     <option value="ssh">ssh</option>
                     <option value="rdp">rdp</option>
                     <option value="https">https</option>
+                    <option value="mssql">mssql</option>
                   </select>
                 </div>
 

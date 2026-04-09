@@ -91,7 +91,7 @@ export default function LdapRoleMappingsCard() {
 
   return (
     <div className="bg-[#0E1A3A] border border-white/10 rounded-xl p-5">
-      <h3 className="text-white font-semibold mb-4">LDAP Group → Role Mapping</h3>
+      <h3 className="text-white font-semibold mb-4">Сопоставление LDAP-групп и ролей</h3>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
         <input
@@ -175,7 +175,7 @@ export default function LdapRoleMappingsCard() {
         ))}
 
         {!items.length && (
-          <div className="text-sm text-gray-400">Mappings пока не добавлены</div>
+          <div className="text-sm text-gray-400">Сопоставления пока не добавлены</div>
         )}
       </div>
     </div>

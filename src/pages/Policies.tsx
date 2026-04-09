@@ -36,13 +36,21 @@ interface Policy {
   }[];
 }
 
+type PolicyHistoryChangeValue =
+  | [string | number | boolean | null | undefined | string[], string | number | boolean | null | undefined | string[]]
+  | {
+      old?: string | number | boolean | null | undefined | string[];
+      new?: string | number | boolean | null | undefined | string[];
+    };
+
 interface PolicyHistory {
   id: number;
   action: string;
   timestamp: string;
   user?: string;
   details?: {
-    changes?: Record<string, [any, any]>;
+    raw?: string;
+    changes?: Record<string, PolicyHistoryChangeValue>;
   };
 }
 

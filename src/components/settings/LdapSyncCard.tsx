@@ -49,7 +49,7 @@ export default function LdapSyncCard() {
 
   return (
     <div className="bg-[#0E1A3A] border border-white/10 rounded-xl p-5">
-      <h3 className="text-white font-semibold mb-4">LDAP Sync / Dry-run</h3>
+      <h3 className="text-white font-semibold mb-4">Проверка и синхронизация LDAP</h3>
 
       <div className="flex gap-3 mb-4">
         <input
@@ -63,14 +63,14 @@ export default function LdapSyncCard() {
           disabled={loading}
           className="px-4 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-white"
         >
-          Dry-run
+          Проверка
         </button>
         <button
           onClick={() => run("sync")}
           disabled={loading}
           className="px-4 py-2 rounded-lg bg-[#0052FF] hover:bg-blue-700 text-white"
         >
-          Sync
+          Синхронизировать
         </button>
       </div>
 

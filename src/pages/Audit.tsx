@@ -5,6 +5,7 @@ import { apiGet } from "../api/client";
 import { useNavigate } from "react-router-dom";
 // 👇 ДОБАВИЛ RefreshCw СЮДА
 import { CheckCircle2, XCircle, AlertTriangle, Activity, RefreshCw } from "lucide-react";
+import { formatKzDateTime, parseBackendDate } from "../utils/time";
 
 interface BackendAuditLog {
   id: number;
@@ -34,28 +35,9 @@ const STATUS_LABEL: Record<AuditRecord["status"], string> = {
   warning: "Предупреждение",
 };
 
-// ... Helper functions ...
-function parseCreatedAt(value?: string): Date | null {
-  if (!value) return null;
-  const v = value.trim();
-  const m = v.match(/^(\d{2})\.(\d{2})\.(\d{4})(?:[,\s]+(\d{2}):(\d{2})(?::(\d{2}))?)?$/);
-  if (m) {
-    const d = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]), Number(m[4] ?? 0), Number(m[5] ?? 0), Number(m[6] ?? 0));
-    return Number.isNaN(d.getTime()) ? null : d;
-  }
-  if (/^\d{4}-\d{2}-\d{2}T/.test(v)) {
-    const iso = new Date(v);
-    return Number.isNaN(iso.getTime()) ? null : iso;
-  }
-  return null;
-}
 
-function formatDateTime(d: Date): string {
-  return d.toLocaleString("ru-RU", {
-    year: "numeric", month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit", second: "2-digit",
-  });
-}
+
+
 
 function normalizeDetails(details: unknown): Record<string, any> {
   if (!details) return {};
@@ -92,12 +74,13 @@ function inferStatus(action: string): AuditRecord["status"] {
 
 function mapAuditLog(log: BackendAuditLog): AuditRecord {
   const rawTime = (log.timestamp || log.created_at || "").toString();
-  const parsed = parseCreatedAt(rawTime);
+  const parsed = parseBackendDate(rawTime, { naiveInput: "utc" });
   const details = normalizeDetails(log.details);
   const ip = details.ip ?? details.source_ip ?? "—";
+
   return {
     id: log.id,
-    time: parsed ? formatDateTime(parsed) : rawTime || "—",
+    time: formatKzDateTime(rawTime, { seconds: true, naiveInput: "utc" }),
     ts: parsed ? parsed.getTime() : 0,
     user: log.user,
     action: log.action,
@@ -306,9 +289,9 @@ export default function Audit(){
             </thead>
             <tbody className="divide-y divide-[#1E2A45]">
               {loading ? (
-                 <tr><td colSpan={8} className="p-10 text-center text-gray-400 animate-pulse">Загрузка данных...</td></tr>
+                 <tr><td colSpan={7} className="p-10 text-center text-gray-400 animate-pulse">Загрузка данных...</td></tr>
               ) : currentRows.length === 0 ? (
-                 <tr><td colSpan={8} className="p-10 text-center text-gray-400">Событий не найдено</td></tr>
+                 <tr><td colSpan={7} className="p-10 text-center text-gray-400">Событий не найдено</td></tr>
               ) : (
                 currentRows.map(r => (
                   <tr key={r.id} className="hover:bg-[#1E2A45] transition-colors group">

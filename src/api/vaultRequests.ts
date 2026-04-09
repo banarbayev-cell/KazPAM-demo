@@ -92,7 +92,7 @@ export async function approveVaultRequest(
  */
 export async function denyVaultRequest(
   requestId: number,
-  payload?: { comment?: string }
+  payload: { comment?: string } = { comment: "Denied" }
 ): Promise<{ ok: boolean }> {
   return api.post(`/vault/requests/${requestId}/deny`, payload);
 }

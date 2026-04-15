@@ -150,25 +150,30 @@ export default function Users() {
       toast.success("Пользователь успешно создан");
       setOpenModal(false);
       fetchUsers();
-    } catch (err: any) {
-      const message = String(err?.message || "");
+    } catch (err: unknown) {
+      const message = extractApiErrorMessage(err);
 
       if (message.includes("User already exists")) {
         toast.error("Пользователь с таким email уже существует");
         return;
       }
 
-      if (message.includes("Forbidden")) {
-        toast.error("Недостаточно прав для создания пользователя");
+      if (message.includes("Login must contain @")) {
+        toast.error("Логин должен быть в формате Email / UPN, например user@company.local");
         return;
       }
 
-      if (message.includes("Unauthorized")) {
-        toast.error("Сессия истекла. Войдите заново");
+      if (message === "Недостаточно прав для выполнения действия") {
+        toast.error(message);
         return;
       }
 
-      toast.error("Ошибка создания пользователя");
+      if (message === "Сессия истекла. Войдите заново") {
+        toast.error(message);
+        return;
+      }
+
+      toast.error(`Ошибка создания пользователя: ${message}`);
       console.error("Create user error:", err);
     }
   };

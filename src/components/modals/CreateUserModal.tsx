@@ -1,5 +1,5 @@
 import { X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 interface CreateUserData {
   email: string;
@@ -15,15 +15,41 @@ interface Props {
 export default function CreateUserModal({ open, onClose, onCreate }: Props) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!open) {
+      setEmail("");
+      setPassword("");
+      setError("");
+    }
+  }, [open]);
 
   if (!open) return null;
 
   const handleSubmit = () => {
-    if (!email.trim() || !password.trim()) return;
+    const normalizedEmail = email.trim();
+    const normalizedPassword = password.trim();
 
+    if (!normalizedEmail || !normalizedPassword) {
+      setError("Заполните все поля.");
+      return;
+    }
+
+    if (!normalizedEmail.includes("@")) {
+      setError("Введите Email / UPN в формате user@company.local");
+      return;
+    }
+
+    if (normalizedPassword.length < 4) {
+      setError("Пароль не должен быть пустым.");
+      return;
+    }
+
+    setError("");
     onCreate({
-      email: email.trim(),
-      password: password.trim(),
+      email: normalizedEmail,
+      password: normalizedPassword,
     });
   };
 
@@ -39,7 +65,7 @@ export default function CreateUserModal({ open, onClose, onCreate }: Props) {
         <div className="flex flex-col gap-3">
           <input
             type="email"
-            placeholder="Email пользователя"
+            placeholder="Email / UPN, например user@company.local"
             className="border border-gray-400 rounded-lg px-3 py-2 focus:outline-none"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
@@ -52,6 +78,10 @@ export default function CreateUserModal({ open, onClose, onCreate }: Props) {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />
+
+          {error ? (
+            <div className="text-sm text-red-600">{error}</div>
+          ) : null}
         </div>
 
         <div className="flex justify-end mt-5 gap-3">

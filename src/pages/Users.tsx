@@ -163,6 +163,11 @@ export default function Users() {
         return;
       }
 
+      if (message.includes("License limit exceeded")) {
+        toast.error(`Достигнут лимит лицензии: ${message}`);
+        return;
+      }
+
       if (message === "Недостаточно прав для выполнения действия") {
         toast.error(message);
         return;

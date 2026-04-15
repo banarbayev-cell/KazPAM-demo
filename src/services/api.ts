@@ -9,6 +9,15 @@ export function invalidateAuthSession() {
   authSessionInvalidated = true;
 }
 
+async function readErrorMessage(response: Response): Promise<string> {
+  try {
+    const text = await response.text();
+    return text || `HTTP error ${response.status}`;
+  } catch {
+    return `HTTP error ${response.status}`;
+  }
+}
+
 export async function apiFetch<T>(
   path: string,
   options?: RequestInit
@@ -45,17 +54,19 @@ export async function apiFetch(
   });
 
   if (response.status === 401) {
-    console.error("❌ API 401 Unauthorized", path);
-    throw new Error("Unauthorized");
+    const message = await readErrorMessage(response);
+    console.error("❌ API 401 Unauthorized", path, message);
+    throw new Error(message || "Unauthorized");
   }
 
   if (response.status === 403) {
-    throw new Error("Forbidden");
+    const message = await readErrorMessage(response);
+    throw new Error(message || "Forbidden");
   }
 
   if (!response.ok) {
-    const text = await response.text();
-    throw new Error(text || `HTTP error ${response.status}`);
+    const message = await readErrorMessage(response);
+    throw new Error(message);
   }
 
   const text = await response.text();
@@ -64,7 +75,7 @@ export async function apiFetch(
   try {
     return JSON.parse(text);
   } catch {
-    return undefined;
+    return text;
   }
 }
 
@@ -95,16 +106,18 @@ export async function apiDownload(
   });
 
   if (response.status === 401) {
-    throw new Error("Unauthorized");
+    const message = await readErrorMessage(response);
+    throw new Error(message || "Unauthorized");
   }
 
   if (response.status === 403) {
-    throw new Error("Forbidden");
+    const message = await readErrorMessage(response);
+    throw new Error(message || "Forbidden");
   }
 
   if (!response.ok) {
-    const text = await response.text();
-    throw new Error(text || `HTTP error ${response.status}`);
+    const message = await readErrorMessage(response);
+    throw new Error(message);
   }
 
   const blob = await response.blob();

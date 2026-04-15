@@ -1,3 +1,5 @@
+import { safeRandomId } from "./random";
+
 export type IncidentStatus =
   | "OPEN"
   | "INVESTIGATING"
@@ -39,7 +41,7 @@ export interface Incident {
 
 export function createIncident(): Incident {
   return {
-    id: crypto.randomUUID(),
+    id: safeRandomId(),
     status: "OPEN",
     createdAt: new Date().toISOString(),
     actions: [],

@@ -6,6 +6,7 @@ import CreateUserModal from "../components/modals/CreateUserModal";
 import AssignRolesModal from "../components/modals/AssignRolesModal";
 import ConfirmModal from "../components/modals/ConfirmModal";
 import EffectivePermissionsModal from "../components/modals/EffectivePermissionsModal";
+import { safeTempPassword } from "../utils/random";
 
 import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
@@ -194,7 +195,7 @@ export default function Users() {
 
   const handleResetPassword = async (userId: number, userEmail?: string) => {
     const email = userEmail ?? "неизвестный пользователь";
-    const newPassword = crypto.randomUUID().slice(0, 12);
+    const newPassword = safeTempPassword();
 
     try {
       await api.post(`/users/${userId}/reset-password`, {

@@ -19,6 +19,7 @@ import { fetchSocCommands } from "../api/socCommands";
 import type { SocCommand } from "../api/socCommands";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { formatKzDateTime } from "../utils/time";
+import { safeRandomId } from "../utils/random";
 
 import {
   blockUser,
@@ -28,7 +29,7 @@ import {
 
 function mapBackendIncidentToUi(b: any): Incident {
   return {
-    id: String(b.incident_id ?? b.id ?? crypto.randomUUID()),
+    id: String(b.incident_id ?? b.id ?? safeRandomId()),
     backendId: b.incident_id ?? b.id,
     status: (b.status ?? "OPEN") as any,
     createdAt: String(b.created_at ?? ""),

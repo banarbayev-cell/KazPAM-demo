@@ -9,3 +9,6 @@ build/
 *.db
 *.sqlite
 .DS_Store
+
+vm-license-fix.zip
+vm-license-fix/

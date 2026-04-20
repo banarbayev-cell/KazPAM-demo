@@ -171,6 +171,54 @@ function extractErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
+function findRecentlyCreatedSession(
+  sessions: Session[],
+  options: {
+    targetId?: number | null;
+    system?: string;
+    ip?: string;
+    user?: string;
+  }
+): Session | null {
+  if (!sessions.length) return null;
+
+  const normalizedUser = (options.user || "").trim().toLowerCase();
+  const normalizedSystem = (options.system || "").trim().toLowerCase();
+  const normalizedIp = (options.ip || "").trim().toLowerCase();
+
+  const exactByTarget =
+    options.targetId != null
+      ? sessions.find(
+          (s) =>
+            s.target_id === options.targetId &&
+            s.status === "active"
+        ) || null
+      : null;
+
+  if (exactByTarget) return exactByTarget;
+
+  const byManualFields =
+    sessions.find((s) => {
+      const sameUser =
+        !normalizedUser ||
+        String(s.user || "").trim().toLowerCase() === normalizedUser;
+
+      const sameSystem =
+        !normalizedSystem ||
+        String(s.system || "").trim().toLowerCase() === normalizedSystem;
+
+      const sameIp =
+        !normalizedIp ||
+        String(s.ip || "").trim().toLowerCase() === normalizedIp;
+
+      return sameUser && sameSystem && sameIp && s.status === "active";
+    }) || null;
+
+  if (byManualFields) return byManualFields;
+
+  return sessions.find((s) => s.status === "active") || null;
+}
+
 // Для archive/filter/export режимов mergeSessions больше не нужен.
 // Список всегда берём заново с backend по текущим фильтрам.
 
@@ -200,12 +248,14 @@ export default function Sessions() {
   const [loading, setLoading] = useState(false);
   const [targetsLoading, setTargetsLoading] = useState(false);
   const [launchLoading, setLaunchLoading] = useState(false);
+  const [launchResultOpen, setLaunchResultOpen] = useState(false);
+  const [launchedSession, setLaunchedSession] = useState<Session | null>(null);
 
   const notifySessionsChanged = () => {
     window.dispatchEvent(new Event("kazpam:sessions-changed"));
   };
 
-  const loadSessions = async () => {
+  const loadSessions = async (): Promise<Session[]> => {
     setLoading(true);
 
     try {
@@ -219,9 +269,11 @@ export default function Sessions() {
         .sort((a, b) => b.id - a.id);
 
       setSessions(normalized);
+      return normalized;
     } catch (error) {
       setSessions([]);
       toast.error(extractErrorMessage(error, "Не удалось загрузить сессии"));
+      return [];
     } finally {
       setLoading(false);
     }
@@ -338,6 +390,8 @@ export default function Sessions() {
     }
   };
 
+
+
   const handleAudit = (session: Session) => {
     navigate(`/audit?session_id=${session.id}`);
   };
@@ -394,13 +448,15 @@ export default function Sessions() {
     try {
       setLaunchLoading(true);
 
+      let startResponse: Awaited<ReturnType<typeof startSession>> | null = null;
+
       if (!manualMode) {
         if (!selectedTarget) {
           toast.error("Выберите целевую систему");
           return;
         }
 
-        await startSession({
+        startResponse = await startSession({
           user:
             selectedTarget.username?.trim() ||
             authUser?.email ||
@@ -410,7 +466,7 @@ export default function Sessions() {
           mfa_passed: false,
         });
       } else {
-        await startSession({
+        startResponse = await startSession({
           user: manualForm.user,
           system: manualForm.system,
           os: manualForm.os,
@@ -420,8 +476,31 @@ export default function Sessions() {
         });
       }
 
-      toast.success("Сессия запущена");
       setStartOpen(false);
+
+      const freshSessions = await loadSessions();
+      notifySessionsChanged();
+
+      const matchedSession =
+        (startResponse?.id
+          ? freshSessions.find((s) => s.id === startResponse?.id) || null
+          : null) ||
+        findRecentlyCreatedSession(freshSessions, {
+          targetId: !manualMode ? selectedTarget?.id ?? null : null,
+          system: manualMode ? manualForm.system : selectedTarget?.name,
+          ip: manualMode ? manualForm.ip : selectedTarget?.host,
+          user:
+            !manualMode
+              ? selectedTarget?.username?.trim() || authUser?.email || ""
+              : manualForm.user,
+        });
+
+      if (matchedSession) {
+        setLaunchedSession(matchedSession);
+        setSelectedSession(matchedSession);
+        setLaunchResultOpen(true);
+      }
+
       setSelectedTargetId("");
       setManualForm({
         user: authUser?.email || "",
@@ -430,8 +509,7 @@ export default function Sessions() {
         ip: "",
       });
 
-      await loadSessions();
-      notifySessionsChanged();
+      toast.success("Сессия создана");
     } catch (error) {
       toast.error(
         extractErrorMessage(error, "Не удалось запустить сессию")
@@ -508,7 +586,7 @@ export default function Sessions() {
               <th className="p-3">Действия</th>
             </tr>
           </thead>
-
+ 
           <tbody>
             {loading ? (
               <tr className="border-t border-[#1E2A45]">
@@ -537,7 +615,7 @@ export default function Sessions() {
                       {statusLabel(s.status)}
                     </span>
                   </td>
-                  
+
                   <td className="p-3">
                     {s.is_archived ? (
                       <span className="inline-flex px-3 py-1 rounded-full text-xs font-semibold bg-gray-500/20 text-gray-300 border border-gray-500/30">
@@ -549,16 +627,28 @@ export default function Sessions() {
                   </td>
 
                   <td className="p-3">
-                    <ActionMenuSession
-                      onView={() => {
-                        setSelectedSession(s);
-                        setDetailOpen(true);
-                      }}
-                      onTerminate={() => handleTerminate(s)}
-                      onAudit={() => handleAudit(s)}
-                      onArchive={() => handleArchive(s)}
-                      canArchive={s.status !== "active" && !s.is_archived}
-                    />
+                    <div className="flex items-center justify-center gap-2">
+                      <button
+                        onClick={() => {
+                          setSelectedSession(s);
+                          setDetailOpen(true);
+                        }}
+                        className="px-3 py-1.5 rounded bg-[#0052FF] text-white text-xs font-medium hover:opacity-90"
+                      >
+                        Открыть
+                      </button>
+
+                      <ActionMenuSession
+                        onView={() => {
+                          setSelectedSession(s);
+                          setDetailOpen(true);
+                        }}
+                        onTerminate={() => handleTerminate(s)}
+                        onAudit={() => handleAudit(s)}
+                        onArchive={() => handleArchive(s)}
+                        canArchive={s.status !== "active" && !s.is_archived}
+                      />
+                    </div>
                   </td>
                 </tr>
               ))
@@ -578,6 +668,91 @@ export default function Sessions() {
           selectedSession && handleAudit(selectedSession)
         }
       />
+
+      {launchResultOpen && launchedSession && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-[#121A33] p-6 rounded-xl w-[560px] text-white space-y-4">
+            <h2 className="text-lg font-semibold">Сессия создана</h2>
+
+            <div className="text-sm text-gray-300 leading-6">
+              Сессия успешно создана и переведена под контроль KazPAM.
+              Ниже указаны её параметры.
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="space-y-1">
+                <div className="text-gray-400">ID сессии</div>
+                <div className="px-3 py-2 rounded bg-[#0E1A3A] border border-[#1E2A45]">
+                  {launchedSession.id}
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <div className="text-gray-400">Статус</div>
+                <div className="px-3 py-2 rounded bg-[#0E1A3A] border border-[#1E2A45]">
+                  {statusLabel(launchedSession.status)}
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <div className="text-gray-400">Система</div>
+                <div className="px-3 py-2 rounded bg-[#0E1A3A] border border-[#1E2A45]">
+                  {launchedSession.system || "—"}
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <div className="text-gray-400">IP</div>
+                <div className="px-3 py-2 rounded bg-[#0E1A3A] border border-[#1E2A45]">
+                  {launchedSession.ip || "—"}
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <div className="text-gray-400">Протокол</div>
+                <div className="px-3 py-2 rounded bg-[#0E1A3A] border border-[#1E2A45] uppercase">
+                  {launchedSession.protocol || launchedSession.app || "SSH"}
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <div className="text-gray-400">Пользователь</div>
+                <div className="px-3 py-2 rounded bg-[#0E1A3A] border border-[#1E2A45]">
+                  {launchedSession.user || "—"}
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-[#1E2A45] bg-[#0E1A3A] p-4 text-sm text-gray-300 leading-6">
+              В текущей версии KazPAM сессия создаётся и контролируется системой,
+              но отдельное интерактивное окно не открывается автоматически.
+              Для пользователя теперь доступно явное открытие карточки сессии и её контроль из списка.
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  setLaunchResultOpen(false);
+                }}
+                className="px-3 py-2 text-gray-300"
+              >
+                Закрыть
+              </button>
+
+              <button
+                onClick={() => {
+                  setSelectedSession(launchedSession);
+                  setDetailOpen(true);
+                  setLaunchResultOpen(false);
+                }}
+                className="px-4 py-2 bg-[#0052FF] rounded"
+              >
+                Открыть сессию
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {startOpen && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">

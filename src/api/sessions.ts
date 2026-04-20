@@ -13,6 +13,24 @@ export type StartSessionParams = {
   break_glass_reason?: string;
 };
 
+export type StartSessionResponse = {
+  id?: number;
+  user?: string;
+  system?: string;
+  os?: string;
+  ip?: string;
+  app?: string;
+  protocol?: string | null;
+  status?: string;
+  target_id?: number | null;
+  vault_secret_id?: number | null;
+  gateway_node?: string | null;
+  launch_mode?: string | null;
+  details?: string | null;
+  pam_user?: string | null;
+  start_time?: string;
+};
+
 export const getSessions = () => {
   return apiGet("/sessions/");
 };
@@ -30,7 +48,9 @@ export const getAllSessions = (
   return apiGet(`/sessions/all?${query.toString()}`);
 };
 
-export const startSession = (params: StartSessionParams) => {
+export const startSession = (
+  params: StartSessionParams
+): Promise<StartSessionResponse> => {
   const query = new URLSearchParams();
 
   const initiatorOrTargetUser = params.user?.trim();

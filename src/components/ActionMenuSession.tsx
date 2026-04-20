@@ -6,7 +6,6 @@ import {
 } from "./ui/dropdown-menu";
 
 interface Props {
-  onView: () => void;
   onTerminate: () => void;
   onAudit: () => void;
   onArchive?: () => void;
@@ -14,7 +13,6 @@ interface Props {
 }
 
 export default function ActionMenuSession({
-  onView,
   onTerminate,
   onAudit,
   onArchive,
@@ -36,10 +34,6 @@ export default function ActionMenuSession({
       </DropdownMenuTrigger>
 
       <DropdownMenuContent align="end">
-        <DropdownMenuItem onSelect={onView}>
-          Просмотр
-        </DropdownMenuItem>
-
         <DropdownMenuItem
           onSelect={onTerminate}
           className="text-red-400"

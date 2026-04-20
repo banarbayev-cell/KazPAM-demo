@@ -639,10 +639,6 @@ export default function Sessions() {
                       </button>
 
                       <ActionMenuSession
-                        onView={() => {
-                          setSelectedSession(s);
-                          setDetailOpen(true);
-                        }}
                         onTerminate={() => handleTerminate(s)}
                         onAudit={() => handleAudit(s)}
                         onArchive={() => handleArchive(s)}

@@ -600,7 +600,7 @@ export default function Sessions() {
         onChange={(e) => setSearch(e.target.value)}
       />
 
-      <div className="bg-[#121A33] rounded-xl overflow-hidden">
+      <div className="bg-[#121A33] rounded-xl relative overflow-visible border border-[#1E2A45]">
         <table className="w-full text-white text-sm">
           <thead className="bg-[#1A243F] text-gray-300">
             <tr>
@@ -631,7 +631,7 @@ export default function Sessions() {
               filtered.map((s) => (
                 <tr
                   key={s.id}
-                  className="border-t border-[#1E2A45] hover:bg-[#0E1A3A]"
+                  className="border-t border-[#1E2A45] hover:bg-[#0E1A3A] relative"
                 >
                   <td className="p-3">{s.user}</td>
                   <td className="p-3">{s.system}</td>
@@ -653,8 +653,8 @@ export default function Sessions() {
                     )}
                   </td>
 
-                  <td className="p-3">
-                    <div className="flex items-center justify-center gap-2">
+                  <td className="p-3 relative overflow-visible">
+                    <div className="flex items-center justify-center gap-2 overflow-visible">
                       <button
                         onClick={() => openSession(s)}
                         className="px-3 py-1.5 rounded bg-[#0052FF] text-white text-xs font-medium hover:opacity-90"

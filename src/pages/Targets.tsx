@@ -7,6 +7,7 @@ import { useAuth } from "@/store/auth";
 import {
   bindTargetVaultSecret,
   createTarget,
+  deleteTarget,
   listTargets,
   unbindTargetVaultSecret,
   updateTarget,
@@ -22,7 +23,6 @@ import type {
   SSHAuthMode,
   TargetProtocol,
 } from "@/types/targets";
-
 
 type TargetFormState = {
   name: string;
@@ -381,6 +381,30 @@ export default function Targets() {
       setSubmitting(false);
     }
   }
+
+  async function handleDeleteTarget(target: Target) {
+    const ok = window.confirm(
+      `Удалить target #${target.id} (${target.name})?`
+    );
+    if (!ok) return;
+
+    setSubmitting(true);
+    try {
+      await deleteTarget(target.id);
+      toast.success("Target удалён");
+
+      if (editingTarget?.id === target.id) {
+        closeEdit();
+      }
+
+      await load();
+    } catch (e: any) {
+      toast.error(extractErrorMessage(e) || "Ошибка удаления target");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
 
   async function handleStartRdp(target: Target) {
     try {
@@ -1468,24 +1492,34 @@ async function handleOpenVncBreakGlass() {
                 </label>
               </div>
 
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex justify-between gap-2 pt-2">
                 <button
-                  onClick={closeEdit}
-                  className="px-3 py-1 rounded bg-gray-600 hover:bg-gray-700 text-white text-sm"
+                  onClick={() => editingTarget && handleDeleteTarget(editingTarget)}
+                  disabled={submitting}
+                  className="px-3 py-1 rounded bg-red-600 hover:bg-red-700 disabled:bg-gray-600 text-white text-sm"
                 >
-                  Отмена
+                  Удалить
                 </button>
 
-                <button
-                  onClick={handleUpdate}
-                  disabled={submitting}
-                  className="px-3 py-1 rounded bg-[#0052FF] hover:bg-[#0046D8] disabled:bg-gray-600 text-white text-sm"
-                >
-                  Сохранить
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={closeEdit}  
+                    className="px-3 py-1 rounded bg-gray-600 hover:bg-gray-700 text-white text-sm"
+                  >
+                    Отмена
+                  </button>
+
+                  <button
+                    onClick={handleUpdate}
+                    disabled={submitting}
+                    className="px-3 py-1 rounded bg-[#0052FF] hover:bg-[#0046D8] disabled:bg-gray-600 text-white text-sm"
+                  >
+                    Сохранить
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
+          </div> 
         )}
         {breakGlassTarget && (
           <div className="fixed inset-0 flex items-center justify-center bg-black/50 z-50">
@@ -1499,7 +1533,7 @@ async function handleOpenVncBreakGlass() {
                   <span className="text-gray-400">Target:</span>{" "}
                   {breakGlassTarget.name}
                 </div>
-                <div>
+              <div>
                   <span className="text-gray-400">Host:</span>{" "}
                   {breakGlassTarget.host}:{breakGlassTarget.port}
                 </div>

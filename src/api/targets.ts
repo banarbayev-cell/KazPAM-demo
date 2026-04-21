@@ -46,3 +46,9 @@ export async function listAccessibleTargets(
   const query = protocol ? `?protocol=${protocol}` : "";
   return api.get<Target[]>(`/targets/accessible${query}`);
 }
+
+export async function deleteTarget(
+  targetId: number
+): Promise<{ ok: boolean }> {
+  return api.delete<{ ok: boolean }>(`/targets/${targetId}`);
+}

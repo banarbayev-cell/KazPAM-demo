@@ -33,7 +33,11 @@ export default function ActionMenuSession({
         </button>
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent align="end">
+      <DropdownMenuContent
+        align="end"
+        sideOffset={6}
+        className="z-[9999] min-w-[220px]"
+      >
         <DropdownMenuItem
           onSelect={onTerminate}
           className="text-red-400"

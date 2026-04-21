@@ -13,7 +13,45 @@ export type StartSessionParams = {
   break_glass_reason?: string;
 };
 
+export type StartSessionProxyGrant = {
+  session_id?: number;
+  proxy_host?: string;
+  proxy_port?: number;
+  grant_token?: string;
+  expires_at?: string;
+  target_host?: string;
+  target_port?: number;
+  target_user?: string;
+  vault_secret_id?: number | null;
+  gateway_node?: string | null;
+  ssh_auth_mode?: string | null;
+  break_glass?: boolean;
+};
+
 export type StartSessionResponse = {
+  message?: string;
+  session?: {
+    id?: number;
+    user?: string;
+    system?: string;
+    os?: string;
+    ip?: string;
+    app?: string;
+    protocol?: string | null;
+    status?: string;
+    target_id?: number | null;
+    vault_secret_id?: number | null;
+    gateway_node?: string | null;
+    launch_mode?: string | null;
+    details?: string | null;
+    pam_user?: string | null;
+    start_time?: string;
+  };
+  recording_id?: number;
+  launch_mode?: string;
+  proxy_grant?: StartSessionProxyGrant | null;
+
+  // backward-compatible optional top-level fields
   id?: number;
   user?: string;
   system?: string;
@@ -25,10 +63,33 @@ export type StartSessionResponse = {
   target_id?: number | null;
   vault_secret_id?: number | null;
   gateway_node?: string | null;
-  launch_mode?: string | null;
   details?: string | null;
   pam_user?: string | null;
   start_time?: string;
+};
+
+export type SessionConnectInfo = {
+  session_id: number;
+  protocol: string;
+  session_status: string;
+  system: string;
+  ip: string;
+
+  target_host: string;
+  target_port: number;
+  target_user: string;
+
+  proxy_host: string;
+  proxy_port: number;
+  grant_token: string;
+  expires_at: string;
+
+  gateway_node?: string | null;
+  vault_secret_id?: number | null;
+  ssh_auth_mode?: string | null;
+  break_glass?: boolean;
+
+  ssh_command: string;
 };
 
 export const getSessions = () => {
@@ -87,6 +148,12 @@ export const startSession = (
   }
 
   return apiPost(`/sessions/start?${query.toString()}`);
+};
+
+export const getSessionConnectInfo = (
+  sessionId: number
+): Promise<SessionConnectInfo> => {
+  return apiPost(`/sessions/${sessionId}/connect-info`);
 };
 
 export const terminateSession = (id: number) => {

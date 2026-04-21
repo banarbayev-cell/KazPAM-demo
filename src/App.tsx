@@ -32,6 +32,7 @@ import Targets from "./pages/Targets";
 import Recordings from "./pages/Recordings";
 import SessionReplay from "./pages/SessionReplay";
 import Incidents from "./pages/Incidents";
+import SessionConnect from "./pages/SessionConnect";
 
 export default function App() {
   const loadFromStorage = useAuth((s) => s.loadFromStorage);
@@ -78,6 +79,7 @@ export default function App() {
           <Route path="soc/incidents/:id" element={<IncidentDetails />} />
           <Route path="users" element={<Users />} />
           <Route path="sessions" element={<Sessions />} />
+          <Route path="sessions/:id/connect" element={<SessionConnect />} />
           <Route path="discovery" element={<Discovery />} />
           <Route path="targets" element={<Targets />} />
           <Route path="vault" element={<Vault />} />

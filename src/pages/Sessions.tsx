@@ -171,6 +171,7 @@ function extractErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
+
 function findRecentlyCreatedSession(
   sessions: Session[],
   options: {
@@ -217,6 +218,19 @@ function findRecentlyCreatedSession(
   if (byManualFields) return byManualFields;
 
   return sessions.find((s) => s.status === "active") || null;
+}
+
+
+function isActiveSshSession(
+  session: Pick<Session, "protocol" | "app" | "conn" | "status">
+): boolean {
+  const protocol = String(
+    session.protocol || session.app || session.conn || ""
+  )
+    .trim()
+    .toLowerCase();
+
+  return protocol === "ssh" && session.status === "active";
 }
 
 // Для archive/filter/export режимов mergeSessions больше не нужен.
@@ -347,6 +361,16 @@ export default function Sessions() {
     if (!Number.isFinite(id)) return null;
     return sshTargets.find((t) => t.id === id) || null;
   }, [sshTargets, selectedTargetId]);
+
+  const openSession = (session: Session) => {
+    if (isActiveSshSession(session)) {
+      navigate(`/sessions/${session.id}/connect`);
+      return;
+    }
+
+    setSelectedSession(session);
+    setDetailOpen(true);
+  };
 
   const handleTerminate = async (session: Session) => {
     if (session.status !== "active") {
@@ -481,9 +505,12 @@ export default function Sessions() {
       const freshSessions = await loadSessions();
       notifySessionsChanged();
 
+      const startedSessionId =
+        startResponse?.session?.id ?? startResponse?.id ?? null;
+
       const matchedSession =
-        (startResponse?.id
-          ? freshSessions.find((s) => s.id === startResponse?.id) || null
+        (startedSessionId
+          ? freshSessions.find((s) => s.id === startedSessionId) || null
           : null) ||
         findRecentlyCreatedSession(freshSessions, {
           targetId: !manualMode ? selectedTarget?.id ?? null : null,
@@ -629,13 +656,10 @@ export default function Sessions() {
                   <td className="p-3">
                     <div className="flex items-center justify-center gap-2">
                       <button
-                        onClick={() => {
-                          setSelectedSession(s);
-                          setDetailOpen(true);
-                        }}
+                        onClick={() => openSession(s)}
                         className="px-3 py-1.5 rounded bg-[#0052FF] text-white text-xs font-medium hover:opacity-90"
                       >
-                        Открыть
+                        {isActiveSshSession(s) ? "Подключиться" : "Открыть"}
                       </button>
 
                       <ActionMenuSession
@@ -720,9 +744,9 @@ export default function Sessions() {
             </div>
 
             <div className="rounded-lg border border-[#1E2A45] bg-[#0E1A3A] p-4 text-sm text-gray-300 leading-6">
-              В текущей версии KazPAM сессия создаётся и контролируется системой,
-              но отдельное интерактивное окно не открывается автоматически.
-              Для пользователя теперь доступно явное открытие карточки сессии и её контроль из списка.
+              {launchedSession && isActiveSshSession(launchedSession)
+              ? "Сессия создана. Для начала работы откройте экран подключения: там будет готовая SSH-команда для входа через KazPAM Gateway."
+              : "Сессия создана и доступна для просмотра и контроля из интерфейса KazPAM."}
             </div>
 
             <div className="flex justify-end gap-2">
@@ -737,13 +761,16 @@ export default function Sessions() {
 
               <button
                 onClick={() => {
-                  setSelectedSession(launchedSession);
-                  setDetailOpen(true);
                   setLaunchResultOpen(false);
+                  if (launchedSession) {
+                    openSession(launchedSession);
+                  }  
                 }}
                 className="px-4 py-2 bg-[#0052FF] rounded"
               >
-                Открыть сессию
+                {launchedSession && isActiveSshSession(launchedSession)
+                  ? "Перейти к подключению"
+                  : "Открыть сессию"}
               </button>
             </div>
           </div>

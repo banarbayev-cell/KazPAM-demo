@@ -563,7 +563,7 @@ export default function SettingsPage() {
             </div>
 
             <div className="text-sm text-gray-400 mb-4">
-              Используется для Email MFA и системных email-уведомлений. Заказчик должен указать свой SMTP / relay.
+              Используется для Email MFA и системных email-уведомлений. Необохдимо указать свой SMTP / relay.
             </div>
 
             {data.smtp_enabled && (

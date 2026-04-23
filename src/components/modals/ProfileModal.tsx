@@ -101,6 +101,7 @@ export default function ProfileModal({
   const isMfaEnabled = mfaStatus?.mfa_enabled ?? user.mfa_enabled ?? false;
   const pendingSetup = mfaStatus?.pending_setup ?? false;
   const mfaMethod = mfaStatus?.mfa_method ?? user.mfa_method ?? null;
+  const emailMfaAvailable = mfaStatus?.email_available ?? false;
 
   const mfaStatusText = isMfaEnabled
     ? `Включено${mfaMethod ? ` (${mfaMethod})` : ""}`
@@ -125,11 +126,12 @@ export default function ProfileModal({
       setSetupMethod("totp");
       setMfaSecret(res.secret);
       setMfaOtpUri(res.otpauth_uri);
-      setMfaStatus({
+      setMfaStatus((prev) => ({
         mfa_enabled: false,
         mfa_method: "totp",
         pending_setup: true,
-      });
+        email_available: prev?.email_available ?? false,
+      }));
 
       toast.success(
         "Секрет MFA сгенерирован. Добавьте его в Google Authenticator."
@@ -142,6 +144,11 @@ export default function ProfileModal({
   };
 
   const sendEmailSetupCode = async () => {
+    if (!emailMfaAvailable) {
+      toast.error("Email MFA недоступна: SMTP не настроен на сервере");
+      return;
+    }
+   
     try {
       setMfaLoading(true);
       setMfaSecret(null);
@@ -151,11 +158,12 @@ export default function ProfileModal({
 
       setSetupMethod("email");
       setEmailCodeSent(true);
-      setMfaStatus({
+      setMfaStatus((prev) => ({
         mfa_enabled: false,
         mfa_method: "email",
         pending_setup: true,
-      });
+        email_available: prev?.email_available ?? false,
+      }));
 
       toast.success("Код подтверждения отправлен на вашу почту");
     } catch (e: any) {
@@ -229,21 +237,23 @@ export default function ProfileModal({
           <button
             type="button"
             onClick={() => {
+              if (!emailMfaAvailable) return;
               setSetupMethod("email");
               setMfaSecret(null);
               setMfaOtpUri(null);
               setMfaCode("");
             }}
-            disabled={mfaLoading}
+            disabled={mfaLoading || !emailMfaAvailable}
             className={`px-3 py-2 rounded-lg border text-sm transition ${
               setupMethod === "email"
                 ? "bg-[#0052FF] text-white border-[#0052FF]"
                 : "bg-[#121A33] text-gray-300 border-[#1E2A45] hover:bg-[#182447]"
-            }`}
+            } ${!emailMfaAvailable ? "opacity-50 cursor-not-allowed" : ""}`}
           >
             Email код
           </button>
         </div>
+ 
 
         {/* TOTP FLOW */}
         {setupMethod === "totp" && (
@@ -256,7 +266,7 @@ export default function ProfileModal({
               >
                 {mfaLoading
                   ? "Подготовка..."
-                  : pendingSetup
+                  : pendingSetup && mfaMethod === "totp"
                   ? "Сгенерировать новый секрет"
                   : "Настроить MFA через Google Authenticator"}
               </button>
@@ -308,58 +318,64 @@ export default function ProfileModal({
 
         {/* EMAIL FLOW */}
         {setupMethod === "email" && (
-          <div className="space-y-3">
-            <div className="text-sm text-gray-300">
-              Подтверждение будет отправлено на email пользователя.
+          emailMfaAvailable ? (
+            <div className="space-y-3">
+              <div className="text-sm text-gray-300">
+                Подтверждение будет отправлено на email пользователя.
+              </div>
+
+              <div className="flex gap-2 flex-wrap">
+                <button
+                  onClick={sendEmailSetupCode}
+                  disabled={mfaLoading}
+                  className="px-4 py-2 rounded-lg bg-[#0052FF] text-white hover:bg-[#0040cc] transition disabled:opacity-50"
+                >
+                  {mfaLoading
+                    ? "Отправка..."
+                    : emailCodeSent || (pendingSetup && mfaMethod === "email")
+                    ? "Отправить код повторно"
+                    : "Отправить код на email"}
+                </button>
+              </div>
+
+              <input
+                type="text"
+                value={mfaCode}
+                onChange={(e) => setMfaCode(e.target.value)}
+                placeholder="Введите код из email"
+                className="w-full bg-[#121A33] border border-[#1E2A45] rounded-lg px-3 py-2 text-white"
+              />
+
+              <div className="flex gap-2">
+                <button
+                  onClick={verifyCurrentMethod}
+                  disabled={mfaLoading}
+                  className="px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 transition disabled:opacity-50"
+                >
+                  {mfaLoading ? "Проверка..." : "Подтвердить"}
+                </button>
+
+                <button
+                  onClick={() => {
+                    setMfaCode("");
+                    setEmailCodeSent(false);
+                  }}
+                  disabled={mfaLoading}
+                  className="px-4 py-2 rounded-lg bg-gray-700 text-white hover:bg-gray-600 transition disabled:opacity-50"
+                >
+                  Очистить
+                </button>
+              </div>
             </div>
-
-            <div className="flex gap-2 flex-wrap">
-              <button
-                onClick={sendEmailSetupCode}
-                disabled={mfaLoading}
-                className="px-4 py-2 rounded-lg bg-[#0052FF] text-white hover:bg-[#0040cc] transition disabled:opacity-50"
-              >
-                {mfaLoading
-                  ? "Отправка..."
-                  : emailCodeSent || pendingSetup
-                  ? "Отправить код повторно"
-                  : "Отправить код на email"}
-              </button>
-            </div>
-
-            <input
-              type="text"
-              value={mfaCode}
-              onChange={(e) => setMfaCode(e.target.value)}
-              placeholder="Введите код из email"
-              className="w-full bg-[#121A33] border border-[#1E2A45] rounded-lg px-3 py-2 text-white"
-            />
-
-            <div className="flex gap-2">
-              <button
-                onClick={verifyCurrentMethod}
-                disabled={mfaLoading}
-                className="px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 transition disabled:opacity-50"
-              >
-                {mfaLoading ? "Проверка..." : "Подтвердить"}
-              </button>
-
-              <button
-                onClick={() => {
-                  setMfaCode("");
-                  setEmailCodeSent(false);
-                }}
-                disabled={mfaLoading}
-                className="px-4 py-2 rounded-lg bg-gray-700 text-white hover:bg-gray-600 transition disabled:opacity-50"
-              >
-                Очистить
-              </button>
-            </div>
+         ) : (
+           <div className="rounded-lg border border-[#5B4A1A] bg-[#2A2412] p-3 text-sm text-yellow-300">
+             Email MFA сейчас недоступна. Администратор должен настроить SMTP на сервере KazPAM.
           </div>
-        )}
-      </div>
-    );
-  };
+        )
+      )}
+    </div>
+  );
+};
 
   return createPortal(
     <div className="fixed inset-0 z-[9999] flex items-center justify-center">

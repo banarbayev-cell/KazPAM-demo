@@ -4,6 +4,7 @@ export interface MfaStatus {
   mfa_enabled: boolean;
   mfa_method?: string | null;
   pending_setup: boolean;
+  email_available?: boolean;
 }
 
 export interface MfaEnableResponse {

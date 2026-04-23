@@ -42,6 +42,22 @@ export interface Settings {
 
   radius_enabled: boolean;
   radius_secret_configured?: boolean;
+
+  smtp_enabled?: boolean;
+  smtp_host?: string | null;
+  smtp_port?: number;
+  smtp_security?: string | null;
+  smtp_auth_enabled?: boolean;
+  smtp_user?: string | null;
+  smtp_user_configured?: boolean;
+  smtp_password_configured?: boolean;
+  smtp_from_email?: string | null;
+  smtp_from_name?: string | null;
+  smtp_timeout_seconds?: number;
+
+  smtp_last_test_at?: string | null;
+  smtp_last_test_status?: string | null;
+  smtp_last_error?: string | null;
 }
 
 export interface SettingsIntegrationsPayload {
@@ -66,6 +82,17 @@ export interface SettingsIntegrationsPayload {
 
   radius_enabled?: boolean;
   radius_secret?: string;
+
+  smtp_enabled?: boolean;
+  smtp_host?: string | null;
+  smtp_port?: number;
+  smtp_security?: string | null;
+  smtp_auth_enabled?: boolean;
+  smtp_user?: string | null;
+  smtp_password?: string;
+  smtp_from_email?: string | null;
+  smtp_from_name?: string | null;
+  smtp_timeout_seconds?: number;
 }
 
 export interface ADTestPayload {
@@ -99,6 +126,14 @@ export interface SIEMExportResponse {
   last_error?: string | null;
   last_delivery_operation?: string | null;
   last_exported_events?: number | null;
+}
+
+export interface SMTPTestResponse {
+  status: "success" | "failed" | string;
+  message?: string;
+  smtp_last_test_at?: string | null;
+  smtp_last_test_status?: string | null;
+  smtp_last_error?: string | null;
 }
 
 const getHeaders = () => {

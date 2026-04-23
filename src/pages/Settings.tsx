@@ -25,6 +25,7 @@ type SettingsFormData = Settings & {
   ad_bind_password?: string;
   radius_secret?: string;
   siem_auth_token?: string;
+  smtp_password?: string;
 };
 
 export default function SettingsPage() {
@@ -56,6 +57,7 @@ export default function SettingsPage() {
         ad_bind_password: "",
         radius_secret: "",
         siem_auth_token: "",
+        smtp_password: "",
       });
     } catch {
       toast.error("Ошибка загрузки настроек");
@@ -211,6 +213,16 @@ export default function SettingsPage() {
       siem_auth_type: data.siem_auth_type,
       siem_headers_json: data.siem_headers_json,
 
+      smtp_enabled: data.smtp_enabled,
+      smtp_host: data.smtp_host,
+      smtp_port: data.smtp_port,
+      smtp_security: data.smtp_security,
+      smtp_auth_enabled: data.smtp_auth_enabled,
+      smtp_user: data.smtp_user,
+      smtp_from_email: data.smtp_from_email,
+      smtp_from_name: data.smtp_from_name,
+      smtp_timeout_seconds: data.smtp_timeout_seconds,
+
       radius_enabled: data.radius_enabled,
     };
 
@@ -220,6 +232,10 @@ export default function SettingsPage() {
 
     if (data.siem_auth_token?.trim()) {
       payload.siem_auth_token = data.siem_auth_token.trim();
+    }
+
+    if (data.smtp_password?.trim()) {
+      payload.smtp_password = data.smtp_password.trim();
     }
 
     if (data.radius_secret?.trim()) {
@@ -405,6 +421,8 @@ export default function SettingsPage() {
               <Toggle checked={data.ad_enabled} onChange={(v: boolean) => update("ad_enabled", v)} />
             </div>
 
+          
+
             {data.ad_enabled && (
               <>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5 animate-in fade-in slide-in-from-top-2">
@@ -529,6 +547,141 @@ export default function SettingsPage() {
                   <LdapSyncCard />
                 </div>
               </>
+            )}
+          </div>
+
+          <div className="border-b border-white/10 pb-8 mb-8">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Server size={18} className="text-gray-300" />
+                <h3 className="text-lg font-semibold text-white">SMTP / Email Delivery</h3>
+              </div>
+              <Toggle
+                checked={!!data.smtp_enabled}
+                onChange={(v: boolean) => update("smtp_enabled", v)}
+              />
+            </div>
+
+            <div className="text-sm text-gray-400 mb-4">
+              Используется для Email MFA и системных email-уведомлений. Заказчик должен указать свой SMTP / relay.
+            </div>
+
+            {data.smtp_enabled && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5 animate-in fade-in slide-in-from-top-2">
+                <Input
+                  label="SMTP Host"
+                  value={data.smtp_host}
+                  onChange={(v: any) => update("smtp_host", v)}
+                  placeholder="smtp.company.kz"
+                />
+
+                <Input
+                  label="SMTP Port"
+                  type="number"
+                  value={data.smtp_port}
+                  onChange={(v: any) => update("smtp_port", Number(v))}
+                  placeholder="587"
+                />
+
+                <Select
+                  label="SMTP Security"
+                  value={data.smtp_security || "starttls"}
+                  onChange={(v: any) => update("smtp_security", v)}
+                >
+                  <option value="none">none</option>
+                  <option value="starttls">starttls</option>
+                  <option value="ssl">ssl</option>
+                </Select>
+
+                <div className="flex items-end">
+                  <div className="pb-3">
+                    <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={!!data.smtp_auth_enabled}
+                        onChange={(e) => update("smtp_auth_enabled", e.target.checked)}
+                        className="accent-blue-500 w-4 h-4"
+                      />
+                      SMTP authentication required
+                    </label>
+                  </div>
+                </div>
+
+                {data.smtp_auth_enabled && (
+                  <>
+                    <Input
+                      label="SMTP Username"
+                      value={data.smtp_user}
+                      onChange={(v: any) => update("smtp_user", v)}
+                      placeholder="smtp-user@company.kz"
+                    />
+
+                    <Input
+                      label="SMTP Password"
+                      type="password"
+                      value={data.smtp_password}
+                      onChange={(v: any) => update("smtp_password", v)}
+                      placeholder={
+                        data.smtp_password_configured
+                          ? "Пароль уже сохранён. Введите новый только если хотите обновить"
+                          : "Введите SMTP пароль"
+                      }
+                    />
+                  </>
+                )}
+
+                <Input
+                  label="From Email"
+                  value={data.smtp_from_email}
+                  onChange={(v: any) => update("smtp_from_email", v)}
+                  placeholder="noreply@company.kz"
+                />
+
+                <Input
+                  label="From Name"
+                  value={data.smtp_from_name}
+                  onChange={(v: any) => update("smtp_from_name", v)}
+                  placeholder="KazPAM"
+                />
+
+                <Input
+                  label="Timeout (seconds)"
+                  type="number"
+                  value={data.smtp_timeout_seconds}
+                  onChange={(v: any) => update("smtp_timeout_seconds", Number(v))}
+                  placeholder="20"
+                />
+
+                <div className="md:col-span-2 bg-[#121A33] border border-white/10 rounded-xl p-4">
+                  <div className="text-white font-medium mb-2">SMTP Status</div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                    <div className="rounded-lg border border-[#24314F] bg-[#0E1A3A] p-3">
+                      <div className="text-xs text-gray-400 mb-1">Auth</div>
+                      <div className="text-white">
+                        {data.smtp_auth_enabled ? "ENABLED" : "DISABLED"}
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border border-[#24314F] bg-[#0E1A3A] p-3">
+                      <div className="text-xs text-gray-400 mb-1">Last Test</div>
+                      <div className="text-white">{data.smtp_last_test_at || "—"}</div>
+                    </div>
+
+                    <div className="rounded-lg border border-[#24314F] bg-[#0E1A3A] p-3">
+                      <div className="text-xs text-gray-400 mb-1">Last Status</div>
+                      <div className="text-white">{data.smtp_last_test_status || "—"}</div>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 rounded-lg border border-[#24314F] bg-[#0E1A3A] p-3">
+                    <div className="text-xs text-gray-400 mb-1">Last Error</div>
+                    <div className="text-sm text-red-300 break-words">
+                      {data.smtp_last_error || "—"}
+                    </div>
+                  </div>
+                </div>
+              </div>
             )}
           </div>
 

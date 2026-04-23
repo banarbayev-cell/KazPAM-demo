@@ -352,13 +352,18 @@ useEffect(() => {
   // LOAD AUDIT LOGS
   // ============================
   useEffect(() => {
+    if (!token) return;
+
     setLoading(true);
 
     fetchAuditLogs()
-      .then(setAuditLogs)
-      .catch((err) => console.error("Audit load error:", err))
+      .then((data) => setAuditLogs(Array.isArray(data) ? data : []))
+      .catch((err) => {
+        console.error("Audit load error:", err);
+        setAuditLogs([]);
+      })  
       .finally(() => setLoading(false));
-  }, []);
+  }, [token]);
 
   // ============================
   // LOAD SOC SUMMARY (SOURCE OF TRUTH)
@@ -517,9 +522,17 @@ if (!alreadyRestoredThisSession) {
   // ============================
   const suspiciousLogs = useMemo(() => {
     const base = auditLogs.filter((log) =>
-      ["LOGIN", "DENY", "FAILED", "PRIVILEGE", "FORBIDDEN", "PASSWORD"].some((k) =>
-        log.action?.toUpperCase().includes(k)
-      )
+      [
+      "LOGIN",
+      "DENY",
+      "FAILED",
+      "PRIVILEGE",
+      "FORBIDDEN",
+      "PASSWORD",
+      "SESSION",
+      "BREAK_GLASS",
+      "SOC_",
+      ].some((k) => log.action?.toUpperCase().includes(k))
     );
 
     const active = summary?.incident;
@@ -532,101 +545,111 @@ if (!alreadyRestoredThisSession) {
         : parsedCorrelation.ip;
 
     const targetUser = (active.user || "").toLowerCase();
-    const createdAtMs = active.created_at ? new Date(active.created_at).getTime() : NaN;
+    const createdAtMs = active.created_at
+      ? new Date(active.created_at).getTime()
+      : NaN;
     const windowMs = 15 * 60 * 1000;
 
     const scoped = base.filter((log) => {
       const src = extractSourceMeta(log.details);
 
-    const sameUser =
-      !!targetUser && (log.user || "").toLowerCase() === targetUser;
+      const sameUser =
+        !!targetUser && (log.user || "").toLowerCase() === targetUser;
 
-    const sameIp =
-      !!targetIp && normalizeDisplay(src.ip) !== "—" && src.ip === targetIp;
+      const sameIp =
+        !!targetIp && normalizeDisplay(src.ip) !== "—" && src.ip === targetIp;
 
-    const ts = log.timestamp ? new Date(log.timestamp).getTime() : NaN;
-    const inWindow =
-      Number.isFinite(createdAtMs) && Number.isFinite(ts)
-        ? Math.abs(ts - createdAtMs) <= windowMs
-        : true;
+      const ts = log.timestamp ? new Date(log.timestamp).getTime() : NaN;
+      const inWindow =
+        Number.isFinite(createdAtMs) && Number.isFinite(ts)
+          ? Math.abs(ts - createdAtMs) <= windowMs
+          : true;
 
-    return (sameUser || sameIp) && inWindow;
-  });
+      return (sameUser || sameIp) && inWindow;
+    });
 
-  return scoped.length ? scoped : base;
-}, [auditLogs, summary]);
+    return scoped.length ? scoped : base;
+  }, [auditLogs, summary]);
 
   // ============================
   // BUILD RECORD FOR MODAL
   // ============================
   const record = useMemo(() => {
-  const active = summary?.incident;
-  const correlationMeta = parseCorrelationMeta(active?.correlation_id);
+    const active = summary?.incident;
+    const correlationMeta = parseCorrelationMeta(active?.correlation_id);
 
-  const enriched = suspiciousLogs.map((log) => ({
-    log,
-    src: extractSourceMeta(log.details),
-  }));
+    const enriched = suspiciousLogs.map((log) => ({
+      log,
+      src: extractSourceMeta(log.details),
+    }));
 
-  const prioritized = [...enriched].sort((a, b) => {
-    const aAction = (a.log.action || "").toUpperCase();
-    const bAction = (b.log.action || "").toUpperCase();
+    const prioritized = [...enriched].sort((a, b) => {
+      const aAction = (a.log.action || "").toUpperCase();
+      const bAction = (b.log.action || "").toUpperCase()
 
-    const aPriority =
-      aAction.includes("LOGIN_FAIL") || aAction.includes("LOGIN_SUCCESS") ? 2 : 1;
-    const bPriority =
-      bAction.includes("LOGIN_FAIL") || bAction.includes("LOGIN_SUCCESS") ? 2 : 1;
+      const aPriority =
+        aAction.includes("LOGIN_FAIL") || aAction.includes("LOGIN_SUCCESS") ? 2 : 1;
+      const bPriority =
+        bAction.includes("LOGIN_FAIL") || bAction.includes("LOGIN_SUCCESS") ? 2 : 1;
 
-    if (aPriority !== bPriority) return bPriority - aPriority;
+      if (aPriority !== bPriority) return bPriority - aPriority;
 
-    const aTs = a.log.timestamp ? new Date(a.log.timestamp).getTime() : 0;
-    const bTs = b.log.timestamp ? new Date(b.log.timestamp).getTime() : 0;
+      const aTs = a.log.timestamp ? new Date(a.log.timestamp).getTime() : 0;
+      const bTs = b.log.timestamp ? new Date(b.log.timestamp).getTime() : 0
 
-    return bTs - aTs;
-  });
-
-  const firstWithContext =
-    prioritized.find((item) => normalizeDisplay(item.src.ip) !== "—") ||
-    prioritized.find((item) => normalizeDisplay(item.src.userAgent) !== "—") ||
-    null;
-
-  const bestIp =
-    normalizeDisplay(active?.ip) !== "—"
-      ? active?.ip
-      : correlationMeta.ip || firstWithContext?.src.ip || null;
-
-  const bestUserAgent =
-    correlationMeta.userAgent || firstWithContext?.src.userAgent || null;
-
-  const eventWhitelist = new Set([
-    "LOGIN_FAIL",
-    "LOGIN_SUCCESS",
-    "LOGIN_RISK_EVALUATED",
-    "LOGIN_RISK_POST_AUTH",
-    "PASSWORD_CHANGED",
-    "PASSWORD_RESET_REQUEST",
-    "PASSWORD_RESET_ISSUED",
-    "PASSWORD_CHANGE_FAIL",
-  ]);
-
-  const events = suspiciousLogs
-    .filter((e) => eventWhitelist.has((e.action || "").toUpperCase()))
-    .sort((a, b) => {
-      const aTs = a.timestamp ? new Date(a.timestamp).getTime() : 0;
-      const bTs = b.timestamp ? new Date(b.timestamp).getTime() : 0;
       return bTs - aTs;
-    })
-    .slice(0, 50)
-    .map((e) => sanitizeText(`${safeTime(e.timestamp) || e.timestamp} — ${e.action}`));
+    });
 
-  return {
-    user: normalizeDisplay(active?.user || firstWithContext?.log.user || "—"),
-    ip: normalizeDisplay(bestIp),
-    location: geoFromIp(bestIp),
-    device: formatDevice(bestUserAgent),
-    events,
-  };
-}, [summary, suspiciousLogs]);
+    const firstWithContext =
+      prioritized.find((item) => normalizeDisplay(item.src.ip) !== "—") ||
+      prioritized.find((item) => normalizeDisplay(item.src.userAgent) !== "—") ||
+      null;
+
+    const bestIp =
+      normalizeDisplay(active?.ip) !== "—"
+        ? active?.ip
+        : correlationMeta.ip || firstWithContext?.src.ip || null;
+
+    const bestUserAgent =
+      correlationMeta.userAgent || firstWithContext?.src.userAgent || null;
+
+    const eventWhitelist = new Set([
+      "LOGIN_FAIL",
+      "LOGIN_SUCCESS",
+      "LOGIN_RISK_EVALUATED",
+      "LOGIN_RISK_POST_AUTH",
+      "PASSWORD_CHANGED",
+      "PASSWORD_RESET_REQUEST",
+      "PASSWORD_RESET_ISSUED",
+      "PASSWORD_CHANGE_FAIL",
+
+      "SESSION.START",
+      "SESSION.CONNECT.PREPARE",
+      "SESSION.TERMINATE",
+      "SOC_ISOLATE_SESSION",
+      "BREAK_GLASS_REQUESTED",
+      "BREAK_GLASS_SESSION_STARTED",
+      "BREAK_GLASS_SESSION_TERMINATED",
+    ]);
+
+    const events = suspiciousLogs
+      .filter((e) => eventWhitelist.has((e.action || "").toUpperCase()))
+      .sort((a, b) => {
+        const aTs = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+        const bTs = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+        return bTs - aTs;
+      })
+      .slice(0, 50)
+      .map((e) => sanitizeText(`${safeTime(e.timestamp) || e.timestamp} — ${e.action}`));
+
+    return {
+      user: normalizeDisplay(active?.user || firstWithContext?.log.user || "—"),
+      ip: normalizeDisplay(bestIp),
+      location: geoFromIp(bestIp),
+      device: formatDevice(bestUserAgent),
+      events,
+    };
+  }, [summary, suspiciousLogs]);
 
   // ============================
   // RISK SCORE

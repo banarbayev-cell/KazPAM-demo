@@ -280,14 +280,29 @@ export default function SocDashboard() {
   const [summary, setSummary] = useState<SocSummaryResponse | null>(null);
 
   const activeIncidentId = useMemo(() => {
-    return getIncidentId(summary?.incident) ?? getIncidentId(incident);
-  }, [summary, incident]);
+    return getIncidentId(summary?.incident);
+  }, [summary]);
 
   const openIncidentDetails = (incidentId: number) => {
     localStorage.setItem(SOC_INCIDENT_STORAGE_KEY, String(incidentId));
     navigate(`/soc/incidents/${incidentId}`);
   };
   
+  const openSocTimeline = () => {
+    const qs = new URLSearchParams();
+
+    const candidate =
+      summary?.incident?.ip ||
+      q ||
+      record.ip;
+
+    if (candidate && normalizeDisplay(candidate) !== "—") {
+      qs.set("q", candidate);
+    }
+
+    navigate(`/soc/incidents${qs.toString() ? `?${qs.toString()}` : ""}`);
+  };
+
   // ============================
   // LOAD INITIAL COMMANDS
   // ============================
@@ -466,57 +481,17 @@ useEffect(() => {
   };
 }, [token]);
 
-  // ============================
-  // RESTORE INCIDENT AFTER RELOAD (NO REGRESSIONS)
-  // ============================
   useEffect(() => {
-    // без токена не лезем в API (иначе 401)
-    if (!token) return;
+    if (summary === null) return;
+    if (summary?.incident) return;
 
-    // если уже есть инцидент в state — ничего не делаем
-    if (incident?.backendId || (incident as any)?.id) return;
+    localStorage.removeItem(SOC_INCIDENT_STORAGE_KEY);
+    sessionStorage.removeItem(SOC_INCIDENT_SESSION_KEY);
+    setIncident(null);
+    setInvestigationOpen(false);
+  }, [summary]);
 
-    const savedId = localStorage.getItem(SOC_INCIDENT_STORAGE_KEY);
-    if (!savedId) return;
-
-    const authHeaders: Record<string, string> = {
-      Authorization: `Bearer ${token}`,
-    };
-
-    (async () => {
-      try {
-        const r = await fetch(`${API_URL}/incidents/${savedId}`, {
-          headers: authHeaders,
-        });
-
-        if (!r.ok) {
-          // если инцидент недоступен/удалён — очищаем якорь
-          localStorage.removeItem(SOC_INCIDENT_STORAGE_KEY);
-          return;
-        }
-
-        const data = await r.json();
-
-        setIncident(mapBackendIncidentToUi(data));
-
-// 🔒 UX-GATE: автооткрываем ТОЛЬКО 1 РАЗ за сессию
-const alreadyRestoredThisSession = sessionStorage.getItem(
-  SOC_INCIDENT_SESSION_KEY
-);
-
-if (!alreadyRestoredThisSession) {
-  setInvestigationOpen(true);
-  sessionStorage.setItem(SOC_INCIDENT_SESSION_KEY, "1");
-}
-      } catch (e) {
-        // сеть/ошибка — не ломаем страницу, просто очищаем якорь
-        localStorage.removeItem(SOC_INCIDENT_STORAGE_KEY);
-      }
-    })();
-    // ВАЖНО: зависимость только token, как у тебя было
-    // incident намеренно НЕ добавляем, чтобы не было лишних запросов
-  }, [token]);
-
+  
   // ============================
   // SOC FILTER (MVP)
   // ============================
@@ -656,15 +631,29 @@ if (!alreadyRestoredThisSession) {
   // ============================
   const risk = useMemo(() => calculateRiskScore(suspiciousLogs), [suspiciousLogs]);
   
+  const latestTimelineEventAt = useMemo(() => {
+    if (!suspiciousLogs.length) return "";
+
+    const latest = [...suspiciousLogs].sort((a, b) => {
+      const aTs = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+      const bTs = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+      return bTs - aTs;
+    })[0];
+
+    return latest?.timestamp ? safeTime(latest.timestamp) : "";
+  }, [suspiciousLogs]);
+
+
   // ============================
   // DISPLAYED CREATED AT (backend first)
   // ============================
   const displayedCreatedAt = useMemo(() => {
     if (summary?.incident?.created_at) {
-     return safeTime(summary.incident.created_at);
-  }
-     return "";
-  }, [summary]);
+      return safeTime(summary.incident.created_at);
+    }
+
+    return latestTimelineEventAt;
+  }, [summary, latestTimelineEventAt]);
 
   // ============================
 // DISPLAYED RISK (backend first)
@@ -704,105 +693,20 @@ if (!alreadyRestoredThisSession) {
   // OPEN INVESTIGATION
   // ============================
 
-
-  const handleInvestigate = async () => {
+  const handleInvestigate = () => {
     setRbacError(null);
 
-      if (summary?.incident) {
-        const mapped = mapBackendIncidentToUi(summary.incident);
-        setIncident(mapped);
+    const incidentId = getIncidentId(summary?.incident);
 
-        const incidentId = getIncidentId(summary.incident);
-      if (incidentId) {
-        localStorage.setItem(SOC_INCIDENT_STORAGE_KEY, String(incidentId));
-        navigate(`/soc/incidents/${incidentId}`);
-        return;
-      }
-
-      setInvestigationOpen(true);
+    if (incidentId) {
+      localStorage.setItem(SOC_INCIDENT_STORAGE_KEY, String(incidentId));
+      navigate(`/soc/incidents/${incidentId}`);
       return;
     }
 
-    // если токена нет — не пытаемся ходить в API (иначе 401)
-    if (!token) {
-      console.error("SOC investigate: missing token (login required)");
-      return;
-    }
-
-    // если уже есть сохранённый инцидент — не создаём новый
-    const savedId = localStorage.getItem(SOC_INCIDENT_STORAGE_KEY);
-    if (savedId) {
-      navigate(`/soc/incidents/${savedId}`);
-      return;
-    }
-
-    const authHeaders: Record<string, string> = {
-      Authorization: `Bearer ${token}`,
-    };
-
-    try {
-      // 1️⃣ пробуем получить активный incident из backend
-      const res = await fetch(
-        `${API_URL}/incidents/active?user=${encodeURIComponent(record.user)}`,
-        { headers: authHeaders }
-      );
-
-      if (!res.ok) {
-        throw new Error("Failed to load active incident");
-      }
-
-      const existing = await res.json();
-
-      if (existing) {
-        // 2️⃣ есть активный — используем его
-        setIncident({
-          ...existing,
-          backendId: existing.id,
-        });
-        // ✅ сохраняем якорь дела
-        localStorage.setItem(SOC_INCIDENT_STORAGE_KEY, String(existing.id));
-        navigate(`/soc/incidents/${existing.id}`);
-        return;
-
-      } else {
-        // 3️⃣ нет активного — создаём в backend
-        const createRes = await fetch(`${API_URL}/incidents/`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...authHeaders,
-          },
-          body: JSON.stringify({
-            user: record.user,
-            system: "KazPAM",
-            ip: record.ip,
-            severity: risk.level,
-            risk_score: risk.score,
-            summary: "SOC detected suspicious activity",
-          }),
-        });
-
-        if (!createRes.ok) {
-          throw new Error("Failed to create incident");
-        }
-
-        const created = await createRes.json();
-
-        setIncident({
-          ...created,
-          backendId: created.id,
-        });
-
-        // ✅ сохраняем якорь дела (created доступен только здесь)
-        localStorage.setItem(SOC_INCIDENT_STORAGE_KEY, String(created.id));
-        navigate(`/soc/incidents/${created.id}`);
-        return;
-      }
-
-    } catch (e) {
-      console.error("SOC investigate error:", e);
-    }
+    openSocTimeline();
   };
+ 
 
   return (
     <div className="p-8 space-y-8">
@@ -832,19 +736,13 @@ if (!alreadyRestoredThisSession) {
         incidents={record.events.slice(0, 4)}
         createdAt={displayedCreatedAt}   // ✅ ВОТ ЭТО ДОБАВЬ
         investigationQuery={summary?.incident?.ip}
-        onInvestigate={(q) => {
-          if (q && window.location.pathname !== "/soc") {
-            navigate(`/soc?q=${encodeURIComponent(q)}`);
-            return;
-          }
-
+        onInvestigate={(_q) => {
           if (activeIncidentId) {
             openIncidentDetails(activeIncidentId);
             return;
-          }  
+          }
 
           handleInvestigate();
-
         }} 
 /> 
 

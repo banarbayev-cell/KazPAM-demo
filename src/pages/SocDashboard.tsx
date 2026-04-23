@@ -26,6 +26,7 @@ import {
   isolateSession,
   exportSocSiemJson,
 } from "../api/socActions";
+import { fetchIncidents } from "../api/incidents";
 
 function mapBackendIncidentToUi(b: any): Incident {
   return {
@@ -292,11 +293,11 @@ export default function SocDashboard() {
     const qs = new URLSearchParams();
 
     const candidate =
-      summary?.incident?.ip ||
       q ||
-      record.ip;
+      (normalizeDisplay(record.user) !== "—" ? record.user : "") ||
+      (normalizeDisplay(record.ip) !== "—" ? record.ip : "");
 
-    if (candidate && normalizeDisplay(candidate) !== "—") {
+    if (candidate) {
       qs.set("q", candidate);
     }
 
@@ -693,7 +694,7 @@ useEffect(() => {
   // OPEN INVESTIGATION
   // ============================
 
-  const handleInvestigate = () => {
+  const handleInvestigate = async () => {
     setRbacError(null);
 
     const incidentId = getIncidentId(summary?.incident);
@@ -702,6 +703,37 @@ useEffect(() => {
       localStorage.setItem(SOC_INCIDENT_STORAGE_KEY, String(incidentId));
       navigate(`/soc/incidents/${incidentId}`);
       return;
+    }
+
+    const candidates = [q, record.user, record.ip]
+      .map((value) => (value || "").trim())
+      .filter(
+        (value, index, arr) =>
+          value &&
+          value !== "—" &&
+          arr.indexOf(value) === index
+      );
+
+    try {
+      for (const candidate of candidates) {
+        const matches = await fetchIncidents({ q: candidate });
+
+        if (Array.isArray(matches) && matches.length === 1) {
+          localStorage.setItem(
+            SOC_INCIDENT_STORAGE_KEY,
+            String(matches[0].id)
+          );
+            navigate(`/soc/incidents/${matches[0].id}`);
+            return;
+        }
+
+        if (Array.isArray(matches) && matches.length > 1) {
+          navigate(`/soc/incidents?q=${encodeURIComponent(candidate)}`);
+          return;
+        }
+     }
+    } catch (e) {
+      console.error("SOC investigate lookup error:", e);
     }
 
     openSocTimeline();

@@ -47,12 +47,12 @@ export default function ActionMenuSession({
 
         {canArchive && onArchive && (
           <DropdownMenuItem onSelect={onArchive}>
-            Архивировать
+            Переместить в архив
           </DropdownMenuItem>
         )}
 
         <DropdownMenuItem onSelect={onAudit}>
-          Открыть аудит
+          Аудит этой сессии
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

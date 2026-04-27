@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { Input } from "../components/ui/input";
 import ActionMenuAudit from "../components/ActionMenuAudit";
 import { apiGet } from "../api/client";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 // 👇 ДОБАВИЛ RefreshCw СЮДА
 import { CheckCircle2, XCircle, AlertTriangle, Activity, RefreshCw } from "lucide-react";
 import { formatKzDateTime, parseBackendDate } from "../utils/time";
@@ -178,6 +178,8 @@ function AuditDetailPanel({open,onClose,record}:{open:boolean;onClose:()=>void;r
 
 // --- Main Component ---
 export default function Audit(){
+  const [searchParams] = useSearchParams();
+  const sessionIdFilter = searchParams.get("session_id");
   const [records,setRecords]=useState<AuditRecord[]>([]);
   const [loading,setLoading]=useState(false);
   const [search,setSearch]=useState("");
@@ -198,18 +200,31 @@ export default function Audit(){
   }, []);
 
   useEffect(()=>{ fetchData(); }, [fetchData]);
-  useEffect(()=>{setCurrentPage(1);},[search,category,rowsPerPage]);
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, category, rowsPerPage, sessionIdFilter]);
 
-  const filtered=useMemo(()=>{
-    const q=search.toLowerCase();
-    return records.filter(r=>{
-      const text=r.user.toLowerCase().includes(q)||r.action.toLowerCase().includes(q)||r.ip.toLowerCase().includes(q);
-      const matchCategory=category==="all"||r.category===category;
-      return text && matchCategory;
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase();
+
+    return records.filter((r) => {
+      const text =
+        r.user.toLowerCase().includes(q) ||
+        r.action.toLowerCase().includes(q) ||
+        r.ip.toLowerCase().includes(q) ||
+        JSON.stringify(r.details ?? {}).toLowerCase().includes(q);
+
+      const matchCategory = category === "all" || r.category === category;
+
+      const matchSession =
+        !sessionIdFilter ||
+        String(r.details?.session_id ?? "") === String(sessionIdFilter);
+
+      return text && matchCategory && matchSession;
     });
-  },[records,search,category]);
+  }, [records, search, category, sessionIdFilter]);
 
-  const totalPages=Math.ceil(filtered.length/rowsPerPage);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / rowsPerPage));
   const currentRows=filtered.slice((currentPage-1)*rowsPerPage,currentPage*rowsPerPage);
   
   const successCount=filtered.filter(r=>r.status==="success").length;
@@ -219,9 +234,25 @@ export default function Audit(){
   return (
     <div className="p-6 w-full bg-gray-100 min-h-screen text-gray-900 flex flex-col">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold text-[#121A33]">Журнал аудита</h1>
-        <button onClick={fetchData} className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 rounded-lg shadow-sm transition text-sm font-medium">
-           <RefreshCw size={16}/> Обновить
+        <div>
+          <h1 className="text-3xl font-bold text-[#121A33]">
+            Журнал аудита
+          </h1>
+
+
+        {sessionIdFilter && (
+          <div className="text-sm text-gray-600 mt-1">
+            Фильтр по сессии: #{sessionIdFilter}
+          </div> 
+        )}
+        </div>
+
+        <button
+          onClick={fetchData}
+          className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 rounded-lg shadow-sm transition text-sm font-medium"
+        >
+          <RefreshCw size={16} />
+          Обновить
         </button>
       </div>
 

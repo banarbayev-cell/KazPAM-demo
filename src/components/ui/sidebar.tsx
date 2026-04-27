@@ -9,23 +9,25 @@ export default function Sidebar() {
       </h1>
 
       <nav className="flex-1 flex flex-col space-y-1">
-        <NavLink to="/dashboard" className={navClass}>
-          Главная
-        </NavLink>
+        <Access permission="view_dashboard" hide>
+          <NavLink to="/dashboard" className={navClass}>
+            Главная
+          </NavLink>
+        </Access>
 
-        <Access permission="view_soc">
+        <Access permission="view_soc" hide>
           <NavLink to="/soc" className={navClass}>
             SOC
           </NavLink>
         </Access>
 
-        <Access permission="view_incidents">
+        <Access permission="view_incidents" hide>
           <NavLink to="/soc/incidents" className={navClass}>
             Инциденты
           </NavLink>
         </Access>
 
-        <Access permission="view_soc">
+        <Access permission="view_soc" hide>
           <NavLink to="/soc/commands" className={navClass}>
             Команды сессий
           </NavLink>
@@ -33,64 +35,69 @@ export default function Sidebar() {
 
         <div className="my-3 border-t border-white/10" />
 
-        <NavLink to="/users" className={navClass}>
-          Пользователи
-        </NavLink>
+        <Access permission="manage_users" hide>
+          <NavLink to="/users" className={navClass}>
+            Пользователи
+          </NavLink>
+        </Access>
 
-        <Access permission="manage_roles">
+        <Access permission="manage_roles" hide>
           <NavLink to="/roles" className={navClass}>
             Роли
           </NavLink>
         </Access>
 
-        <Access permission="manage_permissions">
-          <NavLink to="/permissions" className={navClass}>
-            Управление доступом
-          </NavLink>
-        </Access>
+        {/*
+          Раздел "Управление доступом" скрыт из меню.
+          Заказчик не понял назначение раздела, а управление правами остаётся внутри ролей.
+          Backend permissions не удаляем.
+        */}
 
         <div className="my-3 border-t border-white/10" />
 
-        <NavLink to="/sessions" className={navClass}>
-          Сессии
-        </NavLink>
-        
-      
-        <Access permission="view_soc">
+        <Access permission="view_sessions" hide>
+          <NavLink to="/sessions" className={navClass}>
+            Сессии
+          </NavLink>
+        </Access>
+
+        <Access permission="view_soc" hide>
           <NavLink to="/recordings" className={navClass}>
             Записи сессий
           </NavLink>
         </Access>
 
-        <NavLink to="/discovery" className={navClass}>
-          Обнаружение
-        </NavLink>
+        <Access permission="manage_discovery" hide>
+          <NavLink to="/discovery" className={navClass}>
+            Обнаружение
+          </NavLink>
+        </Access>
 
-        <Access permission="manage_settings">
+        <Access permission="manage_settings" hide>
           <NavLink to="/targets" className={navClass}>
             Целевые системы
           </NavLink>
         </Access>
 
-        <Access permission="view_vault">
+        <Access permission="view_vault" hide>
           <NavLink to="/vault" className={navClass}>
             Хранилище
           </NavLink>
         </Access>
 
-        <Access permission="view_vault_requests">
+        <Access permission="view_vault_requests" hide>
           <NavLink to="/vault/requests" className={navClass}>
             Запросы доступа
           </NavLink>
         </Access>
 
-        <Access permission="manage_policies">
+        <Access permission="manage_policies" hide>
           <NavLink to="/policies" className={navClass}>
             Политики безопасности
           </NavLink>
         </Access>
 
-        <Access permission="view_audit">
+        <Access permission="view_audit" hide>
           <NavLink to="/audit" className={navClass}>
             Аудит
           </NavLink>
@@ -98,11 +105,13 @@ export default function Sidebar() {
 
         <div className="my-3 border-t border-white/10" />
 
-        <NavLink to="/settings" className={navClass}>
-          Настройки
-        </NavLink>
+        <Access permission="view_settings" hide>
+          <NavLink to="/settings" className={navClass}>
+            Настройки
+          </NavLink>
+        </Access>
 
-        <Access permission="view_settings">
+        <Access permission="view_settings" hide>
           <NavLink to="/license" className={navClass}>
             Лицензия
           </NavLink>

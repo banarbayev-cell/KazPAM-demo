@@ -6,11 +6,10 @@ import AssignPermissionsModal from "../components/modals/AssignPermissionsModal"
 import DeleteRoleConfirmModal from "../components/modals/DeleteRoleConfirmModal";
 import EditRoleModal from "../components/modals/EditRoleModal";
 import CreateRoleModal from "../components/modals/CreateRoleModal";
-import AssignInventoryAccessModal from "@/components/modals/AssignInventoryAccessModal";
 import ActionMenuRole from "../components/ActionMenuRole";
 import { toast } from "sonner";
 import { api } from "../services/api";
-import { useAuth } from "@/store/auth";
+
 
 /* =======================
    Types
@@ -40,12 +39,7 @@ interface Role {
 ======================= */
 
 export default function Roles() {
-  const user = useAuth((s) => s.user);
-
-  const canManageInventoryAccess = Boolean(
-    user?.permissions?.includes("manage_inventory_access")
-  );
-
+  
   const [roles, setRoles] = useState<Role[]>([]);
   const [search, setSearch] = useState("");
 
@@ -55,10 +49,6 @@ export default function Roles() {
 
   /* ----- Permissions ----- */
   const [selectedRole, setSelectedRole] = useState<Role | null>(null);
-
-  /* ----- Inventory Access ----- */
-  const [inventoryAccessOpen, setInventoryAccessOpen] = useState(false);
-  const [inventoryRole, setInventoryRole] = useState<Role | null>(null);
 
   /* ----- Delete role ----- */
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -226,14 +216,7 @@ export default function Roles() {
                       setAssignPoliciesOpen(true);
                     }}
                     onPermissions={() => setSelectedRole(role)}
-                    onInventoryAccess={
-                      canManageInventoryAccess
-                        ? () => {
-                            setInventoryRole(role);
-                            setInventoryAccessOpen(true);
-                          }
-                        : undefined
-                    }
+                    onInventoryAccess={undefined}
                     onEdit={() => {
                       setRoleToEdit(role);
                       setEditOpen(true);
@@ -274,17 +257,7 @@ export default function Roles() {
         />
       )}
 
-      <AssignInventoryAccessModal
-        open={inventoryAccessOpen}
-        onClose={() => {
-          setInventoryAccessOpen(false);
-          setInventoryRole(null);
-        }}
-        roleId={inventoryRole?.id ?? null}
-        roleName={inventoryRole?.name ?? ""}
-        onUpdated={loadRoles}
-      />
-
+      
       <DeleteRoleConfirmModal
         isOpen={deleteOpen}
         roleName={roleToDelete?.name || ""}

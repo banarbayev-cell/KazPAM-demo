@@ -14,7 +14,10 @@ import {
   updateTarget,
 } from "@/api/targets";
 import { startRdpSession } from "@/api/rdp";
-import { launchWebAccess } from "@/api/webAccess";
+import {
+  launchWebAccess,
+  type WebAccessLaunchResponse,
+} from "@/api/webAccess";
 import { launchDbAccess } from "@/api/dbAccess";
 import { launchVncAccess } from "@/api/vncAccess";
 import type {
@@ -228,6 +231,33 @@ function securityChip(
   );
 }
 
+function copyTextFallback(text: string) {
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  document.execCommand("copy");
+  document.body.removeChild(textarea);
+}
+
+async function copyText(text: string) {
+  if (!text) return;
+
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+  } catch {
+    // fallback below
+  }
+
+  copyTextFallback(text);
+}
+
 export default function Targets() {
   const navigate = useNavigate();
   const user = useAuth((s) => s.user);
@@ -263,6 +293,9 @@ export default function Targets() {
   const [breakGlassTarget, setBreakGlassTarget] = useState<Target | null>(null);
   const [breakGlassReason, setBreakGlassReason] = useState("");
   const [breakGlassSubmitting, setBreakGlassSubmitting] = useState(false);
+
+  const [webAccessResult, setWebAccessResult] =
+  useState<WebAccessLaunchResponse | null>(null);
 
   const [dbBreakGlassTarget, setDbBreakGlassTarget] = useState<Target | null>(null);
   const [dbBreakGlassReason, setDbBreakGlassReason] = useState("");
@@ -445,22 +478,13 @@ export default function Targets() {
         break_glass_requested: options?.break_glass_requested ?? false,
         break_glass_reason: options?.break_glass_reason?.trim() || undefined,
       });
-
-      const opened = window.open(
-        result.launch_url,
-        "_blank",
-        "noopener,noreferrer"
-      );
-
-      if (!opened) {
-        toast.success("HTTPS URL подготовлен, но браузер заблокировал новую вкладку.");
-        return;
-      }
+      
+      setWebAccessResult(result);
 
       toast.success(
         result.break_glass
-          ? `HTTPS break-glass access открыт · target #${target.id}`
-          : `HTTPS access открыт · target #${target.id}`
+          ? `HTTPS break-glass access подготовлен · target #${target.id}`
+          : `HTTPS access подготовлен · target #${target.id}`
       );
 
       await load();
@@ -1689,6 +1713,97 @@ async function handleOpenVncBreakGlass() {
                 </div>
                </div>
               )}
+
+
+              {webAccessResult && (
+                <div className="fixed inset-0 flex items-center justify-center bg-black/50 z-50">
+                  <div className="bg-[#121A33] p-6 rounded-xl border border-[#1E2A45] w-[620px] max-w-[95vw] space-y-4 text-white">
+                    <div>
+                      <h2 className="text-lg font-semibold">
+                        HTTPS access подготовлен
+                      </h2>
+
+                      <p className="text-sm text-gray-400 mt-1">
+                        KazPAM проверил доступ, записал событие и подготовил URL для открытия.
+                      </p>
+                    </div>
+
+                    <div className="bg-[#0E1A3A] border border-[#1E2A45] rounded-lg p-4 space-y-2 text-sm">
+                      <div>
+                        <span className="text-gray-400">Target:</span>{" "}
+                        <span className="text-white">
+                          #{webAccessResult.target_id} · {webAccessResult.target_name}
+                        </span>
+                      </div>
+
+                      <div>
+                        <span className="text-gray-400">Host:</span>{" "}
+                        <span className="font-mono text-gray-200">
+                          {webAccessResult.target_host}:{webAccessResult.target_port}
+                        </span>
+                      </div>
+
+                      <div>
+                        <span className="text-gray-400">Protocol:</span>{" "}
+                        <span className="uppercase text-[#3BE3FD]">
+                          {webAccessResult.protocol}
+                        </span>
+                      </div>
+
+                      <div>
+                        <span className="text-gray-400">Break-glass:</span>{" "}
+                        <span className={webAccessResult.break_glass ? "text-red-300" : "text-gray-200"}>
+                          {webAccessResult.break_glass ? "Да" : "Нет"}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm text-gray-300">URL для открытия</label>
+
+                      <div className="bg-[#0B1221] border border-[#1E2A45] rounded-lg p-3">
+                        <div className="font-mono text-xs text-[#3BE3FD] break-all">
+                          {webAccessResult.launch_url}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-between gap-2 pt-2">
+                      <button
+                        onClick={() => setWebAccessResult(null)}
+                        className="px-3 py-2 rounded bg-gray-600 hover:bg-gray-700 text-white text-sm"
+                      >
+                        Закрыть
+                      </button>
+
+                    <div className="flex gap-2">
+                      <button
+                        onClick={async () => {
+                          await copyText(webAccessResult.launch_url);
+                          toast.success("HTTPS URL скопирован");
+                        }}
+                        className="px-3 py-2 rounded bg-[#1E2A45] hover:bg-[#2A3A5F] text-white text-sm"
+                      >
+                          Скопировать URL
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          window.open(
+                            webAccessResult.launch_url,
+                            "_blank",
+                            "noopener,noreferrer"
+                          );
+                        }}
+                        className="px-3 py-2 rounded bg-sky-600 hover:bg-sky-700 text-white text-sm"
+                      >
+                        Открыть HTTPS
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
               <TargetRoleAccessModal
                 open={Boolean(roleAccessTarget)}

@@ -17,6 +17,20 @@ import type { Target } from "../types/targets";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useAuth } from "../store/auth";
+import { startRdpSession, type RDPSessionStartResponse } from "../api/rdp";
+import {
+  launchWebAccess,
+  type WebAccessLaunchResponse,
+} from "../api/webAccess";
+import {
+  launchDbAccess,
+  type DBAccessLaunchResponse,
+} from "../api/dbAccess";
+import {
+  launchVncAccess,
+  type VNCAccessLaunchResponse,
+} from "../api/vncAccess";
+import type { TargetProtocol } from "../types/targets";
 
 /* ===============================
    UI MODEL
@@ -233,6 +247,52 @@ function isActiveSshSession(
   return protocol === "ssh" && session.status === "active";
 }
 
+type LaunchProtocol = TargetProtocol;
+
+function protocolLabel(protocol: LaunchProtocol) {
+  switch (protocol) {
+    case "ssh":
+      return "SSH";
+    case "rdp":
+      return "RDP";
+    case "https":
+      return "HTTPS";
+    case "mssql":
+      return "MS SQL";
+    case "vnc":
+      return "VNC";
+    default:
+      return protocol;
+  }
+}
+
+function copyTextFallback(text: string) {
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  document.execCommand("copy");
+  document.body.removeChild(textarea);
+}
+
+async function copyText(text: string) {
+  if (!text) return;
+
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+  } catch {
+    // fallback below
+  }
+
+  copyTextFallback(text);
+}
+
 // Для archive/filter/export режимов mergeSessions больше не нужен.
 // Список всегда берём заново с backend по текущим фильтрам.
 
@@ -250,6 +310,7 @@ export default function Sessions() {
   const [archiveMode, setArchiveMode] = useState<"main" | "archived">("main");
 
   const [startOpen, setStartOpen] = useState(false);
+  const [launchProtocol, setLaunchProtocol] = useState<LaunchProtocol>("ssh");
   const [selectedTargetId, setSelectedTargetId] = useState("");
   const [manualMode, setManualMode] = useState(false);
   const [manualForm, setManualForm] = useState({
@@ -264,6 +325,18 @@ export default function Sessions() {
   const [launchLoading, setLaunchLoading] = useState(false);
   const [launchResultOpen, setLaunchResultOpen] = useState(false);
   const [launchedSession, setLaunchedSession] = useState<Session | null>(null);
+
+  const [webAccessResult, setWebAccessResult] =
+    useState<WebAccessLaunchResponse | null>(null);
+
+  const [dbAccessResult, setDbAccessResult] =
+    useState<DBAccessLaunchResponse | null>(null);
+
+  const [vncAccessResult, setVncAccessResult] =
+    useState<VNCAccessLaunchResponse | null>(null);
+
+  const [rdpLaunchResult, setRdpLaunchResult] =
+    useState<RDPSessionStartResponse | null>(null);
 
   const notifySessionsChanged = () => {
     window.dispatchEvent(new Event("kazpam:sessions-changed"));
@@ -293,51 +366,56 @@ export default function Sessions() {
     }
   };
 
-  const loadTargets = async () => {
-  setTargetsLoading(true);
+  const loadTargets = async (protocol: LaunchProtocol = launchProtocol) => {
+    setTargetsLoading(true);
 
-  try {
-    const accessible = await listAccessibleTargets("ssh");
-    const accessibleSsh = Array.isArray(accessible)
-      ? accessible.filter(
-          (t) =>
-            String(t.protocol || "").toLowerCase() === "ssh" &&
-            t.is_active !== false
-        )
-      : [];
+    try {
+      const accessible = await listAccessibleTargets(protocol);
+      const accessibleByProtocol = Array.isArray(accessible)
+        ? accessible.filter(
+            (t) =>
+              String(t.protocol || "").toLowerCase() === protocol &&
+              t.is_active !== false
+          )
+        : [];
 
-    if (accessibleSsh.length > 0) {
-      setTargets(accessibleSsh);
-      return;
+      if (accessibleByProtocol.length > 0) {
+        setTargets(accessibleByProtocol);
+        return;
+      }
+
+      const all = await listTargets();
+      const filteredByProtocol = Array.isArray(all)
+        ? all.filter(
+            (t) =>
+              String(t.protocol || "").toLowerCase() === protocol &&
+              t.is_active !== false
+          )
+        : [];
+
+      setTargets(filteredByProtocol);
+    } catch (error) {
+      setTargets([]);
+      toast.error(
+        extractErrorMessage(error, "Не удалось загрузить список систем")
+      );
+    } finally {
+      setTargetsLoading(false);
     }
-
-    const all = await listTargets();
-    const sshOnly = Array.isArray(all)
-      ? all.filter(
-          (t) =>
-            String(t.protocol || "").toLowerCase() === "ssh" &&
-            t.is_active !== false
-        )
-      : [];
-
-    setTargets(sshOnly);
-  } catch (error) {
-    setTargets([]);
-    toast.error(
-      extractErrorMessage(error, "Не удалось загрузить список систем")
-    );
-  } finally {
-    setTargetsLoading(false);
-  }
-};
+  };
 
   useEffect(() => {
     loadSessions();
   }, [archiveMode, statusFilter]);
   
   useEffect(() => {
-    loadTargets();
-  }, []);  
+    if (!startOpen) return;
+
+    setSelectedTargetId("");
+    setManualMode(false);
+    loadTargets(launchProtocol);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startOpen, launchProtocol]);  
 
   useEffect(() => {
     if (!startOpen) return;
@@ -348,19 +426,19 @@ export default function Sessions() {
     }));
   }, [startOpen, authUser?.email]);
 
-  const sshTargets = useMemo(() => {
+  const protocolTargets = useMemo(() => {
     return targets.filter(
       (t) =>
-        String(t.protocol || "").toLowerCase() === "ssh" &&
+        String(t.protocol || "").toLowerCase() === launchProtocol &&
         t.is_active !== false
     );
-  }, [targets]);
+  }, [targets, launchProtocol]);
 
   const selectedTarget = useMemo(() => {
     const id = Number(selectedTargetId);
     if (!Number.isFinite(id)) return null;
-    return sshTargets.find((t) => t.id === id) || null;
-  }, [sshTargets, selectedTargetId]);
+    return protocolTargets.find((t) => t.id === id) || null;
+  }, [protocolTargets, selectedTargetId]);
 
   const openSession = (session: Session) => {
     if (isActiveSshSession(session)) {
@@ -471,75 +549,124 @@ export default function Sessions() {
   const handleLaunch = async () => {
     try {
       setLaunchLoading(true);
+      
+      if (!manualMode && !selectedTarget) {
+        toast.error("Выберите целевую систему");
+        return;
+      }
 
-      let startResponse: Awaited<ReturnType<typeof startSession>> | null = null;
-
-      if (!manualMode) {
-        if (!selectedTarget) {
-          toast.error("Выберите целевую систему");
-          return;
+      if (launchProtocol === "ssh") {
+        let startResponse: Awaited<ReturnType<typeof startSession>> | null = null;
+      
+        if (!manualMode) {
+          if (!selectedTarget) {
+            toast.error("Выберите целевую систему");
+            return;
+          }
+          
+          startResponse = await startSession({
+            user:
+              selectedTarget.username?.trim() ||
+              authUser?.email ||
+              "unknown",
+            target_id: selectedTarget.id,
+            app: "SSH",
+            mfa_passed: false,
+          });
+        } else {
+          startResponse = await startSession({
+            user: manualForm.user,
+            system: manualForm.system,
+            os: manualForm.os,
+            ip: manualForm.ip,
+            app: "SSH",
+            mfa_passed: false,
+          });
         }
 
-        startResponse = await startSession({
-          user:
-            selectedTarget.username?.trim() ||
-            authUser?.email ||
-            "unknown",
+        setStartOpen(false);
+
+        const freshSessions = await loadSessions();
+        notifySessionsChanged();
+
+        const startedSessionId =
+          startResponse?.session?.id ?? startResponse?.id ?? null;
+
+        const matchedSession =
+          (startedSessionId
+            ? freshSessions.find((s) => s.id === startedSessionId) || null
+           : null) ||
+          findRecentlyCreatedSession(freshSessions, {
+            targetId: !manualMode ? selectedTarget?.id ?? null : null,
+            system: manualMode ? manualForm.system : selectedTarget?.name,
+            ip: manualMode ? manualForm.ip : selectedTarget?.host,
+            user:
+              !manualMode
+                ? selectedTarget?.username?.trim() || authUser?.email || ""
+                : manualForm.user,
+          });
+
+        if (matchedSession) {
+          setLaunchedSession(matchedSession);
+          setSelectedSession(matchedSession);
+          setLaunchResultOpen(true);
+        }
+
+        setSelectedTargetId("");
+        setManualForm({
+          user: authUser?.email || "",
+          system: "",
+          os: "Linux",
+          ip: "",
+        });
+
+        toast.success("SSH-сессия создана");
+        return;
+      }
+      
+      if (!selectedTarget) {
+        toast.error("Выберите целевую систему");
+        return;
+      }
+      
+      if (launchProtocol === "https") {
+        const result = await launchWebAccess(selectedTarget.id);
+        setWebAccessResult(result);
+        setStartOpen(false);
+        toast.success(`HTTPS access подготовлен · target #${selectedTarget.id}`);
+        return;
+      }
+
+      if (launchProtocol === "rdp") {
+        const result = await startRdpSession({
           target_id: selectedTarget.id,
-          app: "SSH",
-          mfa_passed: false,
         });
-      } else {
-        startResponse = await startSession({
-          user: manualForm.user,
-          system: manualForm.system,
-          os: manualForm.os,
-          ip: manualForm.ip,
-          app: "SSH",
-          mfa_passed: false,
-        });
+        setRdpLaunchResult(result);
+        setStartOpen(false);
+        toast.success(`RDP launch создан · session #${result.id}`);
+        await loadSessions();
+        notifySessionsChanged();
+        return;
+      }  
+
+      if (launchProtocol === "mssql") {
+        const result = await launchDbAccess(selectedTarget.id);
+        setDbAccessResult(result);
+        setStartOpen(false);
+        toast.success(`MS SQL access подготовлен · target #${selectedTarget.id}`);
+        return;
       }
 
-      setStartOpen(false);
-
-      const freshSessions = await loadSessions();
-      notifySessionsChanged();
-
-      const startedSessionId =
-        startResponse?.session?.id ?? startResponse?.id ?? null;
-
-      const matchedSession =
-        (startedSessionId
-          ? freshSessions.find((s) => s.id === startedSessionId) || null
-          : null) ||
-        findRecentlyCreatedSession(freshSessions, {
-          targetId: !manualMode ? selectedTarget?.id ?? null : null,
-          system: manualMode ? manualForm.system : selectedTarget?.name,
-          ip: manualMode ? manualForm.ip : selectedTarget?.host,
-          user:
-            !manualMode
-              ? selectedTarget?.username?.trim() || authUser?.email || ""
-              : manualForm.user,
-        });
-
-      if (matchedSession) {
-        setLaunchedSession(matchedSession);
-        setSelectedSession(matchedSession);
-        setLaunchResultOpen(true);
+      if (launchProtocol === "vnc") {
+        const result = await launchVncAccess(selectedTarget.id);
+        setVncAccessResult(result);
+        setStartOpen(false);
+        toast.success(`VNC access подготовлен · target #${selectedTarget.id}`);
+        return;
       }
-
-      setSelectedTargetId("");
-      setManualForm({
-        user: authUser?.email || "",
-        system: "",
-        os: "Linux",
-        ip: "",
-      });
-
-      toast.success("Сессия создана");
     } catch (error) {
       toast.error(
-        extractErrorMessage(error, "Не удалось запустить сессию")
+        extractErrorMessage(error, "Не удалось запустить доступ")
       );
     } finally {
       setLaunchLoading(false);
@@ -777,10 +904,223 @@ export default function Sessions() {
         </div>
       )}
 
+      {webAccessResult && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-[#121A33] p-6 rounded-xl w-[620px] max-w-[95vw] text-white space-y-4">
+            <h2 className="text-lg font-semibold">HTTPS access подготовлен</h2>
+
+            <div className="text-sm text-gray-300 leading-6">
+              KazPAM проверил доступ, записал событие в Audit и подготовил URL для открытия.
+            </div>
+
+            <div className="rounded-lg bg-[#0E1A3A] border border-[#1E2A45] p-4 text-sm space-y-2">
+              <div>Target: #{webAccessResult.target_id} · {webAccessResult.target_name}</div>
+              <div>Host: {webAccessResult.target_host}:{webAccessResult.target_port}</div>
+              <div>Protocol: {webAccessResult.protocol.toUpperCase()}</div>
+              <div>Break-glass: {webAccessResult.break_glass ? "Да" : "Нет"}</div>
+            </div>
+
+            <div className="rounded-xl border border-[#1E2A45] bg-[#0B1221] p-4 font-mono text-sm text-[#3BE3FD] break-all">
+              {webAccessResult.launch_url}
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setWebAccessResult(null)}
+                className="px-3 py-2 text-gray-300"
+              >
+                Закрыть
+              </button>
+
+              <button
+                onClick={async () => {
+                  await copyText(webAccessResult.launch_url);
+                  toast.success("HTTPS URL скопирован");
+                }}
+                className="px-4 py-2 rounded bg-[#1A243F] text-white"
+              >
+                Скопировать URL
+              </button>
+
+              <button
+                onClick={() =>
+                  window.open(webAccessResult.launch_url, "_blank", "noopener,noreferrer")
+                }
+                className="px-4 py-2 rounded bg-[#0052FF] text-white"
+              >
+                Открыть HTTPS
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {rdpLaunchResult && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-[#121A33] p-6 rounded-xl w-[620px] max-w-[95vw] text-white space-y-4">
+            <h2 className="text-lg font-semibold">RDP launch создан</h2>
+
+            <div className="text-sm text-gray-300 leading-6">
+              KazPAM создал RDP-доступ и grant token. Используйте его для подключения через RDP gateway/client flow.
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="rounded bg-[#0E1A3A] border border-[#1E2A45] p-3">
+                Session ID: {rdpLaunchResult.id}
+              </div>
+              <div className="rounded bg-[#0E1A3A] border border-[#1E2A45] p-3">
+                Status: {rdpLaunchResult.status}
+              </div>
+              <div className="rounded bg-[#0E1A3A] border border-[#1E2A45] p-3">
+                Target: {rdpLaunchResult.target_host}:{rdpLaunchResult.target_port}
+              </div>
+              <div className="rounded bg-[#0E1A3A] border border-[#1E2A45] p-3">
+                User: {rdpLaunchResult.target_username || "—"}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="text-sm text-gray-400">Grant token</div>
+              <div className="rounded-xl border border-[#1E2A45] bg-[#0B1221] p-4 font-mono text-sm text-[#3BE3FD] break-all">
+                {rdpLaunchResult.grant_token}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setRdpLaunchResult(null)}
+                className="px-3 py-2 text-gray-300"
+              >
+                Закрыть
+              </button>
+
+              <button
+                onClick={async () => {
+                  await copyText(rdpLaunchResult.grant_token);
+                  toast.success("RDP grant token скопирован");
+                }}
+                className="px-4 py-2 rounded bg-[#1A243F] text-white"
+              >
+                Скопировать token
+              </button>
+
+              <button
+                onClick={() => navigate("/audit")}
+                className="px-4 py-2 rounded bg-[#0052FF] text-white"
+              >
+                Перейти в Audit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {dbAccessResult && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-[#121A33] p-6 rounded-xl w-[660px] max-w-[95vw] text-white space-y-4">
+            <h2 className="text-lg font-semibold">MS SQL access подготовлен</h2>
+
+            <div className="text-sm text-gray-300 leading-6">
+              KazPAM проверил доступ и подготовил строку подключения для SQL-клиента.
+            </div>
+
+            <div className="rounded-lg bg-[#0E1A3A] border border-[#1E2A45] p-4 text-sm space-y-2">
+              <div>Target: #{dbAccessResult.target_id} · {dbAccessResult.target_name}</div>
+              <div>Host: {dbAccessResult.target_host}:{dbAccessResult.target_port}</div>
+              <div>User: {dbAccessResult.username || "—"}</div>
+              <div>Break-glass: {dbAccessResult.break_glass ? "Да" : "Нет"}</div>
+            </div>
+
+            <div className="rounded-xl border border-[#1E2A45] bg-[#0B1221] p-4 font-mono text-sm text-[#3BE3FD] break-all">
+              {dbAccessResult.connection_string_stub}
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setDbAccessResult(null)}
+                className="px-3 py-2 text-gray-300"
+              >
+                Закрыть
+              </button>
+
+              <button
+                onClick={async () => {
+                  await copyText(dbAccessResult.connection_string_stub);
+                  toast.success("MS SQL connection string скопирован");
+                }}
+                  className="px-4 py-2 rounded bg-[#0052FF] text-white"
+              >
+                  Скопировать строку
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {vncAccessResult && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-[#121A33] p-6 rounded-xl w-[620px] max-w-[95vw] text-white space-y-4">
+            <h2 className="text-lg font-semibold">VNC access подготовлен</h2>
+
+            <div className="text-sm text-gray-300 leading-6">
+              KazPAM проверил доступ и подготовил host/port для VNC-клиента.
+            </div>
+
+            <div className="rounded-lg bg-[#0E1A3A] border border-[#1E2A45] p-4 text-sm space-y-2">
+              <div>Target: #{vncAccessResult.target_id} · {vncAccessResult.target_name}</div>
+              <div>Target host: {vncAccessResult.target_host}:{vncAccessResult.target_port}</div>
+              <div>Launch: {vncAccessResult.launch_host}:{vncAccessResult.launch_port}</div>
+              <div>User: {vncAccessResult.username || "—"}</div>
+              <div>Break-glass: {vncAccessResult.break_glass ? "Да" : "Нет"}</div>
+            </div>
+
+            <div className="rounded-xl border border-[#1E2A45] bg-[#0B1221] p-4 font-mono text-sm text-[#3BE3FD] break-all">
+              {vncAccessResult.launch_host}:{vncAccessResult.launch_port}
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setVncAccessResult(null)}
+                className="px-3 py-2 text-gray-300"
+              >
+                Закрыть
+              </button>
+
+              <button
+                onClick={async () => {
+                  await copyText(`${vncAccessResult.launch_host}:${vncAccessResult.launch_port}`);
+                  toast.success("VNC host:port скопирован");
+                }}
+                className="px-4 py-2 rounded bg-[#0052FF] text-white"
+              >
+                Скопировать host:port
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+
       {startOpen && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
           <div className="bg-[#121A33] p-6 rounded-xl w-[520px] text-white space-y-4">
             <h2 className="text-lg font-semibold">Запуск сессии</h2>
+
+            <div className="space-y-1">
+              <div className="text-sm text-gray-400">Протокол доступа</div>
+              <select
+                value={launchProtocol}
+                onChange={(e) => setLaunchProtocol(e.target.value as LaunchProtocol)}
+                className="w-full px-3 py-2 rounded bg-[#0E1A3A] border border-[#1E2A45] text-sm text-white"
+                disabled={launchLoading}
+              >
+                <option value="ssh">SSH</option>
+                <option value="rdp">RDP</option>
+                <option value="https">HTTPS</option>
+                <option value="mssql">MS SQL</option>
+                <option value="vnc">VNC</option>
+              </select>
+            </div>
 
             <div className="space-y-1">
               <div className="text-sm text-gray-400">Инициатор</div>
@@ -800,9 +1140,9 @@ export default function Sessions() {
                 <option value="">
                   {targetsLoading
                     ? "Загрузка систем..."
-                    : "Выберите систему"}
+                    : `Выберите ${protocolLabel(launchProtocol)} target`}
                 </option>
-                {sshTargets.map((target) => (
+                {protocolTargets.map((target) => (
                   <option key={target.id} value={target.id}>
                     {target.name} — {target.host}:{target.port}
                   </option>
@@ -862,17 +1202,19 @@ export default function Sessions() {
               </>
             )}
 
-            <div className="pt-1">
-              <button
-                type="button"
-                onClick={() => setManualMode((prev) => !prev)}
-                className="text-xs text-gray-400 underline"
-              >
-                {manualMode
-                  ? "Скрыть ручной режим"
-                  : "Ручной режим (admin fallback)"}
-              </button>
-            </div>
+           {launchProtocol === "ssh" && (
+             <>
+               <div className="pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setManualMode((prev) => !prev)}
+                    className="text-xs text-gray-400 underline"
+                  >
+                    {manualMode
+                      ? "Скрыть ручной режим"
+                      : "Ручной режим (admin fallback)"}
+                  </button>
+                </div>
 
             {manualMode && (
               <div className="space-y-3 pt-2 border-t border-[#1E2A45]">
@@ -901,6 +1243,9 @@ export default function Sessions() {
                 />
               </div>
             )}
+          </>
+        )}
+
 
             <div className="flex justify-end gap-2">
               <button

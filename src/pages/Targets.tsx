@@ -4,6 +4,7 @@ import { toast } from "sonner";
 
 import Access from "@/components/Access";
 import { useAuth } from "@/store/auth";
+import TargetRoleAccessModal from "@/components/modals/TargetRoleAccessModal";
 import {
   bindTargetVaultSecret,
   createTarget,
@@ -256,6 +257,8 @@ export default function Targets() {
 
   const [editingTarget, setEditingTarget] = useState<Target | null>(null);
   const [editForm, setEditForm] = useState<TargetFormState>(emptyForm);
+
+  const [roleAccessTarget, setRoleAccessTarget] = useState<Target | null>(null);
 
   const [breakGlassTarget, setBreakGlassTarget] = useState<Target | null>(null);
   const [breakGlassReason, setBreakGlassReason] = useState("");
@@ -876,6 +879,15 @@ async function handleOpenVncBreakGlass() {
                         >
                           Edit
                         </button>
+
+                        {canManageTargets && (
+                          <button
+                            onClick={() => setRoleAccessTarget(target)}
+                            className="px-3 py-1 rounded bg-[#0052FF] hover:bg-[#0046D8] text-white text-xs"
+                          >
+                            Доступ
+                          </button>
+                          )}
 
                         {target.protocol === "rdp" && canStartRdp && (
                           <button
@@ -1677,7 +1689,14 @@ async function handleOpenVncBreakGlass() {
                 </div>
                </div>
               )}
-        </div>
-      </Access>
-    );
-  }
+
+              <TargetRoleAccessModal
+                open={Boolean(roleAccessTarget)}
+                target={roleAccessTarget}
+                onClose={() => setRoleAccessTarget(null)}
+                onUpdated={load}
+              />
+            </div>
+          </Access>
+        );
+      }

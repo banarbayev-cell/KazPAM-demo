@@ -1,22 +1,20 @@
-import { API_URL } from "./config";
+import { api } from "@/services/api";
 
-function getAuthHeaders() {
-  const token = localStorage.getItem("access_token");
-  return {
-    "Content-Type": "application/json",
-    Authorization: token ? `Bearer ${token}` : "",
-  };
+export type RoleLite = {
+  id: number;
+  name: string;
+  policies?: unknown[];
+  permissions?: unknown[];
+};
+
+export async function listRoles(): Promise<RoleLite[]> {
+  return api.get<RoleLite[]>("/roles/");
 }
 
-export async function deleteRole(roleId: number) {
-  const res = await fetch(`${API_URL}/roles/${roleId}`, {
-    method: "DELETE",
-    headers: getAuthHeaders(),
-  });
+export async function getRole(roleId: number): Promise<RoleLite> {
+  return api.get<RoleLite>(`/roles/${roleId}`);
+}
 
-  if (!res.ok) {
-    throw new Error("Failed to delete role");
-  }
-
-  return res.json();
+export async function deleteRole(roleId: number): Promise<{ message?: string }> {
+  return api.delete<{ message?: string }>(`/roles/${roleId}`);
 }

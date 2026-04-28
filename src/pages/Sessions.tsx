@@ -667,6 +667,7 @@ export default function Sessions() {
       if (launchProtocol === "mssql") {
         const result = await launchDbAccess(selectedTarget.id);
 
+        setArchiveMode("main");
         setStatusFilter("all");
         setDbAccessResult(result);
         setStartOpen(false);
@@ -689,13 +690,45 @@ export default function Sessions() {
         setVncAccessResult(result);
         setStartOpen(false);
 
+        await loadSessions({
+          archived: false,
+          status: "all",
+        });
+        notifySessionsChanged();
+
         toast.success(`VNC access подготовлен · session #${result.session_id}`);
         return;
       }
     } catch (error) {
-      toast.error(
-        extractErrorMessage(error, "Не удалось запустить доступ")
-      );
+      const message = extractErrorMessage(error, "Не удалось запустить доступ");
+
+      if (
+        message.includes("Target requires a bound vault secret and active approval before launch")
+      ) {
+        toast.error(
+          "Для этого target нужен Vault Secret и активное согласование. Привяжите секрет к target и создайте/одобрите запрос доступа."
+        );
+      } else if (
+        message.includes("Target requires an active approval grant before launch")
+      ) {
+        toast.error(
+          "Для этого target нужен approval. Создайте и одобрите запрос доступа перед запуском."
+        );
+      } else if (
+        message.includes("Target requires a bound vault secret before launch")
+      ) {
+        toast.error(
+          "Для этого target нужно сначала привязать Vault Secret."
+        );
+      } else if (
+        message.includes("Access denied for this target")
+      ) {
+        toast.error(
+          "Нет доступа к этому target. Назначьте роль через Targets → Доступ."
+        );
+      } else {
+        toast.error(message);
+      }
     } finally {
       setLaunchLoading(false);
     }
@@ -845,8 +878,8 @@ export default function Sessions() {
       />
 
       {launchResultOpen && launchedSession && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div className="bg-[#121A33] p-6 rounded-xl w-[560px] text-white space-y-4">
+         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[9999]">
+           <div className="bg-[#121A33] p-6 rounded-xl w-[560px] max-w-[95vw] max-h-[90vh] overflow-y-auto text-white space-y-4 border border-[#1E2A45] shadow-2xl">
             <h2 className="text-lg font-semibold">Сессия создана</h2>
 
             <div className="text-sm text-gray-300 leading-6">
@@ -933,8 +966,8 @@ export default function Sessions() {
       )}
 
       {webAccessResult && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div className="bg-[#121A33] p-6 rounded-xl w-[620px] max-w-[95vw] text-white space-y-4">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[9999]">
+          <div className="bg-[#121A33] p-6 rounded-xl w-[620px] max-w-[95vw] max-h-[90vh] overflow-y-auto text-white space-y-4 border border-[#1E2A45] shadow-2xl">
             <h2 className="text-lg font-semibold">HTTPS access подготовлен</h2>
 
             <div className="text-sm text-gray-300 leading-6">
@@ -985,8 +1018,8 @@ export default function Sessions() {
       )}
 
       {rdpLaunchResult && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div className="bg-[#121A33] p-6 rounded-xl w-[620px] max-w-[95vw] text-white space-y-4">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[9999]">
+           <div className="bg-[#121A33] p-6 rounded-xl w-[620px] max-w-[95vw] max-h-[90vh] overflow-y-auto text-white space-y-4 border border-[#1E2A45] shadow-2xl">
             <h2 className="text-lg font-semibold">RDP launch создан</h2>
 
             <div className="text-sm text-gray-300 leading-6">
@@ -1045,8 +1078,8 @@ export default function Sessions() {
       )}
 
       {dbAccessResult && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div className="bg-[#121A33] p-6 rounded-xl w-[660px] max-w-[95vw] text-white space-y-4">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[9999]">
+          <div className="bg-[#121A33] p-6 rounded-xl w-[660px] max-w-[95vw] max-h-[90vh] overflow-y-auto text-white space-y-4 border border-[#1E2A45] shadow-2xl">
             <h2 className="text-lg font-semibold">MS SQL access подготовлен</h2>
 
             <div className="text-sm text-gray-300 leading-6">
@@ -1088,8 +1121,8 @@ export default function Sessions() {
       )}
 
       {vncAccessResult && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div className="bg-[#121A33] p-6 rounded-xl w-[620px] max-w-[95vw] text-white space-y-4">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[9999]">
+           <div className="bg-[#121A33] p-6 rounded-xl w-[620px] max-w-[95vw] max-h-[90vh] overflow-y-auto text-white space-y-4 border border-[#1E2A45] shadow-2xl">
             <h2 className="text-lg font-semibold">VNC access подготовлен</h2>
 
             <div className="text-sm text-gray-300 leading-6">
@@ -1133,8 +1166,8 @@ export default function Sessions() {
 
 
       {startOpen && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div className="bg-[#121A33] p-6 rounded-xl w-[520px] text-white space-y-4">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[9999]">
+           <div className="bg-[#121A33] p-6 rounded-xl w-[520px] max-w-[95vw] max-h-[90vh] overflow-y-auto text-white space-y-4 border border-[#1E2A45] shadow-2xl">
             <h2 className="text-lg font-semibold">Запуск сессии</h2>
 
             <div className="space-y-1">

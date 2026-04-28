@@ -342,14 +342,19 @@ export default function Sessions() {
     window.dispatchEvent(new Event("kazpam:sessions-changed"));
   };
 
-  const loadSessions = async (): Promise<Session[]> => {
-    setLoading(true);
+  const loadSessions = async (
+    options?: {
+      archived?: boolean;
+      status?: string;
+    }
+  ): Promise<Session[]> => {
+    setLoading(true);    
 
     try {
       const data = await getAllSessions(
         200,
-        archiveMode === "archived",
-        statusFilter
+        options?.archived ?? archiveMode === "archived",
+        options?.status ?? statusFilter
       );
       const normalized = extractSessions(data)
         .map(mapBackendSession)
@@ -631,9 +636,19 @@ export default function Sessions() {
       
       if (launchProtocol === "https") {
         const result = await launchWebAccess(selectedTarget.id);
+
+        setArchiveMode("main");
+        setStatusFilter("all");
         setWebAccessResult(result);
         setStartOpen(false);
-        toast.success(`HTTPS access подготовлен · target #${selectedTarget.id}`);
+
+        await loadSessions({
+          archived: false,
+          status: "all",
+        });
+        notifySessionsChanged();
+
+        toast.success(`HTTPS access подготовлен · session #${result.session_id}`);
         return;
       }
 
@@ -651,17 +666,30 @@ export default function Sessions() {
 
       if (launchProtocol === "mssql") {
         const result = await launchDbAccess(selectedTarget.id);
+
+        setStatusFilter("all");
         setDbAccessResult(result);
         setStartOpen(false);
-        toast.success(`MS SQL access подготовлен · target #${selectedTarget.id}`);
+
+        await loadSessions({
+          archived: false,
+          status: "all",
+        });
+        notifySessionsChanged();
+
+        toast.success(`MS SQL access подготовлен · session #${result.session_id}`);
         return;
       }
 
       if (launchProtocol === "vnc") {
         const result = await launchVncAccess(selectedTarget.id);
+
+        setArchiveMode("main");
+        setStatusFilter("all");
         setVncAccessResult(result);
         setStartOpen(false);
-        toast.success(`VNC access подготовлен · target #${selectedTarget.id}`);
+
+        toast.success(`VNC access подготовлен · session #${result.session_id}`);
         return;
       }
     } catch (error) {
@@ -914,6 +942,7 @@ export default function Sessions() {
             </div>
 
             <div className="rounded-lg bg-[#0E1A3A] border border-[#1E2A45] p-4 text-sm space-y-2">
+              <div>Session ID: #{webAccessResult.session_id}</div>
               <div>Target: #{webAccessResult.target_id} · {webAccessResult.target_name}</div>
               <div>Host: {webAccessResult.target_host}:{webAccessResult.target_port}</div>
               <div>Protocol: {webAccessResult.protocol.toUpperCase()}</div>
@@ -1025,6 +1054,7 @@ export default function Sessions() {
             </div>
 
             <div className="rounded-lg bg-[#0E1A3A] border border-[#1E2A45] p-4 text-sm space-y-2">
+              <div>Session ID: #{dbAccessResult.session_id}</div>
               <div>Target: #{dbAccessResult.target_id} · {dbAccessResult.target_name}</div>
               <div>Host: {dbAccessResult.target_host}:{dbAccessResult.target_port}</div>
               <div>User: {dbAccessResult.username || "—"}</div>
@@ -1067,6 +1097,7 @@ export default function Sessions() {
             </div>
 
             <div className="rounded-lg bg-[#0E1A3A] border border-[#1E2A45] p-4 text-sm space-y-2">
+              <div>Session ID: #{vncAccessResult.session_id}</div>
               <div>Target: #{vncAccessResult.target_id} · {vncAccessResult.target_name}</div>
               <div>Target host: {vncAccessResult.target_host}:{vncAccessResult.target_port}</div>
               <div>Launch: {vncAccessResult.launch_host}:{vncAccessResult.launch_port}</div>

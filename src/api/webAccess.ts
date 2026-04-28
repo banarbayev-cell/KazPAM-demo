@@ -6,6 +6,7 @@ export type WebAccessLaunchPayload = {
 };
 
 export type WebAccessLaunchResponse = {
+  session_id: number;
   target_id: number;
   target_name: string;
   target_host: string;

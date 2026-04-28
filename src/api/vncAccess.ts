@@ -6,6 +6,7 @@ export type VNCAccessLaunchPayload = {
 };
 
 export type VNCAccessLaunchResponse = {
+  session_id: number;
   target_id: number;
   target_name: string;
   target_host: string;

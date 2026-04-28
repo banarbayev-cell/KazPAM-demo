@@ -6,6 +6,7 @@ export type DBAccessLaunchPayload = {
 };
 
 export type DBAccessLaunchResponse = {
+  session_id: number;
   target_id: number;
   target_name: string;
   target_host: string;

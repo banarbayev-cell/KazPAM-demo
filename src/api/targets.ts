@@ -4,6 +4,7 @@ import type {
   TargetCreatePayload,
   TargetUpdatePayload,
   TargetVaultBindingOut,
+  TargetProtocol,
 } from "@/types/targets";
 
 export async function listTargets(): Promise<Target[]> {
@@ -41,7 +42,7 @@ export async function unbindTargetVaultSecret(
 }
 
 export async function listAccessibleTargets(
-  protocol?: "ssh" | "rdp" | "https"
+  protocol?: "ssh" | "rdp" | "https" | "mssql" | "vnc"
 ): Promise<Target[]> {
   const query = protocol ? `?protocol=${protocol}` : "";
   return api.get<Target[]>(`/targets/accessible${query}`);

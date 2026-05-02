@@ -656,13 +656,27 @@ export default function Sessions() {
         const result = await startRdpSession({
           target_id: selectedTarget.id,
         });
+
+        setArchiveMode("main");
+        setStatusFilter("all");
         setRdpLaunchResult(result);
         setStartOpen(false);
-        toast.success(`RDP launch создан · session #${result.id}`);
-        await loadSessions();
+
+        await loadSessions({
+          archived: false,
+          status: "all",
+        });
         notifySessionsChanged();
+
+        toast.success(
+          result.common_session_id
+            ? `RDP launch создан · RDP #${result.id} · session #${result.common_session_id}`
+            : `RDP launch создан · RDP #${result.id}`
+        );    
         return;
       }  
+
+        
 
       if (launchProtocol === "mssql") {
         const result = await launchDbAccess(selectedTarget.id);
@@ -1028,8 +1042,14 @@ export default function Sessions() {
 
             <div className="grid grid-cols-2 gap-3 text-sm">
               <div className="rounded bg-[#0E1A3A] border border-[#1E2A45] p-3">
-                Session ID: {rdpLaunchResult.id}
+                RDP Session ID: #{rdpLaunchResult.id}
               </div>
+              <div className="rounded bg-[#0E1A3A] border border-[#1E2A45] p-3">
+                Common Session ID:{" "}
+                {rdpLaunchResult.common_session_id
+                  ? `#${rdpLaunchResult.common_session_id}`
+                  : "—"}
+              </div>    
               <div className="rounded bg-[#0E1A3A] border border-[#1E2A45] p-3">
                 Status: {rdpLaunchResult.status}
               </div>

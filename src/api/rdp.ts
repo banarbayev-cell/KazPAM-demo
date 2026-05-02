@@ -6,6 +6,7 @@ export interface RDPSessionStartPayload {
 
 export interface RDPSessionStartResponse {
   id: number;
+  common_session_id?: number | null;
   user_id: number;
   target_id: number | null;
   vault_secret_id: number | null;

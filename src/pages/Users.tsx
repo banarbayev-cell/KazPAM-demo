@@ -23,6 +23,9 @@ interface User {
   email: string;
   roles: Role[];
   is_active: boolean;
+  mfa_enabled?: boolean;
+  mfa_required?: boolean;
+  mfa_method?: string | null;
 }
 
 function extractApiErrorMessage(err: unknown): string {
@@ -56,6 +59,32 @@ function extractApiErrorMessage(err: unknown): string {
   if (normalized.includes("detail")) return normalized;
 
   return normalized;
+}
+
+function mfaLabel(user: User): string {
+  if (user.mfa_enabled) {
+    if (user.mfa_method === "email") return "Email MFA";
+    if (user.mfa_method === "totp") return "Google Authenticator";
+    return "MFA включена";
+  }
+
+  if (user.mfa_required) {
+    return "Требуется настройка";
+  }
+
+  return "Не назначена";
+}
+
+function mfaClass(user: User): string {
+  if (user.mfa_enabled) {
+    return "px-3 py-1 rounded-full text-xs font-semibold bg-green-500/20 text-green-400 border border-green-500/30";
+  }
+
+  if (user.mfa_required) {
+    return "px-3 py-1 rounded-full text-xs font-semibold bg-yellow-500/20 text-yellow-300 border border-yellow-500/30";
+  }
+
+  return "px-3 py-1 rounded-full text-xs font-semibold bg-gray-500/20 text-gray-300 border border-gray-500/30";
 }
 
 export default function Users() {

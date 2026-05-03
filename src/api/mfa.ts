@@ -2,6 +2,7 @@ import { api } from "../services/api";
 
 export interface MfaStatus {
   mfa_enabled: boolean;
+  mfa_required: boolean;
   mfa_method?: string | null;
   pending_setup: boolean;
   email_available?: boolean;

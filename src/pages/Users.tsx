@@ -276,6 +276,37 @@ export default function Users() {
     }
   };
 
+
+  const handleRequireMfa = async (userId: number, userEmail?: string) => {
+    const email = userEmail ?? "\u043d\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043d\u044b\u0439 \u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c";
+
+    try {
+      await api.post(`/users/${userId}/require-mfa`);
+      toast.success(`\u0414\u043b\u044f ${email} \u0432\u043a\u043b\u044e\u0447\u0435\u043d\u043e \u0442\u0440\u0435\u0431\u043e\u0432\u0430\u043d\u0438\u0435 MFA`);
+      toast.info(
+        `\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c ${email} \u0434\u043e\u043b\u0436\u0435\u043d \u043d\u0430\u0441\u0442\u0440\u043e\u0438\u0442\u044c MFA \u043f\u0440\u0438 \u0441\u043b\u0435\u0434\u0443\u044e\u0449\u0435\u043c \u0432\u0445\u043e\u0434\u0435 \u0438\u043b\u0438 \u0437\u0430\u0449\u0438\u0449\u0451\u043d\u043d\u043e\u043c \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0438`,
+        { duration: 8000 }
+      );
+      await fetchUsers();
+    } catch (err: unknown) {
+      const message = extractApiErrorMessage(err);
+      toast.error(`\u041e\u0448\u0438\u0431\u043a\u0430 \u043d\u0430\u0437\u043d\u0430\u0447\u0435\u043d\u0438\u044f MFA \u0434\u043b\u044f ${email}: ${message}`);
+    }
+  };
+
+  const handleDisableMfa = async (userId: number, userEmail?: string) => {
+    const email = userEmail ?? "\u043d\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043d\u044b\u0439 \u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c";
+
+    try {
+      await api.post(`/users/${userId}/disable-mfa`);
+      toast.success(`MFA \u0434\u043b\u044f ${email} \u043e\u0442\u043a\u043b\u044e\u0447\u0435\u043d\u0430`);
+      await fetchUsers();
+    } catch (err: unknown) {
+      const message = extractApiErrorMessage(err);
+      toast.error(`\u041e\u0448\u0438\u0431\u043a\u0430 \u043e\u0442\u043a\u043b\u044e\u0447\u0435\u043d\u0438\u044f MFA \u0434\u043b\u044f ${email}: ${message}`);
+    }
+  };
+
   // ------------------------------
   // DELETE USER
   // ------------------------------
@@ -378,6 +409,7 @@ export default function Users() {
             <tr>
               <th className="p-3 text-left">Email</th>
               <th className="p-3 text-left">Статус</th>
+              <th className="p-3 text-left">MFA</th>
               <th className="p-3 text-left">Роли</th>
               <th className="p-3 text-left">Действия</th>
             </tr>
@@ -410,6 +442,47 @@ export default function Users() {
                       Отключён
                     </span>
                   )}
+                </td>
+
+
+                <td className="p-3">
+                  <div className="flex flex-col gap-2">
+                    <span className={mfaClass(user)}>
+                      {mfaLabel(user)}
+                    </span>
+
+                    <div className="flex flex-wrap gap-2">
+                      {!user.mfa_enabled && !user.mfa_required && (
+                        <button
+                          type="button"
+                          onClick={() => handleRequireMfa(user.id, user.email)}
+                          className="rounded bg-[#0052FF] px-2 py-1 text-xs text-white hover:opacity-90"
+                        >
+                          {"\u0422\u0440\u0435\u0431\u043e\u0432\u0430\u0442\u044c MFA"}
+                        </button>
+                      )}
+
+                      {(user.mfa_enabled || user.mfa_required) && (
+                        <button
+                          type="button"
+                          onClick={() => handleResetMfa(user.id, user.email)}
+                          className="rounded bg-[#1A243F] px-2 py-1 text-xs text-white hover:opacity-90"
+                        >
+                          {"\u0421\u0431\u0440\u043e\u0441\u0438\u0442\u044c"}
+                        </button>
+                      )}
+
+                      {(user.mfa_enabled || user.mfa_required) && (
+                        <button
+                          type="button"
+                          onClick={() => handleDisableMfa(user.id, user.email)}
+                          className="rounded bg-red-600 px-2 py-1 text-xs text-white hover:opacity-90"
+                        >
+                          {"\u041e\u0442\u043a\u043b\u044e\u0447\u0438\u0442\u044c"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </td>
 
                 <td className="p-3">

@@ -1,10 +1,5 @@
 import { useState, useEffect } from "react";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "../ui/dialog";
+import { createPortal } from "react-dom";
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
 import { toast } from "sonner";
@@ -38,26 +33,59 @@ export default function AssignRolesModal({
 }: Props) {
   const [roles, setRoles] = useState<Role[]>([]);
   const [selectedRoles, setSelectedRoles] = useState<number[]>([]);
+  const [saving, setSaving] = useState(false);
+
+  /* =======================
+     Lock background scroll
+  ======================= */
+  useEffect(() => {
+    if (!open) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [open]);
+
+  /* =======================
+     Close on ESC
+  ======================= */
+  useEffect(() => {
+    if (!open) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !saving) {
+        onClose();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open, onClose, saving]);
 
   /* =======================
      Load roles
   ======================= */
- useEffect(() => {
-  if (!open) return;
+  useEffect(() => {
+    if (!open) return;
 
-  const loadRoles = async () => {
-    try {
-      const data = await api.get<Role[]>("/roles/");
-      setRoles(Array.isArray(data) ? data : []);
-    } catch {
-      toast.error("Ошибка загрузки ролей");
-      setRoles([]);
-    }
-  };
+    const loadRoles = async () => {
+      try {
+        const data = await api.get<Role[]>("/roles/");
+        setRoles(Array.isArray(data) ? data : []);
+      } catch {
+        toast.error("Ошибка загрузки ролей");
+        setRoles([]);
+      }
+    };
 
-  loadRoles();
-}, [open]);
-
+    loadRoles();
+  }, [open]);
 
   /* =======================
      Init selected roles
@@ -72,6 +100,8 @@ export default function AssignRolesModal({
      Toggle role
   ======================= */
   const toggleRole = (roleId: number) => {
+    if (saving) return;
+
     setSelectedRoles((prev) =>
       prev.includes(roleId)
         ? prev.filter((id) => id !== roleId)
@@ -80,10 +110,20 @@ export default function AssignRolesModal({
   };
 
   /* =======================
+     Close modal
+  ======================= */
+  const handleClose = () => {
+    if (saving) return;
+    onClose();
+  };
+
+  /* =======================
      Save roles (diff-based)
   ======================= */
   const handleSave = async () => {
-    if (!userId) return;
+    if (!userId || saving) return;
+
+    setSaving(true);
 
     try {
       const currentRoleIds = userRoles.map((r) => r.id);
@@ -109,56 +149,81 @@ export default function AssignRolesModal({
       onClose();
     } catch {
       toast.error("Ошибка обновления ролей");
+    } finally {
+      setSaving(false);
     }
   };
 
   /* =======================
      Render
   ======================= */
-  return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="bg-[#121A33] text-white rounded-2xl p-6 border border-[#1E2A45] shadow-2xl w-[420px]">
-        <DialogHeader>
-          <DialogTitle className="text-xl font-semibold text-white">
-            Назначить роли
-          </DialogTitle>
-        </DialogHeader>
+  if (!open) return null;
 
-        <div className="space-y-3 max-h-72 overflow-y-auto pr-2">
+  const modal = (
+    <div
+      className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+      role="dialog"
+      aria-modal="true"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          handleClose();
+        }
+      }}
+    >
+      <div
+        className="relative z-[100000] w-[420px] max-w-[95vw] rounded-2xl border border-[#1E2A45] bg-[#121A33] p-6 text-white shadow-2xl"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="mb-5">
+          <h2 className="text-xl font-semibold text-white">
+            Назначить роли
+          </h2>
+        </div>
+
+        <div className="max-h-72 space-y-3 overflow-y-auto pr-2">
           {roles.length > 0 ? (
             roles.map((role) => (
               <label
                 key={role.id}
-                className="flex items-center gap-3 cursor-pointer select-none"
+                className={`flex select-none items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-[#0E1A3A] ${
+                  saving ? "cursor-not-allowed opacity-60" : "cursor-pointer"
+                }`}
               >
                 <Checkbox
                   checked={selectedRoles.includes(role.id)}
                   onCheckedChange={() => toggleRole(role.id)}
                 />
+
                 <span className="text-gray-300">{role.name}</span>
               </label>
             ))
           ) : (
-            <div className="text-gray-400 text-sm">Роли не найдены</div>
+            <div className="text-sm text-gray-400">
+              Роли не найдены
+            </div>
           )}
         </div>
 
-        <div className="flex justify-end gap-3 mt-6">
+        <div className="mt-6 flex justify-end gap-3">
           <Button
-            onClick={onClose}
-            className="bg-[#1A243F] text-white border border-[#1E2A45] hover:bg-[#232F55]"
+            onClick={handleClose}
+            disabled={saving}
+            className="border border-[#1E2A45] bg-[#1A243F] text-white hover:bg-[#232F55] disabled:opacity-60"
           >
             Отмена
           </Button>
 
           <Button
             onClick={handleSave}
-            className="bg-[#0052FF] text-white hover:bg-[#0046DB]"
+            disabled={saving || !userId}
+            className="bg-[#0052FF] text-white hover:bg-[#0046DB] disabled:opacity-60"
           >
-            Сохранить
+            {saving ? "Сохранение..." : "Сохранить"}
           </Button>
         </div>
-      </DialogContent>
-    </Dialog>
+      </div>
+    </div>
   );
+
+  return createPortal(modal, document.body);
 }

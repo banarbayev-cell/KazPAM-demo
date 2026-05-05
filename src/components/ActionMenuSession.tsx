@@ -46,8 +46,11 @@ export default function ActionMenuSession({
         </DropdownMenuItem>
 
         {canArchive && onArchive && (
-          <DropdownMenuItem onSelect={onArchive}>
-            Переместить в архив
+          <DropdownMenuItem 
+            onSelect={onArchive}
+            title="Архивирование не удаляет session, audit и recording"  
+          >  
+            Архивировать без удаления
           </DropdownMenuItem>
         )}
 

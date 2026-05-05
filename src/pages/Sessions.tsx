@@ -57,6 +57,7 @@ interface Session {
   pam_user?: string | null;
   is_archived?: boolean;
   archived_at?: string | null;
+  recording_id?: number | null;
 }
 
 /* ===============================
@@ -80,6 +81,7 @@ interface BackendSession {
   start_time?: string;
   is_archived?: boolean;
   archived_at?: string | null;
+  recording_id?: number | null;
 }
 
 /* ===============================
@@ -108,6 +110,7 @@ function mapBackendSession(s: BackendSession): Session {
     pam_user: s.pam_user ?? null,
     is_archived: s.is_archived ?? false,
     archived_at: s.archived_at ?? null,
+    recording_id: s.recording_id ?? null,
   };
 }
 
@@ -291,6 +294,37 @@ async function copyText(text: string) {
   }
 
   copyTextFallback(text);
+}
+
+function getSessionRecordingId(session: Session | null): number | null {
+  if (!session) return null;
+
+  if (session.recording_id && Number.isFinite(Number(session.recording_id))) {
+    return Number(session.recording_id);
+  }
+
+  if (!session.details) return null;
+
+  try {
+    const parsed = JSON.parse(session.details);
+
+    const candidates = [
+      parsed?.recording_id,
+      parsed?.recordingId,
+      parsed?.recording?.id,
+      parsed?.launch_payload?.recording_id,
+      parsed?.payload?.recording_id,
+    ];
+
+    for (const value of candidates) {
+      const n = Number(value);
+      if (Number.isFinite(n) && n > 0) return n;
+    }
+  } catch {
+    // details can be plain text; ignore
+  }
+
+  return null;
 }
 
 // Для archive/filter/export режимов mergeSessions больше не нужен.
@@ -504,12 +538,23 @@ export default function Sessions() {
   };
 
   const filtered = useMemo(() => {
-    return sessions.filter(
-      (s) =>
-        s.user.toLowerCase().includes(search.toLowerCase()) ||
-        s.system.toLowerCase().includes(search.toLowerCase()) ||
-        s.ip.toLowerCase().includes(search.toLowerCase())
-    );
+    const q = search.trim().toLowerCase();
+
+    if (!q) return sessions;
+
+    return sessions.filter((s) => {
+      return (
+        String(s.id).includes(q) ||
+        String(s.target_id ?? "").includes(q) ||
+        String(s.vault_secret_id ?? "").includes(q) ||
+        String(s.recording_id ?? "").includes(q) ||
+        String(s.protocol ?? "").toLowerCase().includes(q) ||
+        String(s.launch_mode ?? "").toLowerCase().includes(q) ||
+        s.user.toLowerCase().includes(q) ||
+        s.system.toLowerCase().includes(q) ||
+        s.ip.toLowerCase().includes(q)
+      );
+    });
   }, [sessions, search]);
 
   const handleArchive = async (session: Session) => {
@@ -748,9 +793,53 @@ export default function Sessions() {
     }
   };
 
+  const activeCount = sessions.filter((s) => s.status === "active").length;
+  const completedCount = sessions.filter(
+    (s) => s.status === "terminated" || s.status === "closed"
+  ).length;
+  const failedCount = sessions.filter((s) => s.status === "failed").length;
+  const archivedCount = sessions.filter((s) => s.is_archived).length;
+  const recordedCount = sessions.filter((s) => getSessionRecordingId(s)).length;
+
+
   return (
     <div className="p-6 w-full bg-gray-100 text-gray-900">
       <h1 className="text-3xl font-bold mb-4">Пользовательские сессии</h1>
+
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-5">
+        <div className="rounded-xl border border-[#1E2A45] bg-[#121A33] p-4 text-white">
+          <div className="text-xs text-gray-400">Активные</div>
+          <div className="mt-1 text-2xl font-bold text-green-300">{activeCount}</div>
+        </div>
+
+        <div className="rounded-xl border border-[#1E2A45] bg-[#121A33] p-4 text-white">
+          <div className="text-xs text-gray-400">Завершённые</div>
+          <div className="mt-1 text-2xl font-bold text-gray-200">{completedCount}</div>
+        </div>
+
+        <div className="rounded-xl border border-[#1E2A45] bg-[#121A33] p-4 text-white">
+          <div className="text-xs text-gray-400">Ошибки / denied</div>
+          <div className="mt-1 text-2xl font-bold text-red-300">{failedCount}</div>
+        </div>
+
+        <div className="rounded-xl border border-[#1E2A45] bg-[#121A33] p-4 text-white">
+          <div className="text-xs text-gray-400">С записью</div>
+          <div className="mt-1 text-2xl font-bold text-[#3BE3FD]">{recordedCount}</div>
+        </div>
+
+        <div className="rounded-xl border border-[#1E2A45] bg-[#121A33] p-4 text-white">
+          <div className="text-xs text-gray-400">В архиве</div>
+          <div className="mt-1 text-2xl font-bold text-gray-300">{archivedCount}</div>
+        </div>
+      </div>
+
+      <div className="mb-5 rounded-xl border border-blue-200 bg-white p-4 text-sm text-gray-700 shadow-sm">
+        <div className="font-semibold text-gray-900 mb-1">Enterprise session control</div>
+        <div>
+          Архивирование не удаляет сессию, audit и recording. Оно только скрывает завершённую сессию из основного списка.
+          Для расследования используйте “Аудит этой сессии” и “Replay”, если запись доступна.
+        </div>
+      </div>  
 
     <div className="mb-6 flex flex-wrap gap-3 items-center">
       <button
@@ -796,7 +885,7 @@ export default function Sessions() {
     </div>
 
       <Input
-        placeholder="Поиск по пользователю, системе или IP..."
+        placeholder="Поиск: session ID / user / system / IP / protocol / target / vault / recording..."
         className="w-80 mb-4 bg-white"
         value={search}
         onChange={(e) => setSearch(e.target.value)}

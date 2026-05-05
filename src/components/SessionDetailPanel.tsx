@@ -28,6 +28,9 @@ interface SessionDetail {
   last_command?: string;
   duration?: string;
   date?: string;
+  recording_id?: number | null;
+  is_archived?: boolean;
+  archived_at?: string | null;
 }
 
 interface SessionDetailPanelProps {
@@ -36,6 +39,7 @@ interface SessionDetailPanelProps {
   session: SessionDetail | null;
   onTerminate?: () => void;
   onAudit?: () => void;
+  onOpenReplay?: () => void;
   onDownloadLogs?: () => void;
 }
 
@@ -148,6 +152,7 @@ export default function SessionDetailPanel({
   session,
   onTerminate,
   onAudit,
+  onOpenReplay,
 }: SessionDetailPanelProps) {
   const [confirmOpen, setConfirmOpen] = useState(false);
 
@@ -173,6 +178,12 @@ export default function SessionDetailPanel({
     getNested(details, "target_user") ||
     getNested(details, "username") ||
     session.pam_user;
+  
+  const recordingId =
+    session.recording_id ||
+    getNested(details, "recording_id") ||
+    getNested(details, "recordingId") ||
+    getNested(details, "recording")?.id;  
 
   const launchUrl =
     getNested(details, "launch_url") ||
@@ -241,6 +252,14 @@ export default function SessionDetailPanel({
           <Row label="Протокол" value={protocolLabel(protocol)} />
           <Row label="Статус" value={statusLabel(session.status)} />
           <Row label="Дата запуска" value={session.date || "—"} />
+          <Row
+            label="Recording"
+            value={recordingId ? `Recording #${recordingId}` : "Недоступен / обрабатывается"}
+          />
+          <Row
+            label="Archive"
+            value={session.is_archived ? `В архиве${session.archived_at ? ` · ${session.archived_at}` : ""}` : "Основной список"}
+          />
         </Section>
 
         <Section title="PAM / Target context">
@@ -267,6 +286,33 @@ export default function SessionDetailPanel({
           {breakGlass && (
             <Row label="Break-glass reason" value={breakGlassReason || "—"} />
           )}
+        </Section>
+
+        <Section title="Audit / Recording">
+          <InfoBox>
+            Здесь фиксируется связь сессии с Audit и Recording. Audit хранит события запуска,
+            завершения, access launch, Vault/JIT и policy decisions. Recording используется для replay,
+            если для этой сессии создана запись.
+          </InfoBox>
+
+          <div className="grid grid-cols-1 gap-2 pt-2">
+            <button
+              type="button"
+              className="w-full bg-[#1A243F] py-2 rounded text-sm hover:bg-[#23304F]"
+              onClick={() => onAudit?.()}
+            >
+              Аудит этой сессии
+            </button>
+
+            <button
+              type="button"
+              disabled={!recordingId || !onOpenReplay}
+              className="w-full bg-[#0052FF] py-2 rounded text-sm disabled:bg-gray-600 disabled:cursor-not-allowed"
+              onClick={() => onOpenReplay?.()}
+            >
+              {recordingId ? "Открыть Replay записи" : "Replay недоступен"}
+            </button>
+          </div>
         </Section>
 
         {protocol === "rdp" && (

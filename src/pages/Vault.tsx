@@ -223,16 +223,24 @@ export default function Vault() {
   const filtered = useMemo(() => {
     return secretsList
       .filter((s) => {
-        const q = search.toLowerCase();
-        return s.system.toLowerCase().includes(q) || s.login.toLowerCase().includes(q);
+        const q = search.trim().toLowerCase();
+        if (!q) return true;
+
+        return (
+          String(s.id).includes(q) ||
+          s.system.toLowerCase().includes(q) ||
+          s.login.toLowerCase().includes(q) ||
+          s.type.toLowerCase().includes(q) ||
+          s.platform.toLowerCase().includes(q)
+        );
       })
-      .filter((s) => (typeFilter === "all" ? true : s.type === typeFilter))
-      .filter((s) => (platformFilter === "all" ? true : s.platform === platformFilter))
-      .sort((a, b) => {
-        const dateA = new Date(a.updated.split(".").reverse().join("-"));
-        const dateB = new Date(b.updated.split(".").reverse().join("-"));
-        return sortByDate === "newest" ? +dateB - +dateA : +dateA - +dateB;
-      });
+       .filter((s) => (typeFilter === "all" ? true : s.type === typeFilter))
+       .filter((s) => (platformFilter === "all" ? true : s.platform === platformFilter))
+       .sort((a, b) => {
+         const dateA = new Date(a.updated.split(".").reverse().join("-"));
+         const dateB = new Date(b.updated.split(".").reverse().join("-"));
+         return sortByDate === "newest" ? +dateB - +dateA : +dateA - +dateB;
+        });
   }, [secretsList, search, typeFilter, platformFilter, sortByDate]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / rowsPerPage));
@@ -408,6 +416,10 @@ export default function Vault() {
       <div className="flex items-start justify-between gap-4 mb-4">
         <div>
           <h1 className="text-3xl font-bold">Хранилище привилегий (Vault)</h1>
+          <p className="text-sm text-gray-600 mt-1">
+            Секреты PAM: учётные данные, SSH-ключи и access keys для целевых систем.
+            Secret ID используется при привязке секрета к целевой системе.
+          </p>
           {loadingList && <div className="text-sm text-gray-600 mt-1">Загрузка...</div>}
           {loadError && <div className="text-sm text-red-600 mt-1">{loadError}</div>}
         </div>
@@ -416,8 +428,17 @@ export default function Vault() {
 
       {/* Filters (Simplified for brevity, same as before) */}
       <div className="flex gap-3 items-center mb-6">
-        <input placeholder="Поиск..." className="w-72 bg-white text-black border p-2 rounded" value={search} onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }} />
+        <input placeholder="Поиск: ID / система / логин / тип / platform..." className="w-72 bg-white text-black border p-2 rounded" value={search} onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }} />
         {/* ... Selects ... */}
+      </div>
+
+      <div className="mb-4 rounded-xl border border-[#1E2A45] bg-[#121A33] px-4 py-3 text-sm text-gray-300">
+        <div className="font-semibold text-white mb-1">Как использовать Vault</div>
+        <div>
+          <span className="text-[#3BE3FD]">Secret ID</span> используется для привязки секрета к целевой системе.
+          <span className="text-[#3BE3FD]"> Platform / OS</span> помогает классифицировать секрет.
+          Кнопка <span className="text-[#3BE3FD]">JIT-сессия</span> запускает PAM-доступ только при наличии активного grant или создаёт запрос доступа.
+        </div>
       </div>
 
       {/* Table */}
@@ -425,10 +446,13 @@ export default function Vault() {
         <table className="w-full text-sm text-white">
           <thead className="bg-[#1A243F] text-gray-300 sticky top-0 z-10">
             <tr>
+              <th className="p-3 text-left">ID</th>
               <th className="p-3 text-left">Система</th>
               <th className="p-3 text-left">Логин</th>
+              <th className="p-3 text-left">Platform / OS</th>
               <th className="p-3 text-left">Обновлено</th>
               <th className="p-3 text-left">Тип</th>
+              <th className="p-3 text-left">Статус</th>
               <th className="p-3 text-left">Действия</th>
             </tr>
           </thead>
@@ -439,16 +463,56 @@ export default function Vault() {
                   <tr key={item.id} ref={(el) => { rowRefs.current[item.id] = el; }}
                     className={`border-t border-[#1E2A45] transition ${isFocused ? "bg-[#0B1E4A] shadow-[inset_0_0_0_2px_#0052FF]" : "hover:bg-[#0E1A3A]"} ${item.restricted ? "bg-red-900/20" : ""}`}
                   >
-                    <td className="p-3 flex items-center gap-2">
-                      {item.restricted && <FaLock className="text-red-500 animate-pulse" title="Доступ ограничен SOC" />}
-                      {item.icon} 
-                      <span className={item.restricted ? "text-red-300 line-through" : ""}>{item.system}</span>
+                    <td className="p-3 font-mono text-[#3BE3FD]">
+                      #{item.id}
                     </td>
+
+                    <td className="p-3 flex items-center gap-2">
+                      {item.restricted && (
+                        <FaLock
+                          className="text-red-500 animate-pulse"
+                          title="Доступ ограничен SOC"
+                        />
+                      )}
+                      {item.icon}
+                      <span className={item.restricted ? "text-red-300 line-through" : ""}>
+                        {item.system}
+                      </span>
+                    </td>
+
                     <td className="p-3">{item.login}</td>
+
+                    <td className="p-3">
+                      <span
+                        className="inline-flex rounded-full px-2 py-1 text-xs font-medium bg-[#0E1A3A] text-gray-200 border border-[#1E2A45]"
+                        title="Platform / OS используется для классификации секрета и сценариев подключения"
+                      >
+                        {item.platform || "—"}
+                      </span>
+                    </td>
+
                     <td className="p-3">{item.updated}</td>
-                    <td className="p-3">{item.type}</td>
+
+                    <td className="p-3">
+                      <span className="inline-flex rounded-full px-2 py-1 text-xs font-medium bg-[#0E1A3A] text-[#3BE3FD] border border-[#1E2A45]">
+                        {item.type}
+                      </span>
+                    </td>
+
+                    <td className="p-3">
+                      {item.restricted ? (
+                        <span className="inline-flex rounded-full px-2 py-1 text-xs font-semibold bg-red-500/20 text-red-300 border border-red-500/30">
+                          Restricted
+                        </span>
+                      ) : (
+                        <span className="inline-flex rounded-full px-2 py-1 text-xs font-semibold bg-green-500/20 text-green-300 border border-green-500/30">
+                          Active
+                        </span>
+                      )}
+                    </td>
+
                     <td className="p-3 flex gap-2 items-center">
-                      <button
+                  <button
 disabled={item.restricted}
 className={`px-3 py-1 rounded text-white ${
 item.restricted ? "bg-gray-600 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"
@@ -468,14 +532,15 @@ onClick={() => handleRevealOrRequest(item, "copy")}
 Скопировать
 </button>
 
-{["password","ssh_key"].includes(item.type) && (
-<Button
-disabled={item.restricted}
-className="bg-emerald-600 hover:bg-emerald-700 text-white"
-onClick={() => handleConnect(item)}
->
-Подключиться
-</Button>
+{["password", "ssh_key"].includes(item.type) && (
+  <Button
+    disabled={item.restricted}
+    className="bg-emerald-600 hover:bg-emerald-700 text-white"
+    onClick={() => handleConnect(item)}
+    title="Запросить JIT-доступ или запустить PAM-сессию, если уже есть active grant"
+  >
+    JIT-сессия
+  </Button>
 )}
 
 <button

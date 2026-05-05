@@ -9,13 +9,29 @@ type MfaMethod = "totp" | "email";
 interface LoginResponse {
   access_token?: string;
   token_type?: string;
+
+  // Already configured MFA login challenge
   mfa_required?: boolean;
   mfa_method?: MfaMethod;
   mfa_challenge_token?: string;
   email_sent?: boolean;
+
+  // First-time required MFA setup
+  mfa_setup_required?: boolean;
+  mfa_setup_token?: string;
+}
+interface MfaVerifyResponse {
+  access_token?: string;
+  token_type?: string;
 }
 
-interface MfaVerifyResponse {
+interface MfaSetupInitResponse {
+  secret: string;
+  otpauth_uri: string;
+  method: "totp";
+}
+
+interface MfaSetupVerifyResponse {
   access_token?: string;
   token_type?: string;
 }
@@ -88,6 +104,13 @@ export default function Login() {
   const [mfaCode, setMfaCode] = useState("");
   const [mfaEmailSent, setMfaEmailSent] = useState(false);
 
+  // First-time MFA setup state
+  const [mfaSetupRequired, setMfaSetupRequired] = useState(false);
+  const [mfaSetupToken, setMfaSetupToken] = useState<string | null>(null);
+  const [mfaSetupSecret, setMfaSetupSecret] = useState<string | null>(null);
+  const [mfaSetupOtpUri, setMfaSetupOtpUri] = useState<string | null>(null);
+  const [mfaSetupLoading, setMfaSetupLoading] = useState(false);
+
   const passwordChanged = searchParams.get("passwordChanged") === "1";
 
   const completeLogin = async (accessToken: string) => {
@@ -106,6 +129,13 @@ export default function Login() {
     setMfaChallengeToken(null);
     setMfaCode("");
     setMfaEmailSent(false);
+
+    setMfaSetupRequired(false);
+    setMfaSetupToken(null);
+    setMfaSetupSecret(null);
+    setMfaSetupOtpUri(null);
+    setMfaSetupLoading(false);
+
     setLoginError(null);
   };
 
@@ -115,6 +145,11 @@ export default function Login() {
 
     if (mfaRequired && mfaChallengeToken) {
       await handleMfaVerify();
+      return;
+    }
+
+    if (mfaSetupRequired && mfaSetupToken) {
+      await handleMfaSetupVerify();
       return;
     }
 
@@ -174,6 +209,17 @@ export default function Login() {
         setMfaEmailSent(Boolean(data.email_sent));
         setMfaCode("");
         setLoginError(null);
+        return;
+      }
+
+      if (data.mfa_setup_required && data.mfa_setup_token) {
+        setMfaSetupRequired(true);
+        setMfaSetupToken(data.mfa_setup_token);
+        setMfaMethod("totp");
+        setMfaCode("");
+        setLoginError(null);
+
+        await handleMfaSetupInit(data.mfa_setup_token);
         return;
       }
 
@@ -265,6 +311,129 @@ export default function Login() {
     }
   };
 
+
+// ================= LOGIN STEP 2A: FIRST-TIME MFA SETUP INIT =================
+const handleMfaSetupInit = async (setupToken: string) => {
+  setMfaSetupLoading(true);
+  setLoginError(null);
+
+  try {
+    const response = await fetch(`${API_URL}/auth/mfa-setup/init`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        mfa_setup_token: setupToken,
+      }),
+    });
+
+    if (!response.ok) {
+      let detail: string | null = null;
+
+      try {
+        const err = await response.json();
+        if (typeof err?.detail === "string") {
+          detail = err.detail;
+        } else if (typeof err?.message === "string") {
+          detail = err.message;
+        }
+      } catch {
+        // ignore json parse error
+      }
+
+      setLoginError(
+        detail || "Не удалось начать настройку MFA. Введите логин и пароль заново."
+      );
+      return;
+    }
+
+    const data: MfaSetupInitResponse = await response.json();
+
+    setMfaSetupSecret(data.secret);
+    setMfaSetupOtpUri(data.otpauth_uri);
+  } catch (err: any) {
+    setLoginError(err?.message || "Ошибка инициализации MFA");
+  } finally {
+    setMfaSetupLoading(false);
+  }
+};
+
+// ================= LOGIN STEP 2B: FIRST-TIME MFA SETUP VERIFY =================
+const handleMfaSetupVerify = async () => {
+  const code = mfaCode.trim();
+
+  if (!mfaSetupToken) {
+    setLoginError("MFA setup-сессия не найдена. Введите логин и пароль заново.");
+    resetMfaChallenge();
+    return;
+  }
+
+  if (code.length < 6) {
+    setLoginError("Введите 6-значный код из Google Authenticator.");
+    return;
+  }
+
+  setLoading(true);
+  setLoginError(null);
+  setResetMessage(null);
+
+  try {
+    const response = await fetch(`${API_URL}/auth/mfa-setup/verify`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        mfa_setup_token: mfaSetupToken,
+        code,
+        method: "totp",
+      }),
+    });
+
+    if (!response.ok) {
+      let detail: string | null = null;
+
+      try {
+        const err = await response.json();
+        if (typeof err?.detail === "string") {
+          detail = err.detail;
+        } else if (typeof err?.message === "string") {
+          detail = err.message;
+        }
+      } catch {
+        // ignore json parse error
+      }
+
+      if (response.status === 401) {
+        setLoginError(
+          detail?.toLowerCase().includes("setup")
+            ? "Сессия настройки MFA истекла. Введите логин и пароль заново."
+            : "Неверный MFA-код"
+        );
+      } else {
+        setLoginError(detail || "Ошибка подтверждения MFA");
+      }
+
+      return;
+    }
+
+    const data: MfaSetupVerifyResponse = await response.json();
+
+    if (!data.access_token) {
+      setLoginError("Сервер не выдал токен доступа после настройки MFA");
+      return;
+    }
+
+    await completeLogin(data.access_token);
+  } catch (err: any) {
+    setLoginError(err?.message || "Ошибка проверки MFA");
+  } finally {
+    setLoading(false);
+  }
+}; 
+
+
   // ================= RESET =================
   const handlePasswordReset = async () => {
     setLoginError(null);
@@ -315,13 +484,13 @@ export default function Login() {
           Privileged Access Management · Made in Kazakhstan
         </p>
 
-        {passwordChanged && !mfaRequired && (
+        {passwordChanged && !mfaRequired && !mfaSetupRequired && (
           <div className="mb-4 rounded-lg border border-green-500/30 bg-green-500/10 px-4 py-3 text-sm text-green-300 text-center">
             Пароль успешно изменён. Войдите снова с новым паролем.
           </div>
         )}
 
-        {!mfaRequired ? (
+        {!mfaRequired && !mfaSetupRequired ? (
           <>
             <input
               type="email"
@@ -363,6 +532,63 @@ export default function Login() {
               </label>
             </div>
           </>
+        ) : mfaSetupRequired ? (
+          <>
+            <div className="mb-4 rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-300">
+              Для этого пользователя MFA обязательна. Настройте Google Authenticator, чтобы продолжить.
+            </div>
+
+            <div className="mb-3 text-sm text-white/70">
+              Пользователь: <span className="text-white">{email}</span>
+            </div>
+
+            <div className="mb-4 rounded-lg bg-white/10 px-3 py-3 text-sm text-white/70">
+              1. Откройте Google Authenticator.<br />
+              2. Добавьте новый аккаунт.<br />
+              3. Используйте ключ ниже или QR-данные.
+            </div>
+
+            {mfaSetupLoading ? (
+              <div className="mb-4 rounded-lg bg-white/10 px-3 py-3 text-sm text-white/70">
+                Подготовка настройки MFA...
+              </div>
+            ) : (
+              <>
+                {mfaSetupSecret && (
+                  <div className="mb-4 rounded-lg border border-white/10 bg-black/20 px-3 py-3">
+                    <div className="mb-1 text-xs text-white/50">
+                      Ключ для Google Authenticator
+                    </div>
+                    <div className="break-all font-mono text-sm text-[#3BE3FD]">
+                      {mfaSetupSecret}
+                    </div>
+                  </div>
+                )}
+
+                {mfaSetupOtpUri && (
+                  <div className="mb-4 rounded-lg bg-white/10 px-3 py-2 text-xs text-white/50 break-all">
+                    {mfaSetupOtpUri}
+                  </div>
+                )}
+              </>
+            )}
+
+            <input
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              placeholder="Введите код Google Authenticator"
+              required
+              className="w-full p-3 bg-white/10 border border-white/20 rounded-lg text-white mb-2 focus:outline-none focus:border-[#3BE3FD] tracking-widest text-center text-lg"
+              value={mfaCode}
+              onChange={(e) => setMfaCode(sanitizeMfaCode(e.target.value))}
+            />
+
+            <div className="mb-6 text-center text-xs text-white/40">
+              После подтверждения MFA будет включена, и вход продолжится.
+            </div>
+          </>
+
         ) : (
           <>
             <div className="mb-4 rounded-lg border border-[#3BE3FD]/30 bg-[#3BE3FD]/10 px-4 py-3 text-sm text-[#3BE3FD]">
@@ -403,15 +629,19 @@ export default function Login() {
           className="w-full py-3 bg-[#0052FF] rounded-lg text-white font-semibold disabled:opacity-50 hover:bg-[#1f6bff] transition"
         >
           {loading
-            ? mfaRequired
-              ? "Проверка MFA..."
-              : "Авторизация..."
-            : mfaRequired
-              ? "Подтвердить MFA"
-              : "Войти"}
-        </button>
+            ? mfaSetupRequired
+              ? "Настройка MFA..."
+              : mfaRequired
+                ? "Проверка MFA..."
+                : "Авторизация..."
+            : mfaSetupRequired
+              ? "Завершить настройку MFA"
+              : mfaRequired
+                ? "Подтвердить MFA"
+                : "Войти"}
+          </button>
 
-        {mfaRequired ? (
+        {mfaRequired || mfaSetupRequired ? (
           <button
             type="button"
             onClick={resetMfaChallenge}

@@ -112,14 +112,42 @@ function extractErrorMessage(error: any): string {
 
   if (!raw) return "Неизвестная ошибка";
 
+  let message = raw;
+
   try {
     const parsed = JSON.parse(raw);
-    if (typeof parsed?.detail === "string") return parsed.detail;
+    if (typeof parsed?.detail === "string") {
+      message = parsed.detail;
+    }
   } catch {
     // ignore
   }
 
-  return raw;
+  const normalized = message.toLowerCase();
+
+  if (
+    normalized.includes("secret has access requests or grants") ||
+    normalized.includes("deletion is blocked to preserve audit integrity")
+  ) {
+    return "Секрет нельзя удалить: по нему уже есть запросы доступа или grants. Для сохранения аудита используйте «Ограничить доступ».";
+  }
+
+  if (
+    normalized.includes("secret is bound to target") ||
+    normalized.includes("unbind it before deletion")
+  ) {
+    return "Секрет нельзя удалить: он привязан к целевой системе. Сначала отвяжите его от Target.";
+  }
+
+  if (normalized.includes("secret not found")) {
+    return "Секрет не найден.";
+  }
+
+  if (normalized.includes("forbidden") || normalized.includes("permission")) {
+    return "Недостаточно прав для выполнения действия.";
+  }
+
+  return message;
 }
 
 

@@ -23,6 +23,7 @@ function formatTs(value?: string): string {
   const yyyy = d.getFullYear();
   const hh = String(d.getHours()).padStart(2, "0");
   const mi = String(d.getMinutes()).padStart(2, "0");
+
   return `${dd}.${mm}.${yyyy} ${hh}:${mi}`;
 }
 
@@ -30,27 +31,32 @@ function humanizeAction(actionRaw?: string): string {
   const a = String(actionRaw ?? "").trim().toUpperCase();
   if (!a) return "—";
 
-  // Vault actions (не ломаем: если другое — покажем как есть)
   const map: Record<string, string> = {
-  CREATE: "Создание секрета",
-  UPDATE: "Обновление секрета",
-  ROTATE: "Ротация секрета",
-  REVEAL: "Просмотр секрета",
-  COPY: "Копирование секрета",
-  DELETE: "Удаление секрета",
+    CREATE: "Создание секрета",
+    UPDATE: "Обновление секрета",
+    ROTATE: "Ротация секрета",
+    REVEAL: "Просмотр секрета",
+    COPY: "Копирование секрета",
+    DELETE: "Удаление секрета",
 
-  REQUEST: "Запрос доступа",
-  APPROVE: "Одобрение доступа",
-  DENY: "Отклонение доступа",
-  CANCEL: "Отмена запроса",
+    RESTRICT: "Ограничение доступа",
+    UNRESTRICT: "Восстановление доступа",
+    VAULT_SECRET_RESTRICT: "Ограничение доступа",
+    VAULT_SECRET_UNRESTRICT: "Восстановление доступа",
 
-  REQUEST_CREATE: "Создание запроса",
-  REQUEST_APPROVE: "Одобрение запроса",
-  REQUEST_DENY: "Отклонение запроса",
-  REQUEST_CANCEL: "Отмена запроса",
-  GRANT_CREATE: "Выдача grant",
-  REVEAL_APPROVED: "Просмотр по grant",
-};
+    REQUEST: "Запрос доступа",
+    APPROVE: "Одобрение доступа",
+    DENY: "Отклонение доступа",
+    CANCEL: "Отмена запроса",
+
+    REQUEST_CREATE: "Создание запроса",
+    REQUEST_APPROVE: "Одобрение запроса",
+    REQUEST_DENY: "Отклонение запроса",
+    REQUEST_CANCEL: "Отмена запроса",
+    GRANT_CREATE: "Выдача grant",
+    REVEAL_APPROVED: "Просмотр по grant",
+  };
+
   return map[a] ?? String(actionRaw);
 }
 
@@ -60,17 +66,20 @@ function normalizeStatus(statusRaw?: string): string {
 
   const upper = raw.toUpperCase();
 
-  // Нормализация RU → EN (best-effort)
   if (upper.includes("УСПЕШ") || upper === "OK") return "SUCCESS";
   if (upper.includes("ОТКЛОН") || upper.includes("DENY")) return "DENIED";
-  if (upper.includes("ОШИБ") || upper.includes("FAIL") || upper.includes("ERROR"))
+  if (
+    upper.includes("ОШИБ") ||
+    upper.includes("FAIL") ||
+    upper.includes("ERROR")
+  ) {
     return "FAILED";
+  }
 
   return raw;
 }
 
 function normalizeRow(row: AnyRow): NormalizedRow {
-  // time: либо готовая строка, либо ISO timestamp
   const time =
     (typeof row.time === "string" && row.time) ||
     formatTs(row.timestamp || row.created_at || row.updated_at);
@@ -100,14 +109,16 @@ export default function VaultHistoryPanel({
   login,
   updated,
   type,
+  restricted,
   history,
   onInvestigate,
   onRestrict,
+  onLiftRestriction,
 }: any) {
-  // Хуки должны вызываться всегда (без условного return до хуков)
-  const [tab, setTab] = useState<"history" | "ai" | "risk" | "files">("history");
+  const [tab, setTab] = useState<"history" | "ai" | "risk" | "files">(
+    "history"
+  );
 
-  // Сохранить ожидаемое поведение: при открытии панели возвращаемся на "История"
   useEffect(() => {
     if (open) setTab("history");
   }, [open]);
@@ -119,7 +130,10 @@ export default function VaultHistoryPanel({
 
   if (!open) return null;
 
-  const tabButton = (key: "history" | "ai" | "risk" | "files", label: string) => (
+  const tabButton = (
+    key: "history" | "ai" | "risk" | "files",
+    label: string
+  ) => (
     <button
       onClick={() => setTab(key)}
       className={`px-4 py-2 rounded-lg font-semibold text-sm transition ${
@@ -138,6 +152,7 @@ export default function VaultHistoryPanel({
         {/* HEADER */}
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-2xl font-bold">{system ?? "—"}</h2>
+
           <button onClick={onClose} className="hover:text-red-400 transition">
             <X size={26} />
           </button>
@@ -148,11 +163,22 @@ export default function VaultHistoryPanel({
           <p>
             <b className="text-white">Логин:</b> {login ?? "—"}
           </p>
+
           <p>
             <b className="text-white">Последняя ротация:</b> {updated ?? "—"}
           </p>
+
           <p>
             <b className="text-white">Тип доступа:</b> {type ?? "—"}
+          </p>
+
+          <p>
+            <b className="text-white">Статус:</b>{" "}
+            {restricted ? (
+              <span className="text-red-300">Restricted</span>
+            ) : (
+              <span className="text-green-300">Active</span>
+            )}
           </p>
         </div>
 
@@ -167,11 +193,14 @@ export default function VaultHistoryPanel({
         {/* HISTORY TAB */}
         {tab === "history" && (
           <div className="bg-[#0E1A3A] border border-[var(--border)] rounded-lg p-4 mb-6">
-            <h3 className="text-lg font-semibold text-white mb-3">Журнал действий</h3>
+            <h3 className="text-lg font-semibold text-white mb-3">
+              Журнал действий
+            </h3>
 
             {historyData.length === 0 ? (
               <div className="text-sm text-[var(--text-secondary)]">
-                Пока нет событий. История появится после действий CREATE/REVEAL/COPY и т.д.
+                Пока нет событий. История появится после действий
+                CREATE/REVEAL/COPY и т.д.
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -208,11 +237,16 @@ export default function VaultHistoryPanel({
         {/* AI TAB */}
         {tab === "ai" && (
           <div className="bg-[#0E1A3A] border border-[var(--border)] rounded-lg p-4 mb-6">
-            <h3 className="text-lg font-semibold text-[var(--neon)] mb-3">AI-анализ угроз</h3>
+            <h3 className="text-lg font-semibold text-[var(--neon)] mb-3">
+              AI-анализ угроз
+            </h3>
+
             <p className="text-[var(--text-secondary)] text-sm leading-6">
-              Этот блок v1 — интерфейс под аналитику. Реальные выводы будем строить на истории Vault
-              (REVEAL/COPY/REQUEST + контекст IP/времени).
+              Этот блок v1 — интерфейс под аналитику. Реальные выводы будем
+              строить на истории Vault (REVEAL/COPY/REQUEST + контекст
+              IP/времени).
             </p>
+
             <div className="mt-4">
               <MiniSecretActivityChart />
             </div>
@@ -222,9 +256,13 @@ export default function VaultHistoryPanel({
         {/* RISK TAB */}
         {tab === "risk" && (
           <div className="bg-[#0E1A3A] border border-[var(--border)] rounded-lg p-4 mb-6">
-            <h3 className="text-lg font-semibold text-white mb-4">Риск-скоринг</h3>
+            <h3 className="text-lg font-semibold text-white mb-4">
+              Риск-скоринг
+            </h3>
+
             <p className="text-[var(--text-secondary)] text-sm">
-              Риск-скоринг v1 будет учитывать частоту REVEAL/COPY, необычные IP/время, и отклонения по пользователю.
+              Риск-скоринг v1 будет учитывать частоту REVEAL/COPY, необычные
+              IP/время, и отклонения по пользователю.
             </p>
           </div>
         )}
@@ -232,8 +270,13 @@ export default function VaultHistoryPanel({
         {/* FILES TAB */}
         {tab === "files" && (
           <div className="bg-[#0E1A3A] border border-[var(--border)] rounded-lg p-4 mb-6">
-            <h3 className="text-lg font-semibold text-white mb-3">Файлы расследования</h3>
-            <p className="text-[var(--text-secondary)] text-sm">Пока нет материалов.</p>
+            <h3 className="text-lg font-semibold text-white mb-3">
+              Файлы расследования
+            </h3>
+
+            <p className="text-[var(--text-secondary)] text-sm">
+              Пока нет материалов.
+            </p>
           </div>
         )}
 
@@ -246,12 +289,25 @@ export default function VaultHistoryPanel({
             Открыть расследование
           </button>
 
-          <button
-            onClick={onRestrict}
-            className="bg-red-600 hover:bg-red-700 text-white px-5 py-2 rounded-lg font-semibold"
-          >
-            Ограничить доступ
-          </button>
+          {restricted ? (
+            onLiftRestriction && (
+              <button
+                onClick={onLiftRestriction}
+                className="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded-lg font-semibold"
+              >
+                Восстановить доступ
+              </button>
+            )
+          ) : (
+            onRestrict && (
+              <button
+                onClick={onRestrict}
+                className="bg-red-600 hover:bg-red-700 text-white px-5 py-2 rounded-lg font-semibold"
+              >
+                Ограничить доступ
+              </button>
+            )
+          )}
         </div>
       </div>
     </div>

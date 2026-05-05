@@ -139,6 +139,14 @@ function extractErrorMessage(error: any): string {
     return "Секрет нельзя удалить: он привязан к целевой системе. Сначала отвяжите его от Target.";
   }
 
+  if (normalized.includes("secret is not restricted")) {
+    return "Секрет сейчас не ограничен.";
+  }
+
+  if (normalized.includes("secret is restricted by soc")) {
+    return "Секрет ограничен SOC. Сначала восстановите доступ.";
+  }
+
   if (normalized.includes("secret not found")) {
     return "Секрет не найден.";
   }
@@ -200,6 +208,10 @@ async function checkGrant(secretId: number): Promise<{ has_grant: boolean }> {
 
 async function vaultRestrictSecret(secretId: number, reason: string): Promise<any> {
     return api.post(`/vault/secrets/${secretId}/restrict`, { reason });
+}
+
+async function vaultLiftRestriction(secretId: number, reason: string): Promise<any> {
+  return api.post(`/vault/secrets/${secretId}/lift-restriction`, { reason });
 }
 
 /* ============================================================
@@ -538,30 +550,73 @@ export default function Vault() {
   // === UPDATED RESTRICT LOGIC ===
   const handleRestrict = async () => {
     if (!historySecret) return;
-    const reason = prompt("Укажите причину блокировки доступа (SOC):");
-    if (!reason) return;
+
+    const reasonRaw = prompt(
+      "Укажите причину ограничения доступа (минимум 5 символов):"
+    );
+
+    if (reasonRaw === null) return;
+
+    const reason = reasonRaw.trim();
+
+    if (reason.length < 5) {
+      toast.error("Причина ограничения должна содержать минимум 5 символов.");
+      return;
+    }
 
     try {
-        // 1. Вызываем прямой API блокировки (Combat Mode)
-        await vaultRestrictSecret(historySecret.id, reason);
-        toast.success("Секрет ЗАБЛОКИРОВАН. Доступ запрещен.");
+      await vaultRestrictSecret(historySecret.id, reason);
 
-        // 2. Дублируем в инциденты (для отчетности)
-        try {
-            await api.post("/incidents/", {
-                title: "Vault: Ручная блокировка",
-                category: "vault",
-                severity: "high",
-                details: JSON.stringify({ secret_id: historySecret.id, reason }),
-            });
-        } catch { /* ignore optional incident creation error */ }
+      toast.success("Секрет ограничен. Доступ запрещён.");
 
-        // 3. Обновляем список, чтобы появился замок
-        setOpenHistory(false);
-        loadData();
+      try {
+        await api.post("/incidents/", {
+          title: "Vault: Ручное ограничение доступа",
+          category: "vault",
+          severity: "high",
+          details: JSON.stringify({
+            secret_id: historySecret.id,
+            reason,
+          }),
+        });
+      } catch {
+        // optional incident creation, UX не ломаем
+      }
 
+      setOpenHistory(false);
+      setHistorySecret(null);
+      await loadData();
     } catch (e: any) {
-        toast.error(e?.message || "Ошибка блокировки");
+      toast.error(extractErrorMessage(e) || "Ошибка ограничения доступа");
+    }
+  };
+
+  const handleLiftRestriction = async () => {
+    if (!historySecret) return;
+
+    const reasonRaw = prompt(
+      "Укажите причину восстановления доступа (минимум 5 символов):"
+    );
+
+    if (reasonRaw === null) return;
+
+    const reason = reasonRaw.trim();
+
+    if (reason.length < 5) {
+      toast.error("Причина восстановления должна содержать минимум 5 символов.");
+      return;
+    }
+
+    try {
+      await vaultLiftRestriction(historySecret.id, reason);
+
+      toast.success("Доступ к секрету восстановлен.");
+
+      setOpenHistory(false);
+      setHistorySecret(null);
+      await loadData();
+    } catch (e: any) {
+      toast.error(extractErrorMessage(e) || "Ошибка восстановления доступа");
     }
   };
 
@@ -779,9 +834,15 @@ onClick={() => openHistoryPanel(item)}
         login={historySecret?.login}
         updated={historySecret?.updated}
         type={historySecret?.type}
+        restricted={Boolean(historySecret?.restricted)}
         history={historyItems}
         onInvestigate={handleInvestigate}
-        onRestrict={handleRestrict} 
+        onRestrict={
+          hasPermission("restrict_vault_secret") ? handleRestrict : undefined
+        }
+        onLiftRestriction={
+          hasPermission("restrict_vault_secret") ? handleLiftRestriction : undefined
+        }
       />
 
       <CreateSecretModal open={openCreate} onClose={() => setOpenCreate(false)} onCreate={handleCreateSecret} />

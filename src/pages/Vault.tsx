@@ -52,6 +52,14 @@ type VaultRevealDTO = {
   value: string;
 };
 
+type VaultSecretUpdatePayload = {
+  system?: string;
+  login?: string;
+  type?: string;
+  platform?: string;
+  value?: string;
+};
+
 /* ============================================================
    Icons
 ============================================================ */
@@ -99,6 +107,22 @@ function mapDtoToRecord(dto: VaultSecretDTO): SecretRecord {
   };
 }
 
+function extractErrorMessage(error: any): string {
+  const raw = String(error?.message || error || "").trim();
+
+  if (!raw) return "Неизвестная ошибка";
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (typeof parsed?.detail === "string") return parsed.detail;
+  } catch {
+    // ignore
+  }
+
+  return raw;
+}
+
+
 /* ============================================================
    API calls
 ============================================================ */
@@ -125,6 +149,17 @@ async function vaultCopySecret(secretId: number): Promise<void> {
 
 async function vaultCreateSecret(payload: any): Promise<VaultSecretDTO> {
   return api.post<VaultSecretDTO>(`/vault/secrets`, payload);
+}
+
+async function vaultUpdateSecret(
+  secretId: number,
+  payload: VaultSecretUpdatePayload
+): Promise<VaultSecretDTO> {
+  return api.patch<VaultSecretDTO>(`/vault/secrets/${secretId}`, payload);
+}
+
+async function vaultDeleteSecret(secretId: number): Promise<{ ok: boolean }> {
+  return api.delete<{ ok: boolean }>(`/vault/secrets/${secretId}`);
 }
 
 async function vaultCreateRequest(secretId: number, reason: string): Promise<any> {
@@ -160,6 +195,16 @@ export default function Vault() {
   const [openHistory, setOpenHistory] = useState(false);
   const [historySecret, setHistorySecret] = useState<SecretRecord | null>(null);
   const [openCreate, setOpenCreate] = useState(false);
+
+  const [openEdit, setOpenEdit] = useState(false);
+  const [editItem, setEditItem] = useState<SecretRecord | null>(null);
+  const [editSystem, setEditSystem] = useState("");
+  const [editLogin, setEditLogin] = useState("");
+  const [editType, setEditType] = useState("");
+  const [editPlatform, setEditPlatform] = useState("");
+  const [editValue, setEditValue] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   const [selectedItem, setSelectedItem] = useState<SecretRecord | null>(null);
   const [pendingAction, setPendingAction] = useState<"reveal" | "copy" | null>(null);
@@ -355,6 +400,87 @@ export default function Vault() {
   }
 };
 
+  const openEditModal = (item: SecretRecord) => {
+    setEditItem(item);
+    setEditSystem(item.system);
+    setEditLogin(item.login);
+    setEditType(item.type);
+    setEditPlatform(item.platform);
+    setEditValue("");
+    setOpenEdit(true);
+  };
+
+  const closeEditModal = () => {
+    if (savingEdit) return;
+
+    setOpenEdit(false);
+    setEditItem(null);
+    setEditSystem("");
+    setEditLogin("");
+    setEditType("");
+    setEditPlatform("");
+    setEditValue("");
+  };
+
+  const handleUpdateSecret = async () => {
+    if (!editItem) return;
+
+    const system = editSystem.trim();
+    const login = editLogin.trim();
+    const type = editType.trim();
+    const platform = editPlatform.trim();
+    const value = editValue.trim();
+
+    if (!system || !login || !type || !platform) {
+      toast.error("Заполните system, login, type и platform");
+      return;
+    }
+
+    const payload: VaultSecretUpdatePayload = {
+      system,
+      login,
+      type,
+      platform,
+    };
+
+    if (value) {
+      payload.value = value;
+    }
+
+    setSavingEdit(true);
+
+    try {
+      await vaultUpdateSecret(editItem.id, payload);
+      toast.success("Секрет обновлён");
+      closeEditModal();
+      await loadData();
+    } catch (e: any) {
+      toast.error(extractErrorMessage(e) || "Ошибка обновления секрета");
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const handleDeleteSecret = async (item: SecretRecord) => {
+    const ok = window.confirm(
+      `Удалить secret #${item.id} (${item.system} / ${item.login})?\n\nЕсли секрет привязан к Target или есть requests/grants, backend заблокирует удаление.`
+    );
+
+    if (!ok) return;
+
+    setDeletingId(item.id);
+
+    try {
+      await vaultDeleteSecret(item.id);
+      toast.success("Секрет удалён");
+      await loadData();
+    } catch (e: any) {
+      toast.error(extractErrorMessage(e) || "Ошибка удаления секрета");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   const handleCreateSecret = async (newData: any) => {
     try {
       await vaultCreateSecret({
@@ -543,6 +669,27 @@ onClick={() => handleRevealOrRequest(item, "copy")}
   </Button>
 )}
 
+{hasPermission("manage_vault") && (
+  <>
+    <button
+      className="px-3 py-1 bg-[#1A243F] border border-[#1E2A45] rounded hover:bg-[#0E1A3A] text-white"
+      onClick={() => openEditModal(item)}
+      title="Редактировать metadata секрета или обновить значение"
+    >
+      Редактировать
+    </button>
+
+    <button
+      disabled={deletingId === item.id}
+      className="px-3 py-1 bg-red-600 rounded hover:bg-red-700 text-white disabled:opacity-50"
+      onClick={() => handleDeleteSecret(item)}
+      title="Удалить секрет, если он не привязан к target и не имеет requests/grants"
+    >
+      {deletingId === item.id ? "Удаление..." : "Удалить"}
+    </button>
+  </>
+)}
+
 <button
 className="px-3 py-1 bg-gray-600 rounded hover:bg-gray-700 text-white"
 onClick={() => openHistoryPanel(item)}
@@ -611,6 +758,111 @@ onClick={() => openHistoryPanel(item)}
 
       <CreateSecretModal open={openCreate} onClose={() => setOpenCreate(false)} onCreate={handleCreateSecret} />
       
+      {openEdit && editItem && (
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="w-[520px] max-w-[95vw] rounded-2xl border border-[#1E2A45] bg-[#121A33] p-6 text-white shadow-2xl">
+            <div className="mb-5">
+              <h2 className="text-xl font-bold">
+                Редактировать секрет #{editItem.id}
+              </h2>
+              <p className="mt-1 text-sm text-gray-400">
+                Можно изменить metadata секрета. Значение секрета обновляйте только при необходимости — оно не пишется в audit/history.
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="mb-1 block text-sm text-gray-300">Система</label>
+                <input
+                  value={editSystem}
+                  onChange={(e) => setEditSystem(e.target.value)}
+                  className="w-full rounded-lg border border-[#1E2A45] bg-[#0E1A3A] px-3 py-2 text-white outline-none focus:border-[#0052FF]"
+                  placeholder="server-name / system"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm text-gray-300">Логин</label>
+                <input
+                  value={editLogin}
+                  onChange={(e) => setEditLogin(e.target.value)}
+                  className="w-full rounded-lg border border-[#1E2A45] bg-[#0E1A3A] px-3 py-2 text-white outline-none focus:border-[#0052FF]"
+                  placeholder="admin / root / user"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-sm text-gray-300">Тип</label>
+                  <select
+                    value={editType}
+                    onChange={(e) => setEditType(e.target.value)}
+                    className="w-full rounded-lg border border-[#1E2A45] bg-[#0E1A3A] px-3 py-2 text-white outline-none focus:border-[#0052FF]"
+                  >
+                    <option value="password">password</option>
+                    <option value="ssh_key">ssh_key</option>
+                    <option value="access_keys">access_keys</option>
+                    <option value="api_key">api_key</option>
+                    <option value="token">token</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-sm text-gray-300">Platform / OS</label>
+                     <select
+                        value={editPlatform}
+                        onChange={(e) => setEditPlatform(e.target.value)}
+                        className="w-full rounded-lg border border-[#1E2A45] bg-[#0E1A3A] px-3 py-2 text-white outline-none focus:border-[#0052FF]"
+                      >
+                        <option value="Linux">Linux</option>
+                        <option value="Windows">Windows</option>
+                        <option value="Cisco">Cisco</option>
+                        <option value="PostgreSQL">PostgreSQL</option>
+                        <option value="MySQL">MySQL</option>
+                        <option value="AWS">AWS</option>
+                        <option value="Solaris">Solaris</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-sm text-gray-300">
+                      Новое значение секрета
+                    </label>
+                    <textarea
+                      value={editValue}
+                      onChange={(e) => setEditValue(e.target.value)}
+                      className="min-h-[90px] w-full rounded-lg border border-[#1E2A45] bg-[#0E1A3A] px-3 py-2 text-white outline-none focus:border-[#0052FF]"
+                      placeholder="Оставьте пустым, если значение секрета менять не нужно"
+                    />
+                    <div className="mt-1 text-xs text-gray-500">
+                      Plaintext value не сохраняется в audit/history. Backend фиксирует только факт обновления значения.
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-6 flex justify-end gap-3">
+                  <button
+                    onClick={closeEditModal}
+                    disabled={savingEdit}
+                    className="rounded-lg bg-[#1A243F] px-4 py-2 text-white hover:bg-[#232F55] disabled:opacity-50"
+                  >
+                    Отмена
+                  </button>
+
+                  <button
+                    onClick={handleUpdateSecret}
+                    disabled={savingEdit}
+                    className="rounded-lg bg-[#0052FF] px-4 py-2 font-semibold text-white hover:bg-[#0046DB] disabled:opacity-50"
+                  >
+                    {savingEdit ? "Сохранение..." : "Сохранить"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
       <SecureRevealModal
         open={revealOpen}
         onClose={() => { setRevealOpen(false); setRevealValue(""); }}

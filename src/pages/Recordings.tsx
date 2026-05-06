@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import Header from "../components/Header";
 import Sidebar from "../components/ui/sidebar";
@@ -22,6 +22,61 @@ type EnrichedRecording = Recording & {
   risk_score: number | null;
   risk_level: RiskLevel;
 };
+
+const RECORDINGS_RETURN_KEY = "kazpam_recordings_return_v1";
+
+type RecordingsReturnState = {
+  recordingId: number;
+  page: number;
+  rowsPerPage: number;
+  ts: number;
+};
+
+function toPositiveNumber(value: unknown): number | null {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function saveRecordingsReturnState(payload: RecordingsReturnState) {
+  try {
+    sessionStorage.setItem(RECORDINGS_RETURN_KEY, JSON.stringify(payload));
+  } catch {
+    // sessionStorage best-effort
+  }
+}
+
+function readRecordingsReturnState(): RecordingsReturnState | null {
+  try {
+    const raw = sessionStorage.getItem(RECORDINGS_RETURN_KEY);
+    if (!raw) return null;
+
+    sessionStorage.removeItem(RECORDINGS_RETURN_KEY);
+
+    const parsed = JSON.parse(raw) as Partial<RecordingsReturnState>;
+
+    const recordingId = toPositiveNumber(parsed.recordingId);
+    const page = toPositiveNumber(parsed.page);
+    const rowsPerPage = toPositiveNumber(parsed.rowsPerPage);
+    const ts = Number(parsed.ts);
+
+    if (!recordingId || !page || !rowsPerPage) return null;
+
+    // Старое состояние не используем дольше 10 минут
+    if (Number.isFinite(ts) && Date.now() - ts > 10 * 60 * 1000) {
+      return null;
+    }
+
+    return {
+      recordingId,
+      page,
+      rowsPerPage,
+      ts: Number.isFinite(ts) ? ts : Date.now(),
+    };
+  } catch {
+    sessionStorage.removeItem(RECORDINGS_RETURN_KEY);
+    return null;
+  }
+}
 
 function formatDuration(seconds: number, status: Recording["status"]) {
   if (status === "PROCESSING" && (!seconds || seconds <= 0)) {
@@ -121,12 +176,19 @@ function calculateReplayRisk(events: RecordingEvent[]) {
     if (text.includes("/etc/passwd")) score += 35;
     if (text.includes("/etc/shadow")) score += 45;
     if (text.includes("id_rsa") || text.includes("private key")) score += 35;
+
     if (text.includes("sudo su") || text === "su" || text.startsWith("su ")) {
       score += 30;
     }
+
     if (text.includes("chmod 777")) score += 25;
     if (text.includes("curl ") || text.includes("wget ")) score += 15;
-    if (text.includes("fail") || text.includes("denied") || text.includes("error")) {
+
+    if (
+      text.includes("fail") ||
+      text.includes("denied") ||
+      text.includes("error")
+    ) {
       score += 15;
     }
   }
@@ -152,6 +214,8 @@ function makeBaseRecording(recording: Recording): EnrichedRecording {
 }
 
 export default function Recordings() {
+  const initialReturnState = useMemo(() => readRecordingsReturnState(), []);
+
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] =
     useState<"ALL" | Recording["status"]>("ALL");
@@ -163,7 +227,21 @@ export default function Recordings() {
   const [error, setError] = useState("");
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
 
+  const [currentPage, setCurrentPage] = useState(
+    initialReturnState?.page ?? 1
+  );
+  const [rowsPerPage, setRowsPerPage] = useState(
+    initialReturnState?.rowsPerPage ?? 10
+  );
+  const [focusedRecordingId, setFocusedRecordingId] = useState<number | null>(
+    initialReturnState?.recordingId ?? null
+  );
+
+  const rowRefs = useRef<Record<number, HTMLTableRowElement | null>>({});
+  const filtersMountedRef = useRef(false);
+
   const navigate = useNavigate();
+  const location = useLocation();
 
   const loadRecordings = async () => {
     setLoading(true);
@@ -226,6 +304,18 @@ export default function Recordings() {
     loadRecordings();
   }, []);
 
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const idFromQuery = toPositiveNumber(params.get("recording_id"));
+
+    if (!idFromQuery) return;
+
+    setFocusedRecordingId(idFromQuery);
+
+    // Убираем query, чтобы после перезагрузки подсветка не висела постоянно
+    navigate("/recordings", { replace: true });
+  }, [location.search, navigate]);
+
   const protocolOptions = useMemo(() => {
     const values = new Set<string>();
 
@@ -286,7 +376,103 @@ export default function Recordings() {
     });
   }, [recordings, search, statusFilter, protocolFilter, riskFilter]);
 
+  const totalPages = useMemo(() => {
+    return Math.max(1, Math.ceil(filtered.length / rowsPerPage));
+  }, [filtered.length, rowsPerPage]);
+
+  const safeCurrentPage = Math.min(Math.max(currentPage, 1), totalPages);
+  const indexOfFirst = (safeCurrentPage - 1) * rowsPerPage;
+  const indexOfLast = indexOfFirst + rowsPerPage;
+  const currentRows = filtered.slice(indexOfFirst, indexOfLast);
+
+  useEffect(() => {
+    if (!filtersMountedRef.current) {
+      filtersMountedRef.current = true;
+      return;
+    }
+
+    setFocusedRecordingId(null);
+    setCurrentPage(1);
+  }, [search, statusFilter, protocolFilter, riskFilter]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
+  useEffect(() => {
+    if (!focusedRecordingId) return;
+
+    const index = filtered.findIndex(
+      (r) => Number(r.id) === focusedRecordingId
+    );
+
+    if (index === -1) return;
+
+    const targetPage = Math.floor(index / rowsPerPage) + 1;
+
+    setCurrentPage((prev) => (prev === targetPage ? prev : targetPage));
+  }, [focusedRecordingId, filtered, rowsPerPage]);
+
+  useEffect(() => {
+    if (!focusedRecordingId) return;
+
+    const el = rowRefs.current[focusedRecordingId];
+    if (!el) return;
+
+    el.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+
+    const timer = window.setTimeout(() => {
+      setFocusedRecordingId((current) =>
+        current === focusedRecordingId ? null : current
+      );
+    }, 2500);
+
+    return () => window.clearTimeout(timer);
+  }, [focusedRecordingId, currentRows]);
+
+  const clearFocus = () => {
+    setFocusedRecordingId(null);
+  };
+
+  const goToPage = (page: number) => {
+    clearFocus();
+    setCurrentPage(Math.min(Math.max(page, 1), totalPages));
+  };
+
+  const changeRowsPerPage = (value: number) => {
+    clearFocus();
+    setRowsPerPage(value);
+    setCurrentPage(1);
+  };
+
+  const openReplay = (recording: EnrichedRecording) => {
+    const recordingId = Number(recording.id);
+
+    if (!Number.isFinite(recordingId)) {
+      toast.error("Recording ID недоступен");
+      return;
+    }
+
+    saveRecordingsReturnState({
+      recordingId,
+      page: safeCurrentPage,
+      rowsPerPage,
+      ts: Date.now(),
+    });
+
+    setFocusedRecordingId(recordingId);
+    navigate(`/recordings/${recordingId}`);
+  };
+
   const handleDownload = async (recordingId: number) => {
+    clearFocus();
+    setFocusedRecordingId(recordingId);
+
     try {
       setDownloadingId(recordingId);
       await downloadRecording(recordingId);
@@ -298,13 +484,24 @@ export default function Recordings() {
     }
   };
 
-  const goToAudit = (sessionId?: number | null) => {
-    if (!sessionId) {
+  const goToAudit = (recording: EnrichedRecording) => {
+    const recordingId = Number(recording.id);
+
+    if (Number.isFinite(recordingId)) {
+      saveRecordingsReturnState({
+        recordingId,
+        page: safeCurrentPage,
+        rowsPerPage,
+        ts: Date.now(),
+      });
+    }
+
+    if (!recording.session_id) {
       toast.info("Session ID для этой записи недоступен");
       return;
     }
 
-    navigate(`/audit?session_id=${sessionId}`);
+    navigate(`/audit?session_id=${recording.session_id}`);
   };
 
   return (
@@ -419,130 +616,215 @@ export default function Recordings() {
                 Записи не найдены
               </div>
             ) : (
-              <div className="bg-[#121A33] rounded-2xl overflow-hidden border border-[#1E2A45]">
-                <table className="w-full text-white text-sm">
-                  <thead className="bg-[#1A243F] text-left text-gray-300">
-                    <tr>
-                      <th className="p-4">Recording</th>
-                      <th className="p-4">Session</th>
-                      <th className="p-4">Пользователь</th>
-                      <th className="p-4">Протокол</th>
-                      <th className="p-4">Дата</th>
-                      <th className="p-4">Длительность</th>
-                      <th className="p-4">События</th>
-                      <th className="p-4">Risk</th>
-                      <th className="p-4">Размер</th>
-                      <th className="p-4">Статус</th>
-                      <th className="p-4 text-right">Действия</th>
-                    </tr>
-                  </thead>
-
-                  <tbody>
-                    {filtered.map((r) => (
-                      <tr
-                        key={r.id}
-                        className="border-t border-[#24304F] hover:bg-[#0E1A3A] transition"
-                      >
-                        <td className="p-4 font-mono text-[#3BE3FD]">
-                          #{r.id}
-                        </td>
-
-                        <td className="p-4 font-mono">
-                          {r.session_id ? `#${r.session_id}` : "—"}
-                        </td>
-
-                        <td className="p-4">{r.user || "—"}</td>
-
-                        <td className="p-4 uppercase">
-                          <span className="inline-flex px-3 py-1 rounded-full bg-[#0E1A3A] text-gray-200 border border-[#1E2A45] text-xs font-semibold">
-                            {r.protocol || "—"}
-                          </span>
-                        </td>
-
-                        <td className="p-4 whitespace-nowrap">{r.date || "—"}</td>
-
-                        <td className="p-4">
-                          {formatDuration(r.duration, r.status)}
-                        </td>
-
-                        <td className="p-4">
-                          <div className="space-y-1 text-xs text-gray-300">
-                            <div>Всего: {r.event_count}</div>
-                            <div>Команды: {r.command_count}</div>
-                            <div>Alerts: {r.alert_count}</div>
-                          </div>
-                        </td>
-
-                        <td className="p-4">
-                          <div className="flex flex-col gap-1">
-                            <span
-                              className={`inline-flex w-fit px-3 py-1 rounded-lg text-xs font-semibold ${getRiskClass(
-                                r.risk_level
-                              )}`}
-                            >
-                              {r.risk_level}
-                            </span>
-
-                            <span className="text-xs text-gray-400">
-                              {r.risk_score === null ? "score: —" : `score: ${r.risk_score}`}
-                            </span>
-                          </div>
-                        </td>
-
-                        <td className="p-4">{formatSize(r.size, r.status)}</td>
-
-                        <td className="p-4">
-                          <span
-                            className={`inline-flex px-3 py-1 rounded-lg text-xs font-semibold ${getStatusClass(
-                              r.status
-                            )}`}
-                          >
-                            {r.status}
-                          </span>
-                        </td>
-
-                        <td className="p-4">
-                          <div className="flex justify-end gap-2">
-                            {r.status === "READY" || r.status === "PROCESSING" ? (
-                              <button
-                                onClick={() => navigate(`/recordings/${r.id}`)}
-                                className="px-3 py-2 bg-[#0052FF] hover:bg-blue-700 text-white rounded text-xs"
-                              >
-                                Replay
-                              </button>
-                            ) : (
-                              <button
-                                disabled
-                                className="px-3 py-2 bg-gray-700 text-gray-400 rounded text-xs cursor-not-allowed"
-                              >
-                                Replay
-                              </button>
-                            )}
-
-                            <button
-                              onClick={() => goToAudit(r.session_id)}
-                              disabled={!r.session_id}
-                              className="px-3 py-2 bg-[#1A243F] hover:bg-[#223055] text-white rounded text-xs disabled:bg-gray-700 disabled:text-gray-400 disabled:cursor-not-allowed"
-                            >
-                              Audit
-                            </button>
-
-                            {r.status === "READY" && (
-                              <button
-                                onClick={() => handleDownload(r.id)}
-                                disabled={downloadingId === r.id}
-                                className="px-3 py-2 bg-[#1A243F] hover:bg-[#223055] text-white rounded text-xs disabled:bg-gray-600"
-                              >
-                                {downloadingId === r.id ? "..." : "Скачать"}
-                              </button>
-                            )}
-                          </div>
-                        </td>
+              <>
+                <div className="bg-[#121A33] rounded-2xl overflow-hidden border border-[#1E2A45]">
+                  <table className="w-full text-white text-sm">
+                    <thead className="bg-[#1A243F] text-left text-gray-300">
+                      <tr>
+                        <th className="p-4">Recording</th>
+                        <th className="p-4">Session</th>
+                        <th className="p-4">Пользователь</th>
+                        <th className="p-4">Протокол</th>
+                        <th className="p-4">Дата</th>
+                        <th className="p-4">Длительность</th>
+                        <th className="p-4">События</th>
+                        <th className="p-4">Risk</th>
+                        <th className="p-4">Размер</th>
+                        <th className="p-4">Статус</th>
+                        <th className="p-4 text-right">Действия</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+
+                    <tbody>
+                      {currentRows.map((r) => {
+                        const isFocused = focusedRecordingId === Number(r.id);
+
+                        return (
+                          <tr
+                            key={r.id}
+                            ref={(el) => {
+                              rowRefs.current[Number(r.id)] = el;
+                            }}
+                            className={`border-t border-[#24304F] transition ${
+                              isFocused
+                                ? "bg-[#0B1E4A] shadow-[inset_0_0_0_2px_#0052FF]"
+                                : "hover:bg-[#0E1A3A]"
+                            }`}
+                          >
+                            <td className="p-4 font-mono text-[#3BE3FD]">
+                              #{r.id}
+                            </td>
+
+                            <td className="p-4 font-mono">
+                              {r.session_id ? `#${r.session_id}` : "—"}
+                            </td>
+
+                            <td className="p-4">{r.user || "—"}</td>
+
+                            <td className="p-4 uppercase">
+                              <span className="inline-flex px-3 py-1 rounded-full bg-[#0E1A3A] text-gray-200 border border-[#1E2A45] text-xs font-semibold">
+                                {r.protocol || "—"}
+                              </span>
+                            </td>
+
+                            <td className="p-4 whitespace-nowrap">
+                              {r.date || "—"}
+                            </td>
+
+                            <td className="p-4">
+                              {formatDuration(r.duration, r.status)}
+                            </td>
+
+                            <td className="p-4">
+                              <div className="space-y-1 text-xs text-gray-300">
+                                <div>Всего: {r.event_count}</div>
+                                <div>Команды: {r.command_count}</div>
+                                <div>Alerts: {r.alert_count}</div>
+                              </div>
+                            </td>
+
+                            <td className="p-4">
+                              <div className="flex flex-col gap-1">
+                                <span
+                                  className={`inline-flex w-fit px-3 py-1 rounded-lg text-xs font-semibold ${getRiskClass(
+                                    r.risk_level
+                                  )}`}
+                                >
+                                  {r.risk_level}
+                                </span>
+
+                                <span className="text-xs text-gray-400">
+                                  {r.risk_score === null
+                                    ? "score: —"
+                                    : `score: ${r.risk_score}`}
+                                </span>
+                              </div>
+                            </td>
+
+                            <td className="p-4">
+                              {formatSize(r.size, r.status)}
+                            </td>
+
+                            <td className="p-4">
+                              <span
+                                className={`inline-flex px-3 py-1 rounded-lg text-xs font-semibold ${getStatusClass(
+                                  r.status
+                                )}`}
+                              >
+                                {r.status}
+                              </span>
+                            </td>
+
+                            <td className="p-4">
+                              <div className="flex justify-end gap-2">
+                                {r.status === "READY" ||
+                                r.status === "PROCESSING" ? (
+                                  <button
+                                    onClick={() => openReplay(r)}
+                                    className="px-3 py-2 bg-[#0052FF] hover:bg-blue-700 text-white rounded text-xs"
+                                  >
+                                    Replay
+                                  </button>
+                                ) : (
+                                  <button
+                                    disabled
+                                    className="px-3 py-2 bg-gray-700 text-gray-400 rounded text-xs cursor-not-allowed"
+                                  >
+                                    Replay
+                                  </button>
+                                )}
+
+                                <button
+                                  onClick={() => goToAudit(r)}
+                                  disabled={!r.session_id}
+                                  className="px-3 py-2 bg-[#1A243F] hover:bg-[#223055] text-white rounded text-xs disabled:bg-gray-700 disabled:text-gray-400 disabled:cursor-not-allowed"
+                                >
+                                  Audit
+                                </button>
+
+                                {r.status === "READY" && (
+                                  <button
+                                    onClick={() => handleDownload(r.id)}
+                                    disabled={downloadingId === r.id}
+                                    className="px-3 py-2 bg-[#1A243F] hover:bg-[#223055] text-white rounded text-xs disabled:bg-gray-600"
+                                  >
+                                    {downloadingId === r.id ? "..." : "Скачать"}
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-3 px-2 text-sm text-gray-800">
+                  <div className="flex items-center gap-2">
+                    <span>Показать:</span>
+
+                    <select
+                      value={rowsPerPage}
+                      onChange={(e) =>
+                        changeRowsPerPage(Number(e.target.value))
+                      }
+                      className="rounded border bg-white px-2 py-1 text-black"
+                    >
+                      <option value={10}>10</option>
+                      <option value={25}>25</option>
+                      <option value={50}>50</option>
+                    </select>
+
+                    <span className="ml-2 text-gray-600">
+                      Строки:{" "}
+                      <b>
+                        {filtered.length === 0 ? 0 : indexOfFirst + 1}-
+                        {Math.min(indexOfLast, filtered.length)}
+                      </b>{" "}
+                      из <b>{filtered.length}</b>
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      className="px-2 py-1 text-black disabled:text-gray-400"
+                      onClick={() => goToPage(1)}
+                      disabled={safeCurrentPage === 1}
+                    >
+                      {"<<"}
+                    </button>
+
+                    <button
+                      className="px-2 py-1 text-black disabled:text-gray-400"
+                      onClick={() => goToPage(safeCurrentPage - 1)}
+                      disabled={safeCurrentPage === 1}
+                    >
+                      {"<"}
+                    </button>
+
+                    <span className="font-semibold text-gray-900">
+                      {safeCurrentPage} / {totalPages}
+                    </span>
+
+                    <button
+                      className="px-2 py-1 text-black disabled:text-gray-400"
+                      onClick={() => goToPage(safeCurrentPage + 1)}
+                      disabled={safeCurrentPage === totalPages}
+                    >
+                      {">"}
+                    </button>
+
+                    <button
+                      className="px-2 py-1 text-black disabled:text-gray-400"
+                      onClick={() => goToPage(totalPages)}
+                      disabled={safeCurrentPage === totalPages}
+                    >
+                      {">>"}
+                    </button>
+                  </div>
+                </div>
+              </>
             )}
           </div>
         </main>

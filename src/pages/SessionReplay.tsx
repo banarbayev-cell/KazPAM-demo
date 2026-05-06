@@ -398,7 +398,7 @@ export default function SessionReplay() {
         title,
         category: "session_replay",
         severity,
-        details: JSON.stringify(details),
+        details,
       });
 
       toast.success("Инцидент создан из Replay");

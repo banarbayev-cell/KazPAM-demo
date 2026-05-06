@@ -22,6 +22,7 @@ import {
   RecordingMeta,
   downloadRecording,
 } from "../api/recordings";
+import { api } from "../services/api";
 
 type EventFilter = "all" | "command" | "auth" | "alert" | "file";
 type RiskLevel = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
@@ -202,6 +203,7 @@ export default function SessionReplay() {
   const [onlyRisky, setOnlyRisky] = useState(false);
 
   const consoleRef = useRef<HTMLDivElement | null>(null);
+  const [creatingIncident, setCreatingIncident] = useState(false);
 
   const loadReplay = async () => {
     if (!recordingId || Number.isNaN(recordingId)) {
@@ -347,6 +349,66 @@ export default function SessionReplay() {
     toast.success("Переход к первому риск-событию");
   };
 
+  const handleCreateIncident = async () => {
+    if (!meta) {
+      toast.error("Данные записи недоступны");
+      return;
+    }
+
+    const event = currentEvent || null;
+    const eventLevel = event ? eventRisk(event) : stats.risk.level;
+
+    const severity =
+      eventLevel === "CRITICAL"
+        ? "critical"
+        : eventLevel === "HIGH"
+        ? "high"
+        : eventLevel === "MEDIUM"
+        ? "medium"
+        : "low";
+
+    const title = event
+      ? `Replay risk event · recording #${recordingId}`
+      : `Replay investigation · recording #${recordingId}`;
+
+    const details = {
+      source: "session_replay",
+      recording_id: recordingId,
+      session_id: meta.session_id,
+      user: meta.user,
+      protocol: meta.protocol,
+      recording_status: meta.status,
+      risk_score: stats.risk.score,
+      risk_level: stats.risk.level,
+      event: event
+        ? {
+            time: event.ts,
+            type: event.type,
+            text: event.text,
+            risk: eventLevel,
+          }
+        : null,
+      reason: "Incident created manually from Replay page",
+    };
+
+    try {
+      setCreatingIncident(true);
+
+      await api.post("/incidents/", {
+        title,
+        category: "session_replay",
+        severity,
+        details: JSON.stringify(details),
+      });
+
+      toast.success("Инцидент создан из Replay");
+    } catch (e: any) {
+      toast.error(e?.message || "Не удалось создать инцидент");
+    } finally {
+      setCreatingIncident(false);
+    }
+  };
+
   return (
     <div className="flex h-screen bg-gray-100">
       <Sidebar />
@@ -462,6 +524,14 @@ export default function SessionReplay() {
                         className="px-4 py-2 rounded bg-[#1A243F] hover:bg-[#223055] text-white text-sm"
                       >
                         Найти риск-событие
+                      </button>
+
+                      <button
+                        onClick={handleCreateIncident}
+                        disabled={creatingIncident || !meta}
+                        className="px-4 py-2 rounded bg-red-600 hover:bg-red-700 text-white text-sm disabled:bg-gray-600 disabled:cursor-not-allowed"
+                      >
+                        {creatingIncident ? "Создание..." : "Создать инцидент"}
                       </button>
                     </div>
                   </div>

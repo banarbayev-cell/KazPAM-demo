@@ -374,18 +374,18 @@ export default function SessionReplay() {
     const details = {
       source: "session_replay",
       recording_id: recordingId,
-      session_id: meta.session_id,
-      user: meta.user,
-      protocol: meta.protocol,
-      recording_status: meta.status,
+      session_id: meta?.session_id ?? null,
+      user: meta?.user ?? null,
+      protocol: meta?.protocol ?? null,
+      recording_status: meta?.status ?? null,
       risk_score: stats.risk.score,
       risk_level: stats.risk.level,
       event: event
         ? {
-            time: event.ts,
-            type: event.type,
-            text: event.text,
-            risk: eventLevel,
+            time: currentEvent.ts,
+            type: currentEvent.type,
+            text: currentEvent.text,
+            risk: eventRisk(currentEvent),
           }
         : null,
       reason: "Incident created manually from Replay page",

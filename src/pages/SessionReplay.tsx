@@ -1,4 +1,15 @@
-import { Play, Pause, Download } from "lucide-react";
+import {
+  Play,
+  Pause,
+  Download,
+  Search,
+  Copy,
+  ShieldCheck,
+  AlertTriangle,
+  RotateCcw,
+  SkipBack,
+  SkipForward,
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -11,6 +22,9 @@ import {
   RecordingMeta,
   downloadRecording,
 } from "../api/recordings";
+
+type EventFilter = "all" | "command" | "auth" | "alert" | "file";
+type RiskLevel = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 
 function formatDuration(seconds?: number | null) {
   if (!seconds || seconds <= 0) return "—";
@@ -38,18 +52,134 @@ function getStatusClass(status?: string) {
 }
 
 function getEventTypeClass(type?: string) {
-  switch (type) {
+  switch (String(type || "").toLowerCase()) {
     case "command":
-      return "text-cyan-400";
+      return "text-cyan-300";
     case "auth":
-      return "text-green-400";
+      return "text-green-300";
     case "alert":
-      return "text-red-400";
+      return "text-red-300";
     case "file":
-      return "text-purple-400";
+      return "text-purple-300";
     default:
       return "text-gray-300";
   }
+}
+
+function getEventTypeBadge(type?: string) {
+  switch (String(type || "").toLowerCase()) {
+    case "command":
+      return "bg-cyan-500/15 text-cyan-200 border border-cyan-500/30";
+    case "auth":
+      return "bg-green-500/15 text-green-200 border border-green-500/30";
+    case "alert":
+      return "bg-red-500/15 text-red-200 border border-red-500/30";
+    case "file":
+      return "bg-purple-500/15 text-purple-200 border border-purple-500/30";
+    default:
+      return "bg-gray-500/15 text-gray-200 border border-gray-500/30";
+  }
+}
+
+function eventRisk(event: RecordingEvent): RiskLevel {
+  const type = String(event.type || "").toLowerCase();
+  const text = String(event.text || "").toLowerCase();
+
+  if (type === "alert") return "HIGH";
+
+  const criticalPatterns = [
+    "rm -rf",
+    "mkfs",
+    "dd if=",
+    "/etc/shadow",
+    "passwd",
+    "useradd",
+    "net user",
+    "disable firewall",
+    "iptables -f",
+  ];
+
+  const highPatterns = [
+    "sudo",
+    "su ",
+    "chmod 777",
+    "chown",
+    "curl ",
+    "wget ",
+    "nc ",
+    "ncat",
+    "powershell",
+    "reg add",
+    "scp ",
+    "ssh ",
+  ];
+
+  if (criticalPatterns.some((p) => text.includes(p))) return "CRITICAL";
+  if (highPatterns.some((p) => text.includes(p))) return "HIGH";
+  if (type === "command") return "LOW";
+  if (type === "file") return "MEDIUM";
+  return "LOW";
+}
+
+function riskClass(level: RiskLevel) {
+  switch (level) {
+    case "CRITICAL":
+      return "bg-red-600/25 text-red-200 border border-red-500/40";
+    case "HIGH":
+      return "bg-orange-500/20 text-orange-200 border border-orange-500/40";
+    case "MEDIUM":
+      return "bg-yellow-500/20 text-yellow-200 border border-yellow-500/40";
+    default:
+      return "bg-green-500/20 text-green-200 border border-green-500/30";
+  }
+}
+
+function calculateReplayRisk(events: RecordingEvent[]) {
+  let score = 0;
+
+  for (const event of events) {
+    const level = eventRisk(event);
+
+    if (level === "CRITICAL") score += 35;
+    else if (level === "HIGH") score += 20;
+    else if (level === "MEDIUM") score += 10;
+  }
+
+  score = Math.min(100, score);
+
+  let level: RiskLevel = "LOW";
+  if (score >= 80) level = "CRITICAL";
+  else if (score >= 60) level = "HIGH";
+  else if (score >= 30) level = "MEDIUM";
+
+  return { score, level };
+}
+
+function copyTextFallback(text: string) {
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  document.execCommand("copy");
+  document.body.removeChild(textarea);
+}
+
+async function copyText(text: string) {
+  if (!text) return;
+
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+  } catch {
+    // fallback below
+  }
+
+  copyTextFallback(text);
 }
 
 export default function SessionReplay() {
@@ -67,9 +197,13 @@ export default function SessionReplay() {
   const [error, setError] = useState("");
   const [downloading, setDownloading] = useState(false);
 
+  const [search, setSearch] = useState("");
+  const [eventFilter, setEventFilter] = useState<EventFilter>("all");
+  const [onlyRisky, setOnlyRisky] = useState(false);
+
   const consoleRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
+  const loadReplay = async () => {
     if (!recordingId || Number.isNaN(recordingId)) {
       setError("Некорректный ID записи");
       setLoading(false);
@@ -79,39 +213,71 @@ export default function SessionReplay() {
     setLoading(true);
     setError("");
 
-    Promise.all([
-      fetchRecordingMeta(recordingId),
-      fetchRecordingEvents(recordingId),
-    ])
-      .then(([metaData, eventsData]) => {
-        setMeta(metaData);
-        setEvents(eventsData.events || []);
-        setCursor(0);
-        setPlaying(false);
-      })
-      .catch(() => {
-        setError("Не удалось загрузить replay сессии");
-      })
-      .finally(() => setLoading(false));
-  }, [recordingId]);
+    try {
+      const [metaData, eventsData] = await Promise.all([
+        fetchRecordingMeta(recordingId),
+        fetchRecordingEvents(recordingId),
+      ]);
+
+      setMeta(metaData);
+      setEvents(Array.isArray(eventsData.events) ? eventsData.events : []);
+      setCursor(0);
+      setPlaying(false);
+    } catch {
+      setError("Не удалось загрузить replay сессии");
+      setMeta(null);
+      setEvents([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    if (!playing || events.length === 0) return;
+    void loadReplay();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recordingId]);
+
+  const filteredEvents = useMemo(() => {
+    const q = search.trim().toLowerCase();
+
+    return events.filter((event) => {
+      const type = String(event.type || "").toLowerCase();
+      const text = String(event.text || "").toLowerCase();
+      const ts = String(event.ts || "").toLowerCase();
+
+      const matchesType = eventFilter === "all" ? true : type === eventFilter;
+      const matchesSearch = !q || text.includes(q) || type.includes(q) || ts.includes(q);
+
+      const risk = eventRisk(event);
+      const matchesRisk = !onlyRisky || risk === "HIGH" || risk === "CRITICAL";
+
+      return matchesType && matchesSearch && matchesRisk;
+    });
+  }, [events, search, eventFilter, onlyRisky]);
+
+  useEffect(() => {
+    setPlaying(false);
+    setCursor(0);
+  }, [search, eventFilter, onlyRisky]);
+
+  useEffect(() => {
+    if (!playing || filteredEvents.length === 0) return;
 
     const delay = Math.max(150, 800 / speed);
 
     const timer = setInterval(() => {
       setCursor((prev) => {
-        if (prev >= events.length - 1) {
+        if (prev >= filteredEvents.length - 1) {
           setPlaying(false);
           return prev;
         }
+
         return prev + 1;
       });
     }, delay);
 
     return () => clearInterval(timer);
-  }, [playing, speed, events.length]);
+  }, [playing, speed, filteredEvents.length]);
 
   useEffect(() => {
     if (!consoleRef.current) return;
@@ -119,11 +285,32 @@ export default function SessionReplay() {
   }, [cursor]);
 
   const visibleEvents = useMemo(() => {
-    if (events.length === 0) return [];
-    return events.slice(0, cursor + 1);
-  }, [events, cursor]);
+    if (filteredEvents.length === 0) return [];
+    return filteredEvents.slice(0, cursor + 1);
+  }, [filteredEvents, cursor]);
 
-  const currentEvent = events[cursor] ?? null;
+  const currentEvent = filteredEvents[cursor] ?? null;
+
+  const stats = useMemo(() => {
+    const commandCount = events.filter((e) => String(e.type).toLowerCase() === "command").length;
+    const authCount = events.filter((e) => String(e.type).toLowerCase() === "auth").length;
+    const alertCount = events.filter((e) => String(e.type).toLowerCase() === "alert").length;
+    const fileCount = events.filter((e) => String(e.type).toLowerCase() === "file").length;
+    const riskyCount = events.filter((e) => {
+      const level = eventRisk(e);
+      return level === "HIGH" || level === "CRITICAL";
+    }).length;
+
+    return {
+      total: events.length,
+      commandCount,
+      authCount,
+      alertCount,
+      fileCount,
+      riskyCount,
+      risk: calculateReplayRisk(events),
+    };
+  }, [events]);
 
   const handleDownload = async () => {
     try {
@@ -135,6 +322,29 @@ export default function SessionReplay() {
     } finally {
       setDownloading(false);
     }
+  };
+
+  const handleCopyCurrentEvent = async () => {
+    if (!currentEvent) return;
+
+    await copyText(`[${currentEvent.ts}] ${currentEvent.type}: ${currentEvent.text}`);
+    toast.success("Текущее событие скопировано");
+  };
+
+  const jumpToFirstRisk = () => {
+    const idx = filteredEvents.findIndex((event) => {
+      const level = eventRisk(event);
+      return level === "HIGH" || level === "CRITICAL";
+    });
+
+    if (idx === -1) {
+      toast.info("Риск-события не найдены");
+      return;
+    }
+
+    setPlaying(false);
+    setCursor(idx);
+    toast.success("Переход к первому риск-событию");
   };
 
   return (
@@ -152,11 +362,18 @@ export default function SessionReplay() {
                   Replay сессии
                 </h1>
                 <p className="text-sm text-gray-600 mt-1">
-                  Просмотр событий записанной привилегированной сессии
+                  Enterprise replay: события, команды, риск-индикаторы, фильтры и скачивание записи
                 </p>
               </div>
 
               <div className="flex items-center gap-3">
+                <button
+                  onClick={loadReplay}
+                  className="px-4 py-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-900 rounded"
+                >
+                  Обновить
+                </button>
+
                 <button
                   onClick={handleDownload}
                   disabled={downloading || !meta || meta.status !== "READY"}
@@ -185,38 +402,39 @@ export default function SessionReplay() {
               </div>
             ) : (
               <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                  <StatCard label="Всего событий" value={stats.total} />
+                  <StatCard label="Команды" value={stats.commandCount} />
+                  <StatCard label="Auth" value={stats.authCount} />
+                  <StatCard label="Alerts" value={stats.alertCount} />
+                  <div className="rounded-xl bg-[#121A33] border border-[#1E2A45] p-4">
+                    <div className="text-sm text-gray-400">Risk score</div>
+                    <div className="flex items-center justify-between mt-2">
+                      <div className="text-2xl font-bold text-white">
+                        {stats.risk.score}
+                      </div>
+                      <span className={`px-3 py-1 rounded-lg text-xs font-semibold ${riskClass(stats.risk.level)}`}>
+                        {stats.risk.level}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
                   <div className="bg-[#121A33] rounded-xl p-6 text-white">
-                    <h2 className="text-lg font-semibold mb-4">
-                      Информация о записи
-                    </h2>
+                    <div className="flex items-center gap-2 mb-4">
+                      <ShieldCheck size={18} className="text-green-300" />
+                      <h2 className="text-lg font-semibold">Информация о записи</h2>
+                    </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-                      <div>
-                        <div className="text-gray-400 mb-1">Пользователь</div>
-                        <div>{meta?.user || "—"}</div>
-                      </div>
-
-                      <div>
-                        <div className="text-gray-400 mb-1">Протокол</div>
-                        <div className="uppercase">{meta?.protocol || "—"}</div>
-                      </div>
-
-                      <div>
-                        <div className="text-gray-400 mb-1">Начало</div>
-                        <div>{meta?.start_time || "—"}</div>
-                      </div>
-
-                      <div>
-                        <div className="text-gray-400 mb-1">Окончание</div>
-                        <div>{meta?.end_time || "—"}</div>
-                      </div>
-
-                      <div>
-                        <div className="text-gray-400 mb-1">Длительность</div>
-                        <div>{formatDuration(meta?.duration)}</div>
-                      </div>
-
+                      <InfoRow label="Recording ID" value={`#${meta?.id ?? recordingId}`} />
+                      <InfoRow label="Session ID" value={meta?.session_id ? `#${meta.session_id}` : "—"} />
+                      <InfoRow label="Пользователь" value={meta?.user || "—"} />
+                      <InfoRow label="Протокол" value={(meta?.protocol || "—").toUpperCase()} />
+                      <InfoRow label="Начало" value={meta?.start_time || "—"} />
+                      <InfoRow label="Окончание" value={meta?.end_time || "—"} />
+                      <InfoRow label="Длительность" value={formatDuration(meta?.duration)} />
                       <div>
                         <div className="text-gray-400 mb-1">Статус</div>
                         <span
@@ -228,39 +446,72 @@ export default function SessionReplay() {
                         </span>
                       </div>
                     </div>
+
+                    <div className="flex flex-wrap gap-2 mt-5">
+                      {meta?.session_id && (
+                        <button
+                          onClick={() => navigate(`/audit?session_id=${meta.session_id}`)}
+                          className="px-4 py-2 rounded bg-[#0052FF] hover:bg-blue-700 text-white text-sm"
+                        >
+                          Открыть Audit этой сессии
+                        </button>
+                      )}
+
+                      <button
+                        onClick={jumpToFirstRisk}
+                        className="px-4 py-2 rounded bg-[#1A243F] hover:bg-[#223055] text-white text-sm"
+                      >
+                        Найти риск-событие
+                      </button>
+                    </div>
                   </div>
 
                   <div className="bg-[#121A33] rounded-xl p-6 text-white">
-                    <h2 className="text-lg font-semibold mb-4">
-                      Текущее событие
-                    </h2>
+                    <div className="flex items-center gap-2 mb-4">
+                      <AlertTriangle size={18} className="text-yellow-300" />
+                      <h2 className="text-lg font-semibold">Текущее событие</h2>
+                    </div>
 
                     {currentEvent ? (
                       <div className="space-y-4 text-sm">
-                        <div>
-                          <div className="text-gray-400 mb-1">Время</div>
-                          <div>{currentEvent.ts}</div>
-                        </div>
+                        <InfoRow label="Время" value={currentEvent.ts} />
 
                         <div>
                           <div className="text-gray-400 mb-1">Тип</div>
-                          <div className={getEventTypeClass(currentEvent.type)}>
+                          <span className={`inline-flex px-3 py-1 rounded-lg text-xs font-semibold ${getEventTypeBadge(currentEvent.type)}`}>
                             {currentEvent.type}
-                          </div>
+                          </span>
+                        </div>
+
+                        <div>
+                          <div className="text-gray-400 mb-1">Risk</div>
+                          <span className={`inline-flex px-3 py-1 rounded-lg text-xs font-semibold ${riskClass(eventRisk(currentEvent))}`}>
+                            {eventRisk(currentEvent)}
+                          </span>
                         </div>
 
                         <div>
                           <div className="text-gray-400 mb-1">Содержимое</div>
-                          <div className="break-all">{currentEvent.text}</div>
+                          <div className="rounded-lg bg-[#0E1A3A] border border-[#1E2A45] p-3 break-all font-mono text-xs">
+                            {currentEvent.text}
+                          </div>
                         </div>
 
-                        <div>
-                          <div className="text-gray-400 mb-1">Позиция</div>
-                          <div>
-                            {events.length === 0
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-gray-300">
+                            Позиция:{" "}
+                            {filteredEvents.length === 0
                               ? "0 / 0"
-                              : `${cursor + 1} / ${events.length}`}
+                              : `${cursor + 1} / ${filteredEvents.length}`}
                           </div>
+
+                          <button
+                            onClick={handleCopyCurrentEvent}
+                            className="px-3 py-2 rounded bg-[#1A243F] hover:bg-[#223055] text-white inline-flex items-center gap-2"
+                          >
+                            <Copy size={15} />
+                            Копировать
+                          </button>
                         </div>
                       </div>
                     ) : (
@@ -273,9 +524,42 @@ export default function SessionReplay() {
 
                 <div className="bg-[#121A33] rounded-xl p-6 text-white">
                   <div className="flex flex-wrap items-center gap-3 mb-4">
+                    <div className="relative flex-1 min-w-[260px]">
+                      <Search size={16} className="absolute left-3 top-3 text-gray-400" />
+                      <input
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                        placeholder="Поиск по событиям replay..."
+                        className="w-full pl-9 pr-3 py-2 bg-[#0E1A3A] border border-[#1E2A45] rounded text-white outline-none focus:border-[#0052FF]"
+                      />
+                    </div>
+
+                    <select
+                      value={eventFilter}
+                      onChange={(e) => setEventFilter(e.target.value as EventFilter)}
+                      className="px-3 py-2 bg-[#0E1A3A] text-white rounded border border-[#1E2A45] outline-none"
+                    >
+                      <option value="all">Все события</option>
+                      <option value="command">command</option>
+                      <option value="auth">auth</option>
+                      <option value="alert">alert</option>
+                      <option value="file">file</option>
+                    </select>
+
+                    <label className="flex items-center gap-2 text-sm text-gray-300 select-none">
+                      <input
+                        type="checkbox"
+                        checked={onlyRisky}
+                        onChange={(e) => setOnlyRisky(e.target.checked)}
+                      />
+                      Только риск-события
+                    </label>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-3 mb-4">
                     <button
                       onClick={() => setPlaying(!playing)}
-                      disabled={events.length === 0}
+                      disabled={filteredEvents.length === 0}
                       className="p-3 bg-[#0052FF] text-white rounded disabled:bg-gray-600 disabled:cursor-not-allowed"
                     >
                       {playing ? <Pause size={18} /> : <Play size={18} />}
@@ -286,8 +570,9 @@ export default function SessionReplay() {
                         setPlaying(false);
                         setCursor(0);
                       }}
-                      className="px-4 py-2 bg-[#1A243F] text-white rounded hover:bg-[#223055]"
+                      className="px-4 py-2 bg-[#1A243F] text-white rounded hover:bg-[#223055] inline-flex items-center gap-2"
                     >
+                      <RotateCcw size={16} />
                       В начало
                     </button>
 
@@ -296,8 +581,9 @@ export default function SessionReplay() {
                         setPlaying(false);
                         setCursor((prev) => Math.max(prev - 1, 0));
                       }}
-                      className="px-4 py-2 bg-[#1A243F] text-white rounded hover:bg-[#223055]"
+                      className="px-4 py-2 bg-[#1A243F] text-white rounded hover:bg-[#223055] inline-flex items-center gap-2"
                     >
+                      <SkipBack size={16} />
                       Назад
                     </button>
 
@@ -305,11 +591,12 @@ export default function SessionReplay() {
                       onClick={() => {
                         setPlaying(false);
                         setCursor((prev) =>
-                          Math.min(prev + 1, Math.max(events.length - 1, 0))
+                          Math.min(prev + 1, Math.max(filteredEvents.length - 1, 0))
                         );
                       }}
-                      className="px-4 py-2 bg-[#1A243F] text-white rounded hover:bg-[#223055]"
+                      className="px-4 py-2 bg-[#1A243F] text-white rounded hover:bg-[#223055] inline-flex items-center gap-2"
                     >
+                      <SkipForward size={16} />
                       Вперёд
                     </button>
 
@@ -321,20 +608,19 @@ export default function SessionReplay() {
                       <option value={1}>1x</option>
                       <option value={2}>2x</option>
                       <option value={4}>4x</option>
+                      <option value={8}>8x</option>
                     </select>
 
                     <div className="text-sm text-gray-300 ml-auto">
-                      {events.length === 0
-                        ? "0 / 0"
-                        : `${cursor + 1} / ${events.length}`}
+                      Показано: {filteredEvents.length} из {events.length}
                     </div>
                   </div>
 
                   <input
                     type="range"
                     min={0}
-                    max={Math.max(events.length - 1, 0)}
-                    value={Math.min(cursor, Math.max(events.length - 1, 0))}
+                    max={Math.max(filteredEvents.length - 1, 0)}
+                    value={Math.min(cursor, Math.max(filteredEvents.length - 1, 0))}
                     onChange={(e) => {
                       setPlaying(false);
                       setCursor(Number(e.target.value));
@@ -344,31 +630,44 @@ export default function SessionReplay() {
                 </div>
 
                 <div className="bg-[#121A33] rounded-2xl overflow-hidden">
-                  <div className="px-6 py-4 bg-[#1A243F] text-gray-200 font-semibold">
-                    Replay Console
+                  <div className="px-6 py-4 bg-[#1A243F] text-gray-200 font-semibold flex items-center justify-between">
+                    <span>Replay Console</span>
+                    <span className="text-xs text-gray-400">
+                      {visibleEvents.length} / {filteredEvents.length}
+                    </span>
                   </div>
 
                   <div
                     ref={consoleRef}
-                    className="h-[420px] overflow-y-auto bg-[#0E1A3A] text-green-400 font-mono text-sm"
+                    className="h-[460px] overflow-y-auto bg-[#0E1A3A] text-green-300 font-mono text-sm"
                   >
                     {visibleEvents.length === 0 ? (
                       <div className="p-6 text-gray-400">
                         Нет событий для воспроизведения
                       </div>
                     ) : (
-                      visibleEvents.map((e, i) => (
-                        <div
-                          key={`${e.ts}-${i}`}
-                          className="px-6 py-3 border-t border-[#24304F] hover:bg-[#0A0F24] transition"
-                        >
-                          <span className="text-gray-400">[{e.ts}]</span>{" "}
-                          <span className={getEventTypeClass(e.type)}>
-                            {e.type}
-                          </span>{" "}
-                          <span>{e.text}</span>
-                        </div>
-                      ))
+                      visibleEvents.map((event, index) => {
+                        const level = eventRisk(event);
+                        const risky = level === "HIGH" || level === "CRITICAL";
+
+                        return (
+                          <div
+                            key={`${event.ts}-${index}`}
+                            className={`px-6 py-3 border-t border-[#24304F] hover:bg-[#0A0F24] transition ${
+                              risky ? "bg-red-500/5" : ""
+                            }`}
+                          >
+                            <span className="text-gray-400">[{event.ts}]</span>{" "}
+                            <span className={getEventTypeClass(event.type)}>
+                              {event.type}
+                            </span>{" "}
+                            <span className={`ml-2 px-2 py-0.5 rounded text-[10px] ${riskClass(level)}`}>
+                              {level}
+                            </span>{" "}
+                            <span className="break-all">{event.text}</span>
+                          </div>
+                        );
+                      })
                     )}
                   </div>
                 </div>
@@ -377,6 +676,36 @@ export default function SessionReplay() {
           </div>
         </main>
       </div>
+    </div>
+  );
+}
+
+function StatCard({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | number;
+}) {
+  return (
+    <div className="rounded-xl bg-[#121A33] border border-[#1E2A45] p-4">
+      <div className="text-sm text-gray-400">{label}</div>
+      <div className="text-2xl font-bold text-white mt-2">{value}</div>
+    </div>
+  );
+}
+
+function InfoRow({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | number | null | undefined;
+}) {
+  return (
+    <div>
+      <div className="text-gray-400 mb-1">{label}</div>
+      <div className="text-gray-100 break-all">{value ?? "—"}</div>
     </div>
   );
 }

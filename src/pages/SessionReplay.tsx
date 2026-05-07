@@ -355,44 +355,40 @@ export default function SessionReplay() {
       return;
     }
 
-    const event = currentEvent || null;
-    const eventLevel = event ? eventRisk(event) : stats.risk.level;
-
-    const severity =
-      eventLevel === "CRITICAL"
-        ? "CRITICAL"
-        : eventLevel === "HIGH"
-        ? "HIGH"
-        : eventLevel === "MEDIUM"
-        ? "MEDIUM"
-        : "LOW";
-
-    const title = event
-      ? `Replay risk event · recording #${recordingId}`
-      : `Replay investigation · recording #${recordingId}`;
-
-    const details = {
-      source: "session_replay",
-      recording_id: recordingId,
-      session_id: meta?.session_id ?? null,
-      user: meta?.user ?? null,
-      protocol: meta?.protocol ?? null,
-      recording_status: meta?.status ?? null,
-      risk_score: stats.risk.score,
-      risk_level: stats.risk.level,
-      event: event
-        ? {
-            time: currentEvent.ts,
-            type: currentEvent.type,
-            text: currentEvent.text,
-            risk: eventRisk(currentEvent),
-          }
-        : null,
-      reason: "Incident created manually from Replay page",
+    const riskRank: Record<RiskLevel, number> = {
+      LOW: 1,
+      MEDIUM: 2,
+      HIGH: 3,
+      CRITICAL: 4,
     };
 
-    try {
-      setCreatingIncident(true);
+    const firstRiskEvent =
+      events.find((event) => {
+        const level = eventRisk(event);
+        return level === "HIGH" || level === "CRITICAL";
+      }) || null;
+
+    const currentEventLevel = currentEvent ? eventRisk(currentEvent) : null;
+
+    const selectedEvent =
+      currentEvent &&
+      currentEventLevel &&
+      (currentEventLevel === "HIGH" || currentEventLevel === "CRITICAL")
+        ? currentEvent
+        : firstRiskEvent || currentEvent || null;
+
+    const selectedEventLevel = selectedEvent
+      ? eventRisk(selectedEvent)
+      : stats.risk.level;
+
+    const severity =
+      riskRank[stats.risk.level] >= riskRank[selectedEventLevel]
+        ? stats.risk.level
+        : selectedEventLevel;
+
+    const title = selectedEvent
+      ? `Replay ${severity} event · recording #${recordingId}`
+      : `Replay investigation · recording #${recordingId}`;
 
     const ipFromReplay =
       events
@@ -403,25 +399,50 @@ export default function SessionReplay() {
         )
         .find(Boolean) || "0.0.0.0";
 
-    const targetUser = String(meta?.user || "unknown");
-    const targetSystem = `${String(meta?.protocol || "session").toUpperCase()} replay #${recordingId}`;
+    const targetUser = String(meta.user || "unknown");
+    const targetSystem = `${String(meta.protocol || "session").toUpperCase()} replay #${recordingId}`;
 
-    await api.post("/incidents/", {
-      title,
-      summary: title,
-      description: "Incident created manually from Replay page",
-
-      user: targetUser,
-      target_user: targetUser,
-      system: targetSystem,
-      ip: ipFromReplay,
-
-      severity,
+    const details = {
+      source: "session_replay",
+      recording_id: recordingId,
+      session_id: meta.session_id ?? null,
+      user: meta.user ?? null,
+      protocol: meta.protocol ?? null,
+      recording_status: meta.status ?? null,
       risk_score: stats.risk.score,
-      correlation_id: `replay-${recordingId}-${Date.now()}`,
+      risk_level: stats.risk.level,
+      selected_event_risk: selectedEventLevel,
+      incident_severity: severity,
+      event: selectedEvent
+        ? {
+            time: selectedEvent.ts,
+            type: selectedEvent.type,
+            text: selectedEvent.text,
+            risk: selectedEventLevel,
+          }
+        : null,
+      reason: "Incident created manually from Replay page",
+    };
 
-      details,
-    });
+    try {
+      setCreatingIncident(true);
+
+      await api.post("/incidents/", {
+        title,
+        summary: title,
+        description: "Incident created manually from Replay page",
+
+        user: targetUser,
+        target_user: targetUser,
+        system: targetSystem,
+        ip: ipFromReplay,
+
+        severity,
+        risk_score: stats.risk.score,
+        correlation_id: `replay-${recordingId}-${Date.now()}`,
+
+        details,
+      });
 
       toast.success("Инцидент создан из Replay");
     } catch (e: any) {

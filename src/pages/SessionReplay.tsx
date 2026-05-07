@@ -394,12 +394,34 @@ export default function SessionReplay() {
     try {
       setCreatingIncident(true);
 
-      await api.post("/incidents/", {
-        title,
-        category: "session",
-        severity,
-        details,
-      });
+    const ipFromReplay =
+      events
+        .map((e) =>
+          String(e.text || "").match(
+            /\b(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}\b/
+          )?.[0]
+        )
+        .find(Boolean) || "0.0.0.0";
+
+    const targetUser = String(meta?.user || "unknown");
+    const targetSystem = `${String(meta?.protocol || "session").toUpperCase()} replay #${recordingId}`;
+
+    await api.post("/incidents/", {
+      title,
+      summary: title,
+      description: "Incident created manually from Replay page",
+
+      user: targetUser,
+      target_user: targetUser,
+      system: targetSystem,
+      ip: ipFromReplay,
+
+      severity,
+      risk_score: stats.risk.score,
+      correlation_id: `replay-${recordingId}-${Date.now()}`,
+
+      details,
+    });
 
       toast.success("Инцидент создан из Replay");
     } catch (e: any) {

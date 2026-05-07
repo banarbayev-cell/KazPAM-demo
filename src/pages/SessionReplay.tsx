@@ -360,12 +360,12 @@ export default function SessionReplay() {
 
     const severity =
       eventLevel === "CRITICAL"
-        ? "critical"
+        ? "CRITICAL"
         : eventLevel === "HIGH"
-        ? "high"
+        ? "HIGH"
         : eventLevel === "MEDIUM"
-        ? "medium"
-        : "low";
+        ? "MEDIUM"
+        : "LOW";
 
     const title = event
       ? `Replay risk event · recording #${recordingId}`
@@ -396,7 +396,7 @@ export default function SessionReplay() {
 
       await api.post("/incidents/", {
         title,
-        category: "session_replay",
+        category: "session",
         severity,
         details,
       });

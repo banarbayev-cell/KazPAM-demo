@@ -32,6 +32,52 @@ function copy(value: string) {
   navigator.clipboard.writeText(value);
 }
 
+function parseMaybeJson(value: any): any {
+  if (value === null || value === undefined) return null;
+
+  if (typeof value === "object") {
+    return value;
+  }
+
+  if (typeof value !== "string") {
+    return value;
+  }
+
+  try {
+    const first = JSON.parse(value);
+
+    if (typeof first === "string") {
+      try {
+        return JSON.parse(first);
+      } catch {
+        return first;
+      }
+    }
+
+    return first;
+  } catch {
+    return value;
+  }
+}
+
+function prettyDetails(details: any) {
+  const parsed = parseMaybeJson(details);
+
+  if (parsed === null || parsed === undefined) {
+    return "";
+  }
+
+  if (typeof parsed === "string") {
+    return parsed;
+  }
+
+  try {
+    return JSON.stringify(parsed, null, 2);
+  } catch {
+    return String(parsed);
+  }
+}
+
 function pivot(path: string, value: string, navigate: (path: string) => void) {
   if (!value || value === "—") return;
   navigate(`${path}?q=${encodeURIComponent(value)}`);
@@ -907,7 +953,7 @@ export default function IncidentDetails() {
 
                 {a.details && (
                   <pre className="mt-2 text-xs text-gray-300 bg-[#121A33] border border-[#1E2A45] rounded p-2 overflow-auto">
-{JSON.stringify(a.details, null, 2)}
+                {prettyDetails(a.details)}
                   </pre>
                 )}
               </li>

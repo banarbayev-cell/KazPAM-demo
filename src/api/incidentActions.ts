@@ -9,18 +9,33 @@ export type IncidentAction = {
   details?: any;
 };
 
-const RELATED_PREFIXES = [
-  "INCIDENT_",
-  "SOC_",
-  "LOGIN_",
-  "PASSWORD_",
-  "AUTH_",
-  "MFA_",
-  "SESSION_",
-  "RDP_SESSION_",
-  "SSH_SESSION_",
-  "BREAK_GLASS_",
-];
+function parseMaybeJson(value: any): any {
+  if (value === null || value === undefined) return null;
+
+  if (typeof value === "object") {
+    return value;
+  }
+
+  if (typeof value !== "string") {
+    return value;
+  }
+
+  try {
+    const first = JSON.parse(value);
+
+    if (typeof first === "string") {
+      try {
+        return JSON.parse(first);
+      } catch {
+        return first;
+      }
+    }
+
+    return first;
+  } catch {
+    return value;
+  }
+}
 
 function stringifyDetails(details: any) {
   if (typeof details === "string") {
@@ -35,6 +50,24 @@ function stringifyDetails(details: any) {
 }
 
 function detailsContainIncidentId(details: any, incidentId: number) {
+  const parsed = parseMaybeJson(details);
+
+  if (parsed && typeof parsed === "object") {
+    const rawIncidentId =
+      parsed.incident_id ??
+      parsed.incidentId ??
+      parsed.incident?.id ??
+      parsed.payload?.incident_id ??
+      parsed.details?.incident_id ??
+      null;
+
+    const n = Number(rawIncidentId);
+
+    if (Number.isFinite(n) && n === incidentId) {
+      return true;
+    }
+  }
+
   const text = stringifyDetails(details);
 
   return (
@@ -47,17 +80,9 @@ function detailsContainIncidentId(details: any, incidentId: number) {
   );
 }
 
-function isIncidentRelatedAction(actionRaw: string) {
-  const action = String(actionRaw || "").toUpperCase();
-
-  if (action === "USER.PASSWORD_RESET") {
-    return true;
-  }
-
-  return RELATED_PREFIXES.some((prefix) => action.startsWith(prefix));
-}
-
-export async function fetchIncidentActions(incidentId: number) {
+export async function fetchIncidentActions(
+  incidentId: number
+): Promise<IncidentAction[]> {
   const token = useAuth.getState().token;
   if (!token) throw new Error("No auth token");
 
@@ -74,12 +99,7 @@ export async function fetchIncidentActions(incidentId: number) {
   const data = (await res.json()) as IncidentAction[];
 
   return (Array.isArray(data) ? data : [])
-    .filter((item) => {
-      return (
-        detailsContainIncidentId(item?.details, incidentId) ||
-        isIncidentRelatedAction(item?.action)
-      );
-    })
+    .filter((item) => detailsContainIncidentId(item?.details, incidentId))
     .sort((a, b) => {
       return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
     });

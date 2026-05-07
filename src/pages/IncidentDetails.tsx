@@ -55,6 +55,32 @@ function asnFromIp(ip?: string) {
   return "Unknown";
 }
 
+function toPositiveNumber(value: unknown): number | null {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function safeParseDetails(details: any): Record<string, any> {
+  if (!details) return {};
+
+  if (typeof details === "object" && !Array.isArray(details)) {
+    return details;
+  }
+
+  if (typeof details === "string") {
+    try {
+      const parsed = JSON.parse(details);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? parsed
+        : {};
+    } catch {
+      return {};
+    }
+  }
+
+  return {};
+}
+
 function getEventTimeRaw(item: any) {
   return (
     item?.event_time ||
@@ -265,6 +291,36 @@ export default function IncidentDetails() {
 
     return out;
   }, [actions, timelineV3, incident]);
+  
+  const replayContext = useMemo(() => {
+    const details = safeParseDetails(incident?.details);
+
+    const recordingId = toPositiveNumber(
+      details.recording_id ?? details.recordingId
+    );
+
+    const sessionId = toPositiveNumber(
+      details.session_id ?? incidentContext?.session_id
+    );
+
+    const source = String(details.source || "").toLowerCase();
+    const correlationId = String(incident?.correlation_id || "").toLowerCase();
+    const system = String(incident?.system || "").toLowerCase();
+
+    const isReplay =
+      source === "session_replay" ||
+      correlationId.startsWith("replay-") ||
+      system.includes("replay");
+
+    return {
+      isReplay,
+      recordingId,
+      sessionId,
+      riskLevel: details.risk_level || details.incident_severity || null,
+      selectedEventRisk: details.selected_event_risk || null,
+      event: details.event || null,
+    };
+  }, [incident, incidentContext]);
 
   const ioc = useMemo(() => {
     if (!incident) {
@@ -324,6 +380,25 @@ export default function IncidentDetails() {
           </div>
         </div>
 
+        <div className="flex flex-wrap justify-end gap-2">
+          {replayContext.isReplay && replayContext.recordingId && (
+            <button
+              onClick={() => navigate(`/recordings/${replayContext.recordingId}`)}
+              className="px-4 py-2 rounded-lg border border-[#1E2A45] bg-[#0052FF] text-sm text-white hover:bg-blue-700"
+            >
+              Открыть Replay #{replayContext.recordingId}
+            </button>
+          )}
+
+        {replayContext.sessionId && (
+          <button
+            onClick={() => navigate(`/audit?session_id=${replayContext.sessionId}`)}
+            className="px-4 py-2 rounded-lg border border-[#1E2A45] bg-[#121A33] text-sm text-white hover:bg-[#1A243F]"
+          >
+            Audit session #{replayContext.sessionId}
+          </button>
+        )}
+
         <button
           onClick={() => navigate("/soc/incidents")}
           className="px-4 py-2 rounded-lg border border-[#D7DEED] bg-white text-sm text-[#0A0F24] hover:bg-gray-50"
@@ -331,6 +406,7 @@ export default function IncidentDetails() {
           ← Back to Incidents
         </button>
       </div>
+    </div>
 
       <div className="border border-[#1E2A45] rounded-xl bg-[#121A33] p-6 grid grid-cols-2 gap-6">
         <div>
@@ -427,6 +503,93 @@ export default function IncidentDetails() {
         <div className="text-sm text-gray-400 font-semibold">
           Indicators of Compromise
         </div>
+
+      {replayContext.isReplay && (
+        <div className="border border-[#1E2A45] rounded-xl bg-[#121A33] p-6 space-y-4">
+          <div className="text-sm text-gray-400 font-semibold">
+            Replay Evidence
+        </div>
+
+        <div className="grid grid-cols-3 gap-4 text-sm">
+          <div>
+            <div className="text-gray-400">Recording ID</div>
+            <div className="text-white">
+              {replayContext.recordingId ? `#${replayContext.recordingId}` : "—"}
+            </div>
+          </div>
+
+        <div>
+          <div className="text-gray-400">Session ID</div>
+          <div className="text-white">
+            {replayContext.sessionId ? `#${replayContext.sessionId}` : "—"}
+          </div>
+        </div>
+
+        <div>
+          <div className="text-gray-400">Replay risk</div>
+          <div className="text-white">
+            {replayContext.riskLevel || replayContext.selectedEventRisk || "—"}
+          </div>
+        </div>
+      </div>
+
+      {replayContext.event && (
+        <div className="rounded-lg border border-[#1E2A45] bg-[#0E1A3A] p-4 text-sm">
+          <div className="text-gray-400 mb-2">Selected replay event</div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+              <div className="text-gray-400">Time</div>
+              <div className="text-white break-all">
+                {replayContext.event.time || "—"}
+              </div>
+            </div>
+
+            <div>
+              <div className="text-gray-400">Type</div>
+              <div className="text-white break-all">
+                {replayContext.event.type || "—"}
+              </div>
+            </div>
+
+            <div>
+              <div className="text-gray-400">Risk</div>
+              <div className="text-white break-all">
+                {replayContext.event.risk || "—"}
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-3">
+            <div className="text-gray-400">Command / Event text</div>
+            <pre className="mt-1 text-xs text-gray-300 bg-[#121A33] border border-[#1E2A45] rounded p-3 overflow-auto whitespace-pre-wrap">
+  {String(replayContext.event.text || "—")}
+            </pre>
+          </div>
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-2">
+        {replayContext.recordingId && (
+          <button
+            onClick={() => navigate(`/recordings/${replayContext.recordingId}`)}
+            className="px-4 py-2 rounded bg-[#0052FF] hover:bg-blue-700 text-white text-sm"
+          >
+            Открыть Replay
+          </button>
+        )}
+
+        {replayContext.sessionId && (
+          <button
+            onClick={() => navigate(`/audit?session_id=${replayContext.sessionId}`)}
+            className="px-4 py-2 rounded bg-[#1A243F] hover:bg-[#223055] text-white text-sm"
+          >
+            Открыть Audit этой сессии
+          </button>
+        )}
+      </div>
+    </div>
+  )}  
 
         <div className="grid grid-cols-3 gap-4 text-sm">
           <div>

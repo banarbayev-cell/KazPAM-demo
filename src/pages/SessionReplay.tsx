@@ -23,6 +23,7 @@ import {
   downloadRecording,
 } from "../api/recordings";
 import { api } from "../services/api";
+import { fetchIncidents, type IncidentItem } from "../api/incidents";
 
 type EventFilter = "all" | "command" | "auth" | "alert" | "file";
 type RiskLevel = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
@@ -183,6 +184,106 @@ async function copyText(text: string) {
   copyTextFallback(text);
 }
 
+function toPositiveNumber(value: unknown): number | null {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function safeParseIncidentDetails(details: any): Record<string, any> {
+  if (!details) return {};
+
+  if (typeof details === "object" && !Array.isArray(details)) {
+    return details;
+  }
+
+  if (typeof details === "string") {
+    try {
+      const parsed = JSON.parse(details);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? parsed
+        : {};
+    } catch {
+      return {};
+    }
+  }
+
+  return {};
+}
+
+function isReplayIncidentForRecording(item: IncidentItem, recordingId: number) {
+  const details = safeParseIncidentDetails(item.details);
+
+  const detailsRecordingId = toPositiveNumber(
+    details.recording_id ?? details.recordingId
+  );
+
+  if (details?.source === "session_replay" && detailsRecordingId === recordingId) {
+    return true;
+  }
+
+  const correlationId = String(item.correlation_id || "").toLowerCase();
+  const summary = String(item.summary || "").toLowerCase();
+  const system = String(item.system || "").toLowerCase();
+
+  return (
+    correlationId.startsWith(`replay-${recordingId}-`) ||
+    correlationId === `replay-recording-${recordingId}` ||
+    summary.includes(`recording #${recordingId}`) ||
+    system.includes(`replay #${recordingId}`)
+  );
+}
+
+function pickLatestReplayIncident(
+  items: IncidentItem[],
+  recordingId: number
+): IncidentItem | null {
+  const matches = items
+    .filter((item) => isReplayIncidentForRecording(item, recordingId))
+    .sort((a, b) => {
+      return (
+        new Date(b.created_at || "").getTime() -
+        new Date(a.created_at || "").getTime()
+      );
+    });
+
+  return matches[0] || null;
+}
+
+async function findExistingReplayIncidentId(recordingId: number) {
+  const queries = [
+    `replay-${recordingId}-`,
+    `replay-recording-${recordingId}`,
+    `recording #${recordingId}`,
+  ];
+
+  for (const q of queries) {
+    try {
+      const items = await fetchIncidents({ q });
+      const found = pickLatestReplayIncident(
+        Array.isArray(items) ? items : [],
+        recordingId
+      );
+
+      if (found?.id) {
+        return found.id;
+      }
+    } catch {
+      // best-effort lookup; do not block replay page
+    }
+  }
+
+  return null;
+}
+
+function getCreatedIncidentId(response: any): number | null {
+  return toPositiveNumber(
+    response?.id ??
+      response?.incident_id ??
+      response?.data?.id ??
+      response?.data?.incident_id
+  );
+}
+
 export default function SessionReplay() {
   const navigate = useNavigate();
   const { id } = useParams();
@@ -204,6 +305,9 @@ export default function SessionReplay() {
 
   const consoleRef = useRef<HTMLDivElement | null>(null);
   const [creatingIncident, setCreatingIncident] = useState(false);
+
+  const [existingIncidentId, setExistingIncidentId] = useState<number | null>(null);
+  const [checkingIncident, setCheckingIncident] = useState(false);
 
   const loadReplay = async () => {
     if (!recordingId || Number.isNaN(recordingId)) {
@@ -237,6 +341,33 @@ export default function SessionReplay() {
   useEffect(() => {
     void loadReplay();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recordingId]);
+
+  useEffect(() => {
+    if (!recordingId || Number.isNaN(recordingId)) return;
+
+    let mounted = true;
+
+    const run = async () => {
+      try {
+        setCheckingIncident(true);
+        const incidentId = await findExistingReplayIncidentId(recordingId);
+
+        if (mounted) {
+          setExistingIncidentId(incidentId);
+        }
+      } finally {
+        if (mounted) {
+          setCheckingIncident(false);
+        }
+      }
+    };
+
+    void run();
+
+    return () => {
+      mounted = false;
+    };
   }, [recordingId]);
 
   const filteredEvents = useMemo(() => {
@@ -355,6 +486,16 @@ export default function SessionReplay() {
       return;
     }
 
+    const existingId =
+      existingIncidentId || (await findExistingReplayIncidentId(recordingId));
+
+    if (existingId) {
+      setExistingIncidentId(existingId);
+      toast.info(`Incident #${existingId} уже создан для этой Replay-записи`);
+      navigate(`/soc/incidents/${existingId}`);
+      return;
+    }
+
     const riskRank: Record<RiskLevel, number> = {
       LOW: 1,
       MEDIUM: 2,
@@ -427,7 +568,7 @@ export default function SessionReplay() {
     try {
       setCreatingIncident(true);
 
-      await api.post("/incidents/", {
+      const createdIncident = await api.post("/incidents/", {
         title,
         summary: title,
         description: "Incident created manually from Replay page",
@@ -443,6 +584,12 @@ export default function SessionReplay() {
 
         details,
       });
+
+      const createdIncidentId = getCreatedIncidentId(createdIncident);
+
+      if (createdIncidentId) {
+        setExistingIncidentId(createdIncidentId);
+      }
 
       toast.success("Инцидент создан из Replay");
     } catch (e: any) {
@@ -569,15 +716,28 @@ export default function SessionReplay() {
                         Найти риск-событие
                       </button>
 
+                    {existingIncidentId ? (
+                      <button
+                        onClick={() => navigate(`/soc/incidents/${existingIncidentId}`)}
+                        className="px-4 py-2 rounded bg-red-600 hover:bg-red-700 text-white text-sm"
+                      >
+                        Открыть incident #{existingIncidentId}
+                      </button>
+                    ) : (
                       <button
                         onClick={handleCreateIncident}
-                        disabled={creatingIncident || !meta}
+                        disabled={creatingIncident || checkingIncident || !meta}
                         className="px-4 py-2 rounded bg-red-600 hover:bg-red-700 text-white text-sm disabled:bg-gray-600 disabled:cursor-not-allowed"
                       >
-                        {creatingIncident ? "Создание..." : "Создать инцидент"}
+                        {checkingIncident
+                          ? "Проверка..."
+                          : creatingIncident
+                          ? "Создание..."
+                          : "Создать инцидент"}
                       </button>
-                    </div>
+                      )}
                   </div>
+                </div>
 
                   <div className="bg-[#121A33] rounded-xl p-6 text-white">
                     <div className="flex items-center gap-2 mb-4">

@@ -173,7 +173,20 @@ export default function Incidents() {
     return () => clearTimeout(timer);
   }, [status, severity, q]);
 
-  const totalItems = items.length;
+  const sortedItems = useMemo(() => {
+    return [...items].sort((a, b) => {
+      const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
+
+      if (aTime !== bTime) {
+        return bTime - aTime;
+      }
+
+      return Number(b.id || 0) - Number(a.id || 0);
+    });
+  }, [items])
+
+  const totalItems = sortedItems.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
 
   useEffect(() => {
@@ -184,8 +197,8 @@ export default function Incidents() {
 
   const pagedItems = useMemo(() => {
     const start = (page - 1) * pageSize;
-    return items.slice(start, start + pageSize);
-  }, [items, page, pageSize]);
+    return sortedItems.slice(start, start + pageSize);
+  }, [sortedItems, page, pageSize]);
 
   const pageFrom = totalItems === 0 ? 0 : (page - 1) * pageSize + 1;
   const pageTo = totalItems === 0 ? 0 : Math.min(page * pageSize, totalItems);

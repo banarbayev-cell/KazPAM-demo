@@ -153,7 +153,6 @@ export default function Incidents() {
       const data = await fetchIncidents({
         status,
         severity,
-        q,
       });
 
       setItems(Array.isArray(data) ? data : []);
@@ -185,8 +184,30 @@ export default function Incidents() {
       return Number(b.id || 0) - Number(a.id || 0);
     });
   }, [items])
+  
+const filteredItems = useMemo(() => {
+  const query = q.trim().toLowerCase();
 
-  const totalItems = sortedItems.length;
+  if (!query) {
+    return items;
+  }
+
+  return items.filter((item) => {
+    return (
+      String(item.id ?? "").toLowerCase().includes(query) ||
+      String(item.user ?? "").toLowerCase().includes(query) ||
+      String(item.system ?? "").toLowerCase().includes(query) ||
+      String(item.ip ?? "").toLowerCase().includes(query) ||
+      String(item.summary ?? "").toLowerCase().includes(query) ||
+      String(item.correlation_id ?? "").toLowerCase().includes(query) ||
+      String(item.severity ?? "").toLowerCase().includes(query) ||
+      String(item.status ?? "").toLowerCase().includes(query) ||
+      String(item.risk_score ?? "").toLowerCase().includes(query)
+    );
+  });
+}, [items, q]);
+
+  const totalItems = filteredItems.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
 
   useEffect(() => {
@@ -197,8 +218,8 @@ export default function Incidents() {
 
   const pagedItems = useMemo(() => {
     const start = (page - 1) * pageSize;
-    return sortedItems.slice(start, start + pageSize);
-  }, [sortedItems, page, pageSize]);
+    return filteredItems.slice(start, start + pageSize);
+  }, [filteredItems, page, pageSize]);
 
   const pageFrom = totalItems === 0 ? 0 : (page - 1) * pageSize + 1;
   const pageTo = totalItems === 0 ? 0 : Math.min(page * pageSize, totalItems);

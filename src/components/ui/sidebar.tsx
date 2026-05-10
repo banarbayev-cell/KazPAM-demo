@@ -67,7 +67,7 @@ export default function Sidebar() {
           </NavLink>
         </Access>
 
-        <Access permission="manage_discovery" hide>
+        <Access permission="manage_users" hide>
           <NavLink to="/discovery" className={navClass}>
             Обнаружение
           </NavLink>

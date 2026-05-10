@@ -338,7 +338,7 @@ export default function Discovery() {
     try {
       setRunningDiscovery(true);
 
-      const createdJob = await runDiscovery({ target_id: targetId });
+      const createdJob = await runDiscovery({ target_ids: [targetId] });
 
       if (createdJob?.id) {
         setLastTriggeredJobId(createdJob.id);
@@ -478,7 +478,7 @@ export default function Discovery() {
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Обнаружение</h1>
             <p className="text-gray-600 mt-2">
-              Discovery module: Accounts, Targets и Jobs в одном интерфейсе.
+              Discovery module: конфигурации сканирования, запуск discovery jobs и найденные привилегированные accounts.
             </p>
           </div>
 
@@ -502,7 +502,7 @@ export default function Discovery() {
             onClick={() => setActiveTab("targets")}
             className={tabButtonClass("targets")}
           >
-            Targets
+            Scan configurations
           </button>
 
           <button
@@ -790,21 +790,21 @@ export default function Discovery() {
           <>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
               <div className="bg-[#121A33] text-white rounded-2xl shadow p-5">
-                <div className="text-sm text-gray-400">Всего targets</div>
+                <div className="text-sm text-gray-400">Всего конфигураций</div>
                 <div className="text-3xl font-bold mt-2">
                   {targetStats.total}
                 </div>
               </div>
 
               <div className="bg-[#121A33] text-white rounded-2xl shadow p-5">
-                <div className="text-sm text-gray-400">Active</div>
+                <div className="text-sm text-gray-400">Активные</div>
                 <div className="text-3xl font-bold mt-2">
                   {targetStats.active}
                 </div>
               </div>
 
               <div className="bg-[#121A33] text-white rounded-2xl shadow p-5">
-                <div className="text-sm text-gray-400">Inactive</div>
+                <div className="text-sm text-gray-400">Отключены</div>
                 <div className="text-3xl font-bold mt-2">
                   {targetStats.inactive}
                 </div>
@@ -813,21 +813,21 @@ export default function Discovery() {
 
             <div className="bg-[#121A33] rounded-2xl shadow overflow-hidden border border-[#1E2A45] mb-6">
               <div className="px-5 py-4 border-b border-[#1E2A45]">
-                <h2 className="text-white text-lg font-semibold">Run Discovery</h2>
+                <h2 className="text-white text-lg font-semibold">Запуск обнаружения по конфигурации</h2>
               </div>
 
               <div className="px-5 py-4">
                 <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-end">
                   <div>
                     <label className="mb-2 block text-sm font-medium text-gray-300">
-                      Target
+                      Scan configuration
                     </label>
                     <select
                       value={selectedTargetId}
                       onChange={(e) => setSelectedTargetId(e.target.value)}
                       className="w-full rounded-xl border border-[#1E2A45] bg-[#0E1A3A] px-4 py-3 text-white outline-none focus:border-[#0052FF]"
                     >
-                      <option value="">Выбери target</option>
+                      <option value="">Выбери конфигурацию сканирования</option>
                       {targets.map((target) => (
                         <option key={target.id} value={target.id}>
                           {getTargetDisplayName(target)} ({getTargetAddress(target)})
@@ -845,7 +845,7 @@ export default function Discovery() {
                         : "border border-[#0052FF]/40 bg-[#0052FF] text-white hover:opacity-90"
                     }`}
                   >
-                    {runningDiscovery ? "Запуск..." : "Run Discovery"}
+                    {runningDiscovery ? "Запуск..." : "Запустить сканирование"}
                   </button>
                 </div>
               </div>
@@ -853,7 +853,7 @@ export default function Discovery() {
 
             <div className="bg-[#121A33] rounded-2xl shadow overflow-hidden border border-[#1E2A45]">
               <div className="px-5 py-4 border-b border-[#1E2A45]">
-                <h2 className="text-white text-lg font-semibold">Targets</h2>
+                <h2 className="text-white text-lg font-semibold">Scan configurations</h2>
               </div>
 
               <div className="overflow-x-auto">
@@ -861,18 +861,14 @@ export default function Discovery() {
                   <thead className="bg-[#0E1A3A] text-gray-300">
                     <tr>
                       <th className="text-left px-4 py-3 font-medium">ID</th>
-                      <th className="text-left px-4 py-3 font-medium">Имя</th>
-                      <th className="text-left px-4 py-3 font-medium">Адрес</th>
-                      <th className="text-left px-4 py-3 font-medium">Тип</th>
-                      <th className="text-left px-4 py-3 font-medium">
-                        Протокол
-                      </th>
-                      <th className="text-left px-4 py-3 font-medium">
-                        Статус
-                      </th>
-                      <th className="text-left px-4 py-3 font-medium">
-                        Создан
-                      </th>
+                      <th className="text-left px-4 py-3 font-medium">Конфигурация</th>
+                      <th className="text-left px-4 py-3 font-medium">Host / IP</th>
+                      <th className="text-left px-4 py-3 font-medium">Port</th>
+                      <th className="text-left px-4 py-3 font-medium">Protocol</th>
+                      <th className="text-left px-4 py-3 font-medium">Scan user</th>
+                      <th className="text-left px-4 py-3 font-medium">Vault Secret</th>
+                      <th className="text-left px-4 py-3 font-medium">Status</th>
+                      <th className="text-left px-4 py-3 font-medium">Updated</th>
                     </tr>
                   </thead>
 
@@ -880,7 +876,7 @@ export default function Discovery() {
                     {loadingTargets ? (
                       <tr>
                         <td
-                          colSpan={7}
+                          colSpan={9}
                           className="px-4 py-8 text-center text-gray-400"
                         >
                           Загрузка...
@@ -889,7 +885,7 @@ export default function Discovery() {
                     ) : targets.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={7}
+                          colSpan={9}
                           className="px-4 py-8 text-center text-gray-400"
                         >
                           Discovery targets пока нет
@@ -905,20 +901,36 @@ export default function Discovery() {
                             className="border-t border-[#1E2A45] text-gray-200 hover:bg-[#16213D] transition"
                           >
                             <td className="px-4 py-3">{target.id}</td>
+
                             <td className="px-4 py-3">
                               <div className="font-medium text-white">
                                 {getTargetDisplayName(target)}
                               </div>
+                              <div className="text-xs text-gray-400">
+                                OS: {target.os_type || "—"}
+                              </div>
                             </td>
+
                             <td className="px-4 py-3">
-                              {getTargetAddress(target)}
+                              {target.host || target.hostname || target.ip_address || target.address || "—"}
                             </td>
+
                             <td className="px-4 py-3">
-                              {target.target_type || target.os_type || "—"}
+                              {target.port || "—"}
                             </td>
-                            <td className="px-4 py-3">
+
+                            <td className="px-4 py-3 uppercase">
                               {target.protocol || "—"}
                             </td>
+
+                            <td className="px-4 py-3">
+                              {target.username || "—"}
+                            </td>
+
+                            <td className="px-4 py-3">
+                              {target.vault_secret_id ? `#${target.vault_secret_id}` : "Не привязан"}
+                            </td>
+
                             <td className="px-4 py-3">
                               <span
                                 className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${statusBadgeClass(
@@ -928,10 +940,9 @@ export default function Discovery() {
                                 {targetStatus}
                               </span>
                             </td>
+
                             <td className="px-4 py-3">
-                              {formatDateTime(
-                                target.created_at || target.updated_at
-                              )}
+                              {formatDateTime(target.updated_at || target.created_at)}
                             </td>
                           </tr>
                         );

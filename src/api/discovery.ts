@@ -5,6 +5,8 @@ import type {
   DiscoveryMetadataUpdatePayload,
   DiscoveryRunRequest,
   DiscoveryTarget,
+  DiscoveryTargetCreatePayload,
+  DiscoveryTargetUpdatePayload,
 } from "../types/discovery";
 
 export function listDiscoveryAccounts() {
@@ -13,6 +15,21 @@ export function listDiscoveryAccounts() {
 
 export function listDiscoveryTargets() {
   return api.get<DiscoveryTarget[]>("/discovery/targets");
+}
+
+export function createDiscoveryTarget(payload: DiscoveryTargetCreatePayload) {
+  return api.post<DiscoveryTarget>("/discovery/targets", payload);
+}
+
+export function updateDiscoveryTarget(
+  targetId: number,
+  payload: DiscoveryTargetUpdatePayload
+) {
+  return api.patch<DiscoveryTarget>(`/discovery/targets/${targetId}`, payload);
+}
+
+export function deleteDiscoveryTarget(targetId: number) {
+  return api.delete<{ ok: boolean }>(`/discovery/targets/${targetId}`);
 }
 
 export function listDiscoveryJobs() {

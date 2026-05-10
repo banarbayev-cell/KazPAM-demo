@@ -853,7 +853,7 @@ export default function Discovery() {
 
             <div className="bg-[#121A33] rounded-2xl shadow overflow-hidden border border-[#1E2A45]">
               <div className="px-5 py-4 border-b border-[#1E2A45]">
-                <h2 className="text-white text-lg font-semibold">Scan configurations</h2>
+                <h2 className="text-white text-lg font-semibold">Конфигурации сканирования</h2>
               </div>
 
               <div className="overflow-x-auto">

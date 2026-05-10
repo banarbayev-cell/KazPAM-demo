@@ -189,23 +189,23 @@ const filteredItems = useMemo(() => {
   const query = q.trim().toLowerCase();
 
   if (!query) {
-    return items;
+    return sortedItems;
   }
 
-  return items.filter((item) => {
-    return (
-      String(item.id ?? "").toLowerCase().includes(query) ||
-      String(item.user ?? "").toLowerCase().includes(query) ||
-      String(item.system ?? "").toLowerCase().includes(query) ||
-      String(item.ip ?? "").toLowerCase().includes(query) ||
-      String(item.summary ?? "").toLowerCase().includes(query) ||
-      String(item.correlation_id ?? "").toLowerCase().includes(query) ||
-      String(item.severity ?? "").toLowerCase().includes(query) ||
-      String(item.status ?? "").toLowerCase().includes(query) ||
-      String(item.risk_score ?? "").toLowerCase().includes(query)
-    );
-  });
-}, [items, q]);
+  return sortedItems.filter((item) => {
+      return (
+        String(item.id ?? "").toLowerCase().includes(query) ||
+        String(item.user ?? "").toLowerCase().includes(query) ||
+        String(item.system ?? "").toLowerCase().includes(query) ||
+        String(item.ip ?? "").toLowerCase().includes(query) ||
+        String(item.summary ?? "").toLowerCase().includes(query) ||
+        String(item.correlation_id ?? "").toLowerCase().includes(query) ||
+        String(item.severity ?? "").toLowerCase().includes(query) ||
+        String(item.status ?? "").toLowerCase().includes(query) ||
+        String(item.risk_score ?? "").toLowerCase().includes(query)
+      );
+    });
+  }, [sortedItems, q]);
 
   const totalItems = filteredItems.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));

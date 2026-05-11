@@ -27,17 +27,36 @@ type DiscoveryTab = "accounts" | "targets" | "jobs";
 type JobStatusFilter = "all" | "completed" | "running" | "failed";
 
 function getReadiness(account: DiscoveredAccount): ReadinessResult {
+  if (account.status === "managed") {
+    return {
+      ready: true,
+      reason: "уже управляется",
+      missing: [],
+    };
+  }
+
+  if (account.status === "ignored") {
+    return {
+      ready: false,
+      reason: "account ignored",
+      missing: ["ignored"],
+    };
+  }
+
   const missing: string[] = [];
 
   if (account.status !== "reviewed") {
     missing.push("не reviewed");
   }
+
   if (!account.owner?.trim()) {
     missing.push("не указан владелец");
   }
+
   if (!account.linked_vault_secret_id) {
     missing.push("не привязан Vault secret");
   }
+
   if (!account.linked_policy_id) {
     missing.push("не привязана политика");
   }

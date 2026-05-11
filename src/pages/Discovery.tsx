@@ -76,6 +76,46 @@ function getReadiness(account: DiscoveredAccount): ReadinessResult {
   };
 }
 
+function canOnboardAccount(account: DiscoveredAccount): boolean {
+  const readiness = getReadiness(account);
+
+  return account.status === "reviewed" && readiness.ready;
+}
+
+function getOnboardButtonLabel(account: DiscoveredAccount): string {
+  if (account.status === "managed") {
+    return "Уже managed";
+  }
+
+  if (account.status === "ignored") {
+    return "Ignored";
+  }
+
+  if (!canOnboardAccount(account)) {
+    return "Onboard";
+  }
+
+  return "Onboard";
+}
+
+function getOnboardDisabledReason(account: DiscoveredAccount): string {
+  if (account.status === "managed") {
+    return "Account уже находится под управлением KazPAM";
+  }
+
+  if (account.status === "ignored") {
+    return "Ignored account нельзя onboard";
+  }
+
+  const readiness = getReadiness(account);
+
+  if (!readiness.ready) {
+    return readiness.reason || "Account ещё не готов к onboarding";
+  }
+
+  return "";
+}
+
 function statusBadgeClass(status?: string | null) {
   const normalized = (status || "").toLowerCase();
 
@@ -416,10 +456,14 @@ export default function Discovery() {
   }
 
   async function handleOnboard(account: DiscoveredAccount) {
-    const readiness = getReadiness(account);
+    const disabledReason = getOnboardDisabledReason(account);
 
-    if (!readiness.ready) {
-      toast.error(`Onboard недоступен: ${readiness.reason}`);
+    if (!canOnboardAccount(account)) {
+      toast.error(
+        `Onboard недоступен: ${
+          disabledReason || "account ещё не готов к onboarding"
+        }`
+      );
       return;
     }
 
@@ -495,7 +539,11 @@ export default function Discovery() {
 
   const accountStats = useMemo(() => {
     const total = accounts.length;
-    const ready = accounts.filter((a) => getReadiness(a).ready).length;
+
+    // Ready здесь означает именно "готов к первичному onboarding",
+    // а не "уже managed".
+    const ready = accounts.filter((a) => canOnboardAccount(a)).length;
+
     const managed = accounts.filter((a) => a.status === "managed").length;
     const reviewed = accounts.filter((a) => a.status === "reviewed").length;
 
@@ -784,7 +832,8 @@ export default function Discovery() {
                       filteredAccounts.map((account) => {
                         const readiness = getReadiness(account);
                         const isOnboarding = onboardingAccountId === account.id;
-                        const onboardDisabled = !readiness.ready || isOnboarding;
+                        const onboardDisabled = !canOnboardAccount(account) || isOnboarding;
+                        const onboardDisabledReason = getOnboardDisabledReason(account);
 
                         return (
                           <tr
@@ -873,13 +922,13 @@ export default function Discovery() {
                                         : "cursor-pointer border border-emerald-500/40 bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500 hover:text-white hover:border-emerald-500 active:scale-[0.98]"
                                     }`}
                                   >
-                                    {isOnboarding ? "Onboarding..." : "Onboard"}
+                                    {isOnboarding ? "Onboarding..." : getOnboardButtonLabel(account)}
                                   </button>
                                 </div>
 
-                                {!readiness.ready && (
+                                {onboardDisabled && !isOnboarding && onboardDisabledReason && (
                                   <div className="text-xs text-amber-300">
-                                    Причина: {readiness.reason}
+                                    Причина: {onboardDisabledReason}
                                   </div>
                                 )}
                               </div>

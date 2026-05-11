@@ -199,6 +199,85 @@ function getJobStatusGroup(status?: string | null): JobStatusFilter {
   return "all";
 }
 
+type DiscoveryJobDetails = {
+  targets?: Array<{
+    target_id?: number | string | null;
+    target_name?: string | null;
+    host?: string | null;
+    status?: string | null;
+    accounts_found?: number | null;
+    error?: string | null;
+  }>;
+  errors?: string[];
+};
+
+function parseJobDetails(details?: string | null): DiscoveryJobDetails | null {
+  if (!details) return null;
+
+  try {
+    const parsed = JSON.parse(details);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function toNumberOrNull(value: unknown): number | null {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function getJobTargetId(job: DiscoveryJob): number | null {
+  const direct = toNumberOrNull(job.target_id);
+  if (direct) return direct;
+
+  const details = parseJobDetails(job.details);
+  const fromDetails = details?.targets?.[0]?.target_id;
+
+  return toNumberOrNull(fromDetails);
+}
+
+function getJobAccountsFound(job: DiscoveryJob): number | string {
+  if (typeof job.total_accounts === "number") return job.total_accounts;
+  if (typeof job.accounts_found === "number") return job.accounts_found;
+  if (typeof job.discovered_count === "number") return job.discovered_count;
+
+  const details = parseJobDetails(job.details);
+  const found = details?.targets?.[0]?.accounts_found;
+
+  return typeof found === "number" ? found : "—";
+}
+
+function getJobSummary(job: DiscoveryJob): string {
+  if (job.summary) return job.summary;
+
+  const details = parseJobDetails(job.details);
+  const target = details?.targets?.[0];
+
+  if (!target) return "—";
+
+  const targetName = target.target_name || `Target #${target.target_id || "—"}`;
+  const host = target.host || "—";
+  const status = target.status || job.status || "—";
+
+  return `${targetName} · ${host} · ${status}`;
+}
+
+function getJobError(job: DiscoveryJob): string {
+  if (job.error) return job.error;
+
+  const details = parseJobDetails(job.details);
+  const targetError = details?.targets?.find((t) => t.error)?.error;
+
+  if (targetError) return targetError;
+
+  if (details?.errors?.length) {
+    return details.errors.join("; ");
+  }
+
+  return "—";
+}
+
 export default function Discovery() {
   const [activeTab, setActiveTab] = useState<DiscoveryTab>("accounts");
 
@@ -304,6 +383,17 @@ export default function Discovery() {
     setStatusFilter("all");
     setReadinessFilter("all");
     toast.success(`Показаны accounts для target_id ${targetId}`);
+  }
+
+  function openAccountsByJob(job: DiscoveryJob) {
+    const targetId = getJobTargetId(job);
+
+    if (!targetId) {
+      toast.error("У job отсутствует target_id");
+      return;
+    }
+
+    openAccountsByTarget(targetId);
   }
 
   async function handleOnboard(account: DiscoveredAccount) {
@@ -1093,6 +1183,10 @@ export default function Discovery() {
                       filteredJobs.map((job) => {
                         const isLastTriggered = lastTriggeredJobId === job.id;
                         const isLatest = latestJobId === job.id;
+                        const jobTargetId = getJobTargetId(job);
+                        const jobFound = getJobAccountsFound(job);
+                        const jobSummary = getJobSummary(job);
+                        const jobError = getJobError(job);
 
                         return (
                           <tr
@@ -1123,7 +1217,9 @@ export default function Discovery() {
                               </div>
                             </td>
 
-                            <td className="px-4 py-3">{job.target_id ?? "—"}</td>
+                            <td className="px-4 py-3">
+                              {jobTargetId ? `#${jobTargetId}` : "—"}
+                            </td>
 
                             <td className="px-4 py-3">
                               <span
@@ -1147,32 +1243,32 @@ export default function Discovery() {
                               {formatDateTime(job.finished_at)}
                             </td>
 
-                            <td className="px-4 py-3">{getJobFoundCount(job)}</td>
+                            <td className="px-4 py-3">{jobFound}</td>
 
                             <td className="px-4 py-3">
                               {formatDuration(job.started_at, job.finished_at)}
                             </td>
 
                             <td className="px-4 py-3 max-w-[240px]">
-                              <div className="truncate" title={job.summary || ""}>
-                                {job.summary || "—"}
+                              <div className="truncate" title={jobSummary}>
+                                {jobSummary}
                               </div>
                             </td>
 
                             <td className="px-4 py-3 max-w-[280px]">
                               <div
                                 className={`truncate ${
-                                  job.error ? "text-red-300" : ""
+                                  jobError !== "—" ? "text-red-300" : ""
                                 }`}
-                                title={job.error || ""}
+                                title={jobError}
                               >
-                                {job.error || "—"}
+                                {jobError}
                               </div>
                             </td>
 
                             <td className="px-4 py-3">
                               <button
-                                onClick={() => openAccountsByTarget(job.target_id)}
+                                onClick={() => openAccountsByJob(job)}
                                 className="inline-flex items-center rounded-lg border border-[#0052FF]/40 bg-[#0052FF]/15 px-3 py-2 text-sm font-medium text-[#3BE3FD] cursor-pointer transition hover:bg-[#0052FF] hover:text-white hover:border-[#0052FF] active:scale-[0.98]"
                               >
                                 Accounts

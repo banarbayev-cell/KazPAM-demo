@@ -7,6 +7,7 @@ import {
   listDiscoveryTargets,
   onboardDiscoveryAccount,
   runDiscovery,
+  updateDiscoveryAccountStatus,
 } from "../api/discovery";
 import type {
   DiscoveredAccount,
@@ -114,6 +115,27 @@ function getOnboardDisabledReason(account: DiscoveredAccount): string {
   }
 
   return "";
+}
+
+function canMarkReviewed(account: DiscoveredAccount): boolean {
+  return account.status === "discovered";
+}
+
+function canIgnoreAccount(account: DiscoveredAccount): boolean {
+  return account.status === "discovered" || account.status === "reviewed";
+}
+
+function getReviewButtonLabel(account: DiscoveredAccount): string {
+  if (account.status === "reviewed") return "Проверено";
+  if (account.status === "managed") return "Managed";
+  if (account.status === "ignored") return "Ignored";
+  return "Проверено";
+}
+
+function getIgnoreButtonLabel(account: DiscoveredAccount): string {
+  if (account.status === "ignored") return "Ignored";
+  if (account.status === "managed") return "Managed";
+  return "Игнорировать";
 }
 
 function statusBadgeClass(status?: string | null) {
@@ -355,6 +377,9 @@ export default function Discovery() {
   const [onboardingAccountId, setOnboardingAccountId] = useState<number | null>(
     null
   );
+  const [statusUpdatingAccountId, setStatusUpdatingAccountId] = useState<
+  number | null
+>(null);
 
   const [selectedTargetId, setSelectedTargetId] = useState<string>("");
   const [runningDiscovery, setRunningDiscovery] = useState(false);
@@ -477,6 +502,58 @@ export default function Discovery() {
       toast.error("Не удалось выполнить onboarding");
     } finally {
       setOnboardingAccountId(null);
+    }
+  }
+
+  async function handleMarkReviewed(account: DiscoveredAccount) {
+    if (!canMarkReviewed(account)) {
+      toast.info("Проверить можно только account в статусе discovered");
+      return;
+    }
+
+    try {
+      setStatusUpdatingAccountId(account.id);
+
+      await updateDiscoveryAccountStatus(account.id, {
+        status: "reviewed",
+      });
+
+      toast.success(`Account ${account.account_name} отмечен как reviewed`);
+      await loadAccounts();
+    } catch (error) {
+      console.error("Failed to mark discovery account as reviewed", error);
+      toast.error("Не удалось отметить account как reviewed");
+    } finally {
+      setStatusUpdatingAccountId(null);
+    }
+  }
+
+  async function handleIgnoreAccount(account: DiscoveredAccount) {
+    if (!canIgnoreAccount(account)) {
+      toast.info("Игнорировать можно только discovered или reviewed account");
+      return;
+    }
+
+    const ok = window.confirm(
+      `Игнорировать account ${account.account_name}? После этого onboarding будет недоступен.`
+    );
+
+    if (!ok) return;
+
+    try {
+      setStatusUpdatingAccountId(account.id);
+
+      await updateDiscoveryAccountStatus(account.id, {
+        status: "ignored",
+      });
+
+      toast.success(`Account ${account.account_name} переведен в ignored`);
+      await loadAccounts();
+    } catch (error) {
+      console.error("Failed to ignore discovery account", error);
+      toast.error("Не удалось перевести account в ignored");
+    } finally {
+      setStatusUpdatingAccountId(null);
     }
   }
 
@@ -832,8 +909,18 @@ export default function Discovery() {
                       filteredAccounts.map((account) => {
                         const readiness = getReadiness(account);
                         const isOnboarding = onboardingAccountId === account.id;
-                        const onboardDisabled = !canOnboardAccount(account) || isOnboarding;
+                        const isStatusUpdating = statusUpdatingAccountId === account.id;
+
+                        const onboardDisabled =
+                          !canOnboardAccount(account) || isOnboarding || isStatusUpdating;
+
                         const onboardDisabledReason = getOnboardDisabledReason(account);
+
+                        const reviewDisabled =
+                          !canMarkReviewed(account) || isOnboarding || isStatusUpdating;
+
+                        const ignoreDisabled =
+                          !canIgnoreAccount(account) || isOnboarding || isStatusUpdating;
 
                         return (
                           <tr
@@ -908,9 +995,42 @@ export default function Discovery() {
                                 <div className="flex flex-wrap gap-2">
                                   <button
                                     onClick={() => openMetadataModal(account)}
-                                    className="inline-flex items-center rounded-lg border border-[#0052FF]/40 bg-[#0052FF]/15 px-3 py-2 text-sm font-medium text-[#3BE3FD] cursor-pointer transition hover:bg-[#0052FF] hover:text-white hover:border-[#0052FF] active:scale-[0.98]"
+                                    disabled={isOnboarding || isStatusUpdating}
+                                    className={`inline-flex items-center rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                                      isOnboarding || isStatusUpdating
+                                        ? "cursor-not-allowed border-gray-700 bg-gray-800 text-gray-500"
+                                        : "cursor-pointer border-[#0052FF]/40 bg-[#0052FF]/15 text-[#3BE3FD] hover:bg-[#0052FF] hover:text-white hover:border-[#0052FF] active:scale-[0.98]"
+                                    }`}    
                                   >
                                     Редактировать
+                                  </button>
+
+                                  <button
+                                    onClick={() => handleMarkReviewed(account)}
+                                    disabled={reviewDisabled}
+                                    className={`inline-flex items-center rounded-lg px-3 py-2 text-sm font-medium transition ${
+                                      reviewDisabled
+                                        ? "cursor-not-allowed border border-gray-700 bg-gray-800 text-gray-500"
+                                        : "cursor-pointer border border-blue-500/40 bg-blue-500/15 text-blue-300 hover:bg-blue-500 hover:text-white hover:border-blue-500 active:scale-[0.98]"
+                                    }`}
+                                  >
+                                    {isStatusUpdating && canMarkReviewed(account)
+                                      ? "Обновление..."
+                                      : getReviewButtonLabel(account)}
+                                  </button>
+
+                                  <button
+                                    onClick={() => handleIgnoreAccount(account)}
+                                    disabled={ignoreDisabled}
+                                    className={`inline-flex items-center rounded-lg px-3 py-2 text-sm font-medium transition ${
+                                      ignoreDisabled
+                                        ? "cursor-not-allowed border border-gray-700 bg-gray-800 text-gray-500"
+                                        : "cursor-pointer border border-amber-500/40 bg-amber-500/15 text-amber-300 hover:bg-amber-500 hover:text-white hover:border-amber-500 active:scale-[0.98]"
+                                    }`}
+                                  >
+                                    {isStatusUpdating && canIgnoreAccount(account)
+                                      ? "Обновление..."
+                                      : getIgnoreButtonLabel(account)}
                                   </button>
 
                                   <button
@@ -924,7 +1044,7 @@ export default function Discovery() {
                                   >
                                     {isOnboarding ? "Onboarding..." : getOnboardButtonLabel(account)}
                                   </button>
-                                </div>
+                                 </div>
 
                                 {onboardDisabled && !isOnboarding && onboardDisabledReason && (
                                   <div className="text-xs text-amber-300">

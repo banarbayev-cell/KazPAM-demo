@@ -1,6 +1,7 @@
 import { api } from "../services/api";
 import type {
   DiscoveredAccount,
+  DiscoveryAccountStatusUpdatePayload,
   DiscoveryJob,
   DiscoveryMetadataUpdatePayload,
   DiscoveryRunRequest,
@@ -52,4 +53,14 @@ export function updateDiscoveryAccountMetadata(
 
 export function onboardDiscoveryAccount(accountId: number) {
   return api.post<DiscoveredAccount>(`/discovery/accounts/${accountId}/onboard`);
+}
+
+export function updateDiscoveryAccountStatus(
+  accountId: number,
+  payload: DiscoveryAccountStatusUpdatePayload
+) {
+  return api.patch<DiscoveredAccount>(
+    `/discovery/accounts/${accountId}/status`,
+    payload
+  );
 }

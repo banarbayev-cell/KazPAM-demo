@@ -40,6 +40,10 @@ export interface DiscoveryMetadataUpdatePayload {
   linked_policy_id?: number | null;
 }
 
+export interface DiscoveryAccountStatusUpdatePayload {
+  status: "reviewed" | "managed" | "ignored";
+}
+
 export interface DiscoveryTarget {
   id: number;
   name: string;

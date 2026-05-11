@@ -27,6 +27,105 @@ type ReadinessFilter = "all" | "ready" | "not_ready";
 type DiscoveryTab = "accounts" | "targets" | "jobs";
 type JobStatusFilter = "all" | "completed" | "running" | "failed";
 
+const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
+
+function paginateItems<T>(items: T[], page: number, pageSize: number): T[] {
+  const start = (page - 1) * pageSize;
+  return items.slice(start, start + pageSize);
+}
+
+function getTotalPages(total: number, pageSize: number): number {
+  return Math.max(1, Math.ceil(total / pageSize));
+}
+
+function getPageFrom(total: number, page: number, pageSize: number): number {
+  if (total === 0) return 0;
+  return (page - 1) * pageSize + 1;
+}
+
+function getPageTo(total: number, page: number, pageSize: number): number {
+  if (total === 0) return 0;
+  return Math.min(page * pageSize, total);
+}
+
+function PaginationControls({
+  total,
+  page,
+  pageSize,
+  onPageChange,
+  onPageSizeChange,
+}: {
+  total: number;
+  page: number;
+  pageSize: number;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (pageSize: number) => void;
+}) {
+  const totalPages = getTotalPages(total, pageSize);
+  const pageFrom = getPageFrom(total, page, pageSize);
+  const pageTo = getPageTo(total, page, pageSize);
+
+  return (
+    <div className="border-t border-[#1E2A45] px-5 py-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+      <div className="text-sm text-gray-300">
+        Показано: {pageFrom}-{pageTo} из {total}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm text-gray-400">На странице:</span>
+
+        <select
+          value={pageSize}
+          onChange={(e) => onPageSizeChange(Number(e.target.value))}
+          className="rounded-lg bg-[#0E1A3A] border border-[#24314F] px-3 py-2 text-sm text-white outline-none"
+        >
+          {PAGE_SIZE_OPTIONS.map((size) => (
+            <option key={size} value={size}>
+              {size}
+            </option>
+          ))}
+        </select>
+
+        <button
+          onClick={() => onPageChange(1)}
+          disabled={page <= 1}
+          className="px-3 py-2 rounded-lg bg-[#0E1A3A] border border-[#24314F] text-sm text-white disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          «
+        </button>
+
+        <button
+          onClick={() => onPageChange(Math.max(1, page - 1))}
+          disabled={page <= 1}
+          className="px-3 py-2 rounded-lg bg-[#0E1A3A] border border-[#24314F] text-sm text-white disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Назад
+        </button>
+
+        <div className="px-3 py-2 rounded-lg bg-[#0E1A3A] border border-[#24314F] text-sm text-white min-w-[90px] text-center">
+          {page} / {totalPages}
+        </div>
+
+        <button
+          onClick={() => onPageChange(Math.min(totalPages, page + 1))}
+          disabled={page >= totalPages}
+          className="px-3 py-2 rounded-lg bg-[#0E1A3A] border border-[#24314F] text-sm text-white disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Вперёд
+        </button>
+
+        <button
+          onClick={() => onPageChange(totalPages)}
+          disabled={page >= totalPages}
+          className="px-3 py-2 rounded-lg bg-[#0E1A3A] border border-[#24314F] text-sm text-white disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          »
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function getReadiness(account: DiscoveredAccount): ReadinessResult {
   if (account.status === "managed") {
     return {
@@ -391,6 +490,14 @@ export default function Discovery() {
     useState<ReadinessFilter>("all");
   const [jobStatusFilter, setJobStatusFilter] =
     useState<JobStatusFilter>("all");
+  const [accountsPage, setAccountsPage] = useState(1);
+  const [accountsPageSize, setAccountsPageSize] = useState(10);
+
+  const [targetsPage, setTargetsPage] = useState(1);
+  const [targetsPageSize, setTargetsPageSize] = useState(10);
+
+  const [jobsPage, setJobsPage] = useState(1);
+  const [jobsPageSize, setJobsPageSize] = useState(10);  
 
   async function loadAccounts() {
     try {
@@ -450,10 +557,12 @@ export default function Discovery() {
     setSearch("");
     setStatusFilter("all");
     setReadinessFilter("all");
+    setAccountsPage(1);
   }
 
   function resetJobsFilters() {
     setJobStatusFilter("all");
+    setJobsPage(1);
   }
 
   function openAccountsByTarget(targetId?: number | null) {
@@ -466,6 +575,7 @@ export default function Discovery() {
     setSearch(String(targetId));
     setStatusFilter("all");
     setReadinessFilter("all");
+    setAccountsPage(1);
     toast.success(`Показаны accounts для target_id ${targetId}`);
   }
 
@@ -696,7 +806,42 @@ export default function Discovery() {
     );
   }, [sortedJobs, jobStatusFilter]);
 
+  const accountsTotalPages = getTotalPages(filteredAccounts.length, accountsPageSize);
+  const targetsTotalPages = getTotalPages(targets.length, targetsPageSize);
+  const jobsTotalPages = getTotalPages(filteredJobs.length, jobsPageSize);
+
+  useEffect(() => {
+    if (accountsPage > accountsTotalPages) {
+      setAccountsPage(accountsTotalPages);
+    }
+  }, [accountsPage, accountsTotalPages]);
+
+  useEffect(() => {
+    if (targetsPage > targetsTotalPages) {
+      setTargetsPage(targetsTotalPages);
+    }
+  }, [targetsPage, targetsTotalPages]);
+
+  useEffect(() => {
+    if (jobsPage > jobsTotalPages) {
+      setJobsPage(jobsTotalPages);
+    }
+  }, [jobsPage, jobsTotalPages]);
+
+  const pagedAccounts = useMemo(() => {
+    return paginateItems(filteredAccounts, accountsPage, accountsPageSize);
+  }, [filteredAccounts, accountsPage, accountsPageSize]);
+
+  const pagedTargets = useMemo(() => {
+    return paginateItems(targets, targetsPage, targetsPageSize);
+  }, [targets, targetsPage, targetsPageSize]);
+
+  const pagedJobs = useMemo(() => {
+    return paginateItems(filteredJobs, jobsPage, jobsPageSize);
+  }, [filteredJobs, jobsPage, jobsPageSize]);
+
   const latestJobId = sortedJobs.length > 0 ? sortedJobs[0].id : null;
+
 
   const tabButtonClass = (tab: DiscoveryTab) =>
     `inline-flex items-center rounded-xl px-4 py-2 text-sm font-medium transition ${
@@ -792,7 +937,10 @@ export default function Discovery() {
                     </label>
                     <input
                       value={search}
-                      onChange={(e) => setSearch(e.target.value)}
+                      onChange={(e) => {
+                        setSearch(e.target.value);
+                        setAccountsPage(1);
+                      }}
                       placeholder="account_name, owner, notes, ID, target_id"
                       className="w-full rounded-xl border border-[#1E2A45] bg-[#0E1A3A] px-4 py-3 text-white outline-none placeholder:text-gray-500 focus:border-[#0052FF]"
                     />
@@ -804,9 +952,10 @@ export default function Discovery() {
                     </label>
                     <select
                       value={statusFilter}
-                      onChange={(e) =>
-                        setStatusFilter(e.target.value as StatusFilter)
-                      }
+                      onChange={(e) => {
+                        setStatusFilter(e.target.value as StatusFilter);
+                        setAccountsPage(1);
+                      }}
                       className="w-full rounded-xl border border-[#1E2A45] bg-[#0E1A3A] px-4 py-3 text-white outline-none focus:border-[#0052FF]"
                     >
                       <option value="all">Все</option>
@@ -823,9 +972,10 @@ export default function Discovery() {
                     </label>
                     <select
                       value={readinessFilter}
-                      onChange={(e) =>
-                        setReadinessFilter(e.target.value as ReadinessFilter)
-                      }
+                      onChange={(e) => {
+                        setReadinessFilter(e.target.value as ReadinessFilter);
+                        setAccountsPage(1);
+                      }}
                       className="w-full rounded-xl border border-[#1E2A45] bg-[#0E1A3A] px-4 py-3 text-white outline-none focus:border-[#0052FF]"
                     >
                       <option value="all">Все</option>
@@ -906,7 +1056,7 @@ export default function Discovery() {
                         </td>
                       </tr>
                     ) : (
-                      filteredAccounts.map((account) => {
+                      pagedAccounts.map((account) => {
                         const readiness = getReadiness(account);
                         const isOnboarding = onboardingAccountId === account.id;
                         const isStatusUpdating = statusUpdatingAccountId === account.id;
@@ -1060,6 +1210,16 @@ export default function Discovery() {
                   </tbody>
                 </table>
               </div>
+              <PaginationControls
+                total={filteredAccounts.length}
+                page={accountsPage}
+                pageSize={accountsPageSize}
+                onPageChange={setAccountsPage}
+                onPageSizeChange={(size) => {
+                  setAccountsPageSize(size);
+                  setAccountsPage(1);
+                }}
+               />
             </div>
           </>
         )}
@@ -1170,7 +1330,7 @@ export default function Discovery() {
                         </td>
                       </tr>
                     ) : (
-                      targets.map((target) => {
+                      pagedTargets.map((target) => {
                         const targetStatus = getTargetStatus(target);
 
                         return (
@@ -1229,6 +1389,16 @@ export default function Discovery() {
                   </tbody>
                 </table>
               </div>
+              <PaginationControls
+                total={targets.length}
+                page={targetsPage}
+                pageSize={targetsPageSize}
+                onPageChange={setTargetsPage}
+                onPageSizeChange={(size) => {
+                  setTargetsPageSize(size);
+                  setTargetsPage(1);
+                }}
+              />
             </div>
           </>
         )}
@@ -1282,9 +1452,10 @@ export default function Discovery() {
                     </label>
                     <select
                       value={jobStatusFilter}
-                      onChange={(e) =>
-                        setJobStatusFilter(e.target.value as JobStatusFilter)
-                      }
+                      onChange={(e) => {
+                        setJobStatusFilter(e.target.value as JobStatusFilter);
+                        setJobsPage(1);
+                      }}
                       className="w-full rounded-xl border border-[#1E2A45] bg-[#0E1A3A] px-4 py-3 text-white outline-none focus:border-[#0052FF]"
                     >
                       <option value="all">Все</option>
@@ -1368,7 +1539,7 @@ export default function Discovery() {
                         </td>
                       </tr>
                     ) : (
-                      filteredJobs.map((job) => {
+                      pagedJobs.map((job) => {
                         const isLastTriggered = lastTriggeredJobId === job.id;
                         const isLatest = latestJobId === job.id;
                         const jobTargetId = getJobTargetId(job);
@@ -1469,6 +1640,16 @@ export default function Discovery() {
                   </tbody>
                 </table>
               </div>
+              <PaginationControls
+                total={filteredJobs.length}
+                page={jobsPage}
+                pageSize={jobsPageSize}
+                onPageChange={setJobsPage}
+                onPageSizeChange={(size) => {
+                  setJobsPageSize(size);
+                  setJobsPage(1);
+                }}
+              />
             </div>
           </>
         )}

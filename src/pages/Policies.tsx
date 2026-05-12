@@ -74,7 +74,8 @@ interface CreatePolicyPayload {
   time_start: string;
   time_end: string;
   ip_range: string;
-  session_limit: number;
+  session_limit: number | null;
+  allowed_systems: string[];
 }
 
 /* =========================
@@ -109,6 +110,43 @@ const normalizeUsage = (
         : 0,
   };
 };
+
+const POLICY_TYPE_LABELS: Record<string, string> = {
+  "Access Policy": "Access Policy",
+  "Session Policy": "Session Policy",
+  "MFA Policy": "MFA Policy",
+  "PAM Policy": "PAM Policy",
+  "Security Policy": "Security Policy",
+  "Password Policy": "Password/Secret Policy",
+  "Workflow Policy": "Workflow Policy",
+  "Risk Policy": "Risk Policy",
+};
+
+const POLICY_TYPE_HINTS: Record<string, string> = {
+  "Access Policy": "Категория доступа: системы, IP, время, MFA.",
+  "Session Policy": "Категория сессионных правил и лимитов.",
+  "MFA Policy": "Категория правил обязательной MFA.",
+  "PAM Policy": "Общая комбинированная PAM-политика.",
+  "Security Policy": "Общая политика безопасности.",
+  "Password Policy": "Категория политик паролей и секретов.",
+  "Workflow Policy": "Категория workflow/JIT/approval правил.",
+  "Risk Policy": "Категория риск-ориентированных правил.",
+};
+
+function getPolicyTypeLabel(type?: string) {
+  const value = String(type || "").trim();
+  return POLICY_TYPE_LABELS[value] || value || "—";
+}
+
+function getPolicyTypeHint(type?: string) {
+  const value = String(type || "").trim();
+  return POLICY_TYPE_HINTS[value] || "Категория политики для классификации в интерфейсе.";
+}
+
+function renderAllowedSystems(value?: string[]) {
+  if (!Array.isArray(value) || value.length === 0) return "Все системы";
+  return value.join(", ");
+}
 
 /* =========================
    Component
@@ -283,6 +321,18 @@ export default function Policies() {
     <div className="p-6 w-full bg-gray-100 text-gray-900">
       <h1 className="text-3xl font-bold mb-4">Политики доступа</h1>
 
+      <div className="mb-5 rounded-xl border border-blue-200 bg-white p-4 text-sm text-gray-700 shadow-sm">
+        <div className="font-semibold text-gray-900 mb-1">
+          Как работают политики KazPAM
+        </div>
+        <div className="leading-6">
+          Тип политики используется как категория для удобной классификации.
+          Набор параметров единый: MFA, окно доступа, IP-диапазон, лимит активных
+          PAM-сессий и разрешённые системы. Разрешённые системы проверяются при
+          запуске сессии через Policy Engine.
+        </div>
+      </div>
+
       <div className="mb-6">
         <PolicyPieChart
           active={activeCount}
@@ -313,6 +363,7 @@ export default function Policies() {
               <th className="px-4 py-3 text-left">Название</th>
               <th className="px-4 py-3 text-left">Тип</th>
               <th className="px-4 py-3 text-left">Статус</th>
+              <th className="px-4 py-3 text-left">Разрешённые системы</th>
               <th className="px-4 py-3 text-left">Обновлено</th>
               <th className="px-4 py-3 text-right">Действия</th>
             </tr>
@@ -321,8 +372,16 @@ export default function Policies() {
             {filtered.map((p) => (
               <tr key={p.id} className="border-t border-[#1E2A45]">
                 <td className="px-4 py-3">{p.name}</td>
-                <td className="px-4 py-3">{p.type}</td>
+                <td className="px-4 py-3">
+                  <div className="font-medium">{getPolicyTypeLabel(p.type)}</div>
+                  <div className="text-xs text-gray-400 mt-1">
+                    {getPolicyTypeHint(p.type)}
+                  </div>
+                </td>
                 <td className="px-4 py-3">{p.status}</td>
+                <td className="px-4 py-3 text-gray-300 max-w-[260px]">
+                  {renderAllowedSystems(p.allowed_systems)}
+                </td>
                 <td className="px-4 py-3">{formatDateTime(p.updated_at)}</td>
                 <td className="px-4 py-3 text-right">
                   <ActionMenuPolicy

@@ -39,6 +39,34 @@ function parseAllowedSystems(value: string): string[] {
     .filter(Boolean);
 }
 
+const POLICY_TYPE_OPTIONS = [
+  {
+    value: "Access Policy",
+    label: "Access Policy",
+    hint: "Категория для ограничений доступа к системам, IP, времени и MFA.",
+  },
+  {
+    value: "Session Policy",
+    label: "Session Policy",
+    hint: "Категория для правил запуска PAM-сессий и лимитов.",
+  },
+  {
+    value: "MFA Policy",
+    label: "MFA Policy",
+    hint: "Категория для правил обязательной многофакторной аутентификации.",
+  },
+  {
+    value: "PAM Policy",
+    label: "PAM Policy",
+    hint: "Общая PAM-политика. Используйте, если правило комбинированное.",
+  },
+  {
+    value: "Security Policy",
+    label: "Security Policy",
+    hint: "Общая политика безопасности для контроля доступа.",
+  },
+];
+
 export default function EditPolicyModal({
   open,
   policy,
@@ -115,12 +143,28 @@ export default function EditPolicyModal({
         </div>
 
         <div className="mb-4">
-          <label className="text-sm font-medium text-gray-300">Тип</label>
-          <Input
-            className="mt-1 bg-[#1A243F] border border-gray-600 text-white"
+          <label className="text-sm font-medium text-gray-300">
+            Категория политики
+          </label>
+          <select
+            className="mt-1 bg-[#1A243F] border border-gray-600 text-white p-2 rounded w-full outline-none"
             value={type}
             onChange={(e) => setType(e.target.value)}
-          />
+           >
+            {POLICY_TYPE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+
+          <div className="text-xs text-gray-400 mt-1 leading-5">
+            Категория нужна для классификации. Параметры политики ниже остаются едиными.
+          </div>
+
+          <div className="text-xs text-[#3BE3FD] mt-1">
+            {POLICY_TYPE_OPTIONS.find((item) => item.value === type)?.hint}
+          </div>
         </div>
 
         <div className="mb-4">

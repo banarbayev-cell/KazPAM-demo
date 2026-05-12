@@ -369,40 +369,65 @@ export default function SettingsPage() {
               mfa_required: data.mfa_required,
               password_rotation_days: data.password_rotation_days,
               lockout_attempts: data.lockout_attempts,
-              session_limit_default: data.session_limit_default,
             })
           }
           loading={saving === "security"}
         >
-          <div className="bg-[#0E1A3A]/50 border border-white/10 p-4 rounded-xl mb-6 flex items-center justify-between">
+          <div className="bg-[#0E1A3A]/50 border border-white/10 p-4 rounded-xl mb-6 flex items-center justify-between gap-4">
             <div>
-              <h4 className="text-white font-medium">Принудительная MFA (2FA)</h4>
-              <p className="text-sm text-gray-400">
-                Требовать второй фактор для всех административных сессий
+              <h4 className="text-white font-medium">Принудительная MFA</h4>
+              <p className="text-sm text-gray-400 mt-1">
+                Требовать второй фактор для защищённых действий, PAM-доступа и административных операций.
               </p>
             </div>
-            <Toggle checked={data.mfa_required} onChange={(v: boolean) => update("mfa_required", v)} />
+
+            <Toggle
+              checked={data.mfa_required}
+              onChange={(v: boolean) => update("mfa_required", v)}
+            />
+         </div>
+
+         <div className="bg-[#0E1A3A]/50 border border-white/10 p-4 rounded-xl mb-6">
+            <h4 className="text-white font-medium mb-2">
+              Как применяются эти параметры
+            </h4>
+
+            <div className="text-sm text-gray-400 leading-6">
+              Ротация применяется к Vault-секретам и управляемым привилегированным
+              учётным записям, которые находятся под контролем KazPAM. Это не настройка
+              пароля пользователя KazPAM. Блокировка после неудачных попыток относится к
+              входу пользователей в KazPAM. Глобальный лимит сессий на администратора
+              убран из интерфейса: ограничения PAM-сессий задаются через политики доступа
+              и могут быть не заданы.
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <Input
-              label="Ротация паролей (дней)"
-              type="number"
-              value={data.password_rotation_days}
-              onChange={(v: any) => update("password_rotation_days", Number(v))}
-            />
-            <Input
-              label="Блокировка после (попыток)"
-              type="number"
-              value={data.lockout_attempts}
-              onChange={(v: any) => update("lockout_attempts", Number(v))}
-            />
-            <Input
-              label="Лимит сессий на админа"
-              type="number"
-              value={data.session_limit_default}
-              onChange={(v: any) => update("session_limit_default", Number(v))}
-            />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <Input
+                label="Ротация Vault-секретов / privileged accounts (дней)"
+                type="number"
+                value={data.password_rotation_days}
+                onChange={(v: any) => update("password_rotation_days", Number(v))}
+              />
+              <FieldHelp>
+                Применяется к секретам в хранилище Vault и управляемым privileged
+                accounts после onboarding. Не применяется к обычным пользователям KazPAM.
+              </FieldHelp>
+            </div>
+
+            <div>
+              <Input
+                label="Блокировка входа после неудачных попыток"
+                type="number"
+                value={data.lockout_attempts}
+                onChange={(v: any) => update("lockout_attempts", Number(v))}
+              />
+              <FieldHelp>
+                Применяется к попыткам входа в KazPAM. Помогает снизить риск brute-force
+                и account takeover.
+              </FieldHelp>
+            </div>
           </div>
         </Section>
 
@@ -916,6 +941,12 @@ const Section = ({ title, icon, children, onSave, loading }: any) => (
         {loading ? "Сохранение..." : <><Save size={18} /> Сохранить изменения</>}
       </button>
     </div>
+  </div>
+);
+
+const FieldHelp = ({ children }: { children: ReactNode }) => (
+  <div className="mt-2 text-xs text-gray-500 leading-5">
+    {children}
   </div>
 );
 

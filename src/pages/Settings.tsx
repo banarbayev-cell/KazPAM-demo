@@ -701,7 +701,10 @@ export default function SettingsPage() {
 
                 <div className="mt-6 grid grid-cols-1 xl:grid-cols-2 gap-6">
                   <LdapRoleMappingsCard />
-                  <LdapSyncCard />
+                  <LdapSyncCard
+                  disabled={integrationsDirty || saving === "integrations"}
+                  disabledReason="Сначала сохраните AD/LDAP настройки, затем выполните проверку пользователя или синхронизацию"
+                  />
                 </div>
               </>
             )}

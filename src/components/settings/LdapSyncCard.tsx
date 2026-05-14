@@ -2,7 +2,15 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { ldapApi, LdapSyncLog, LdapSyncResult } from "@/api/ldap";
 
-export default function LdapSyncCard() {
+type LdapSyncCardProps = {
+  disabled?: boolean;
+  disabledReason?: string;
+};
+
+export default function LdapSyncCard({
+  disabled = false,
+  disabledReason = "Сначала сохраните AD/LDAP настройки",
+}: LdapSyncCardProps) {
   const [email, setEmail] = useState("");
   const [result, setResult] = useState<LdapSyncResult | null>(null);
   const [logs, setLogs] = useState<LdapSyncLog[]>([]);
@@ -18,25 +26,34 @@ export default function LdapSyncCard() {
   };
 
   useEffect(() => {
-    loadLogs();
+    void loadLogs();
   }, []);
 
   const run = async (mode: "sync" | "dry-run") => {
-    if (!email.trim()) {
-      toast.error("Укажи email пользователя");
+    if (disabled) {
+      toast.error(disabledReason);
+      return;
+    }
+
+    const normalizedEmail = email.trim();
+
+    if (!normalizedEmail) {
+      toast.error("Укажите email пользователя");
       return;
     }
 
     setLoading(true);
+    setResult(null);
+
     try {
       const res =
         mode === "sync"
-          ? await ldapApi.syncUser(email.trim())
-          : await ldapApi.dryRunSyncUser(email.trim());
+          ? await ldapApi.syncUser(normalizedEmail)
+          : await ldapApi.dryRunSyncUser(normalizedEmail);
 
       setResult(res);
-      toast.success(mode === "sync" ? "LDAP sync выполнен" : "Dry-run выполнен");
-      loadLogs();
+      toast.success(mode === "sync" ? "LDAP sync выполнен" : "LDAP проверка выполнена");
+      await loadLogs();
     } catch (e: any) {
       toast.error(e?.message || "Ошибка LDAP sync");
     } finally {
@@ -49,28 +66,50 @@ export default function LdapSyncCard() {
 
   return (
     <div className="bg-[#0E1A3A] border border-white/10 rounded-xl p-5">
-      <h3 className="text-white font-semibold mb-4">Проверка и синхронизация LDAP</h3>
+      <div className="flex items-start justify-between gap-4 mb-4">
+        <div>
+          <h3 className="text-white font-semibold">Проверка и синхронизация LDAP</h3>
+          <p className="text-xs text-gray-500 mt-1">
+            Использует только сохранённые AD/LDAP настройки.
+          </p>
+        </div>
 
-      <div className="flex gap-3 mb-4">
+        {disabled && (
+          <span className="shrink-0 text-[11px] px-2 py-1 rounded-full border border-yellow-500/30 bg-yellow-500/10 text-yellow-200">
+            Требуется сохранение
+          </span>
+        )}
+      </div>
+
+      {disabled && (
+        <div className="mb-4 rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-200">
+          {disabledReason}
+        </div>
+      )}
+
+      <div className="flex flex-col lg:flex-row gap-3 mb-4">
         <input
           value={email}
           onChange={(e) => setEmail(e.target.value)}
+          disabled={disabled || loading}
           placeholder="user@company.local"
-          className="flex-1 bg-[#121A33] border border-[#2A3B55] rounded-lg px-4 py-3 text-white"
+          className="flex-1 bg-[#121A33] border border-[#2A3B55] rounded-lg px-4 py-3 text-white placeholder-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
         />
+
         <button
           onClick={() => run("dry-run")}
-          disabled={loading}
-          className="px-4 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-white"
+          disabled={disabled || loading}
+          className="px-4 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed text-white transition"
         >
-          Проверка
+          {loading ? "Проверка..." : "Проверка"}
         </button>
+
         <button
           onClick={() => run("sync")}
-          disabled={loading}
-          className="px-4 py-2 rounded-lg bg-[#0052FF] hover:bg-blue-700 text-white"
+          disabled={disabled || loading}
+          className="px-4 py-2 rounded-lg bg-[#0052FF] hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white transition"
         >
-          Синхронизировать
+          {loading ? "Синхронизация..." : "Синхронизировать"}
         </button>
       </div>
 
@@ -79,12 +118,17 @@ export default function LdapSyncCard() {
           <div className="text-white text-sm">
             Результат: <span className="font-medium">{result.status}</span>
           </div>
+
           <div className="text-gray-400 text-sm">Email: {result.email}</div>
+
           <div className="text-gray-400 text-sm">
             Roles: {result.roles?.join(", ") || "—"}
           </div>
+
           <div className="text-gray-400 text-sm">
-            Created: {result.created ? "Да" : "Нет"} · Updated: {result.updated ? "Да" : "Нет"} · Skipped: {result.skipped ? "Да" : "Нет"}
+            Created: {result.created ? "Да" : "Нет"} · Updated:{" "}
+            {result.updated ? "Да" : "Нет"} · Skipped:{" "}
+            {result.skipped ? "Да" : "Нет"}
           </div>
 
           {details?.reason && (
@@ -92,11 +136,15 @@ export default function LdapSyncCard() {
           )}
 
           {details?.displayName && (
-            <div className="text-gray-400 text-sm">DisplayName: {details.displayName}</div>
+            <div className="text-gray-400 text-sm">
+              DisplayName: {details.displayName}
+            </div>
           )}
 
           {details?.department && (
-            <div className="text-gray-400 text-sm">Department: {details.department}</div>
+            <div className="text-gray-400 text-sm">
+              Department: {details.department}
+            </div>
           )}
 
           {details?.title && (
@@ -104,7 +152,9 @@ export default function LdapSyncCard() {
           )}
 
           {typeof details?.groups_count !== "undefined" && (
-            <div className="text-gray-400 text-sm">Groups: {details.groups_count}</div>
+            <div className="text-gray-400 text-sm">
+              Groups: {details.groups_count}
+            </div>
           )}
         </div>
       )}
@@ -118,6 +168,7 @@ export default function LdapSyncCard() {
             <div className="text-white text-sm">
               #{log.id} · {log.mode} · {log.status}
             </div>
+
             <div className="text-gray-400 text-xs">
               {log.target_email || "—"} · {log.started_at}
             </div>

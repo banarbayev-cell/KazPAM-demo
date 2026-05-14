@@ -849,82 +849,153 @@ export default function SettingsPage() {
                 <h3 className="font-semibold text-white">SIEM Log Forwarding</h3>
               </div>
 
-              <Input
-                label="Адрес приёма событий SIEM (Splunk/QRadar)"
-                value={data.siem_webhook_url}
-                onChange={(v: any) => update("siem_webhook_url", v)}
-                placeholder="https://siem-collector..."
-              />
+              <Select
+                label="SIEM transport"
+                value={data.siem_transport || "webhook"}
+                onChange={(v: any) => update("siem_transport", v)}
+              >
+                <option value="webhook">Webhook / HTTP</option>
+                <option value="syslog">Syslog</option>
+              </Select>
 
-              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Select
-                  label="Auth Type"
-                  value={data.siem_auth_type || "none"}
-                  onChange={(v: any) => update("siem_auth_type", v)}
-                >
-                  <option value="none">None</option>
-                  <option value="bearer">Bearer</option>
-                  <option value="token">Authorization Token</option>
-                  <option value="api_key">X-API-Key</option>
-                  <option value="custom">Custom Headers</option>
-                </Select>
+              {(data.siem_transport || "webhook") === "webhook" && (
+                <>
+                  <div className="mt-4">
+                    <Input
+                      label="Адрес приёма событий SIEM (Splunk/QRadar)"
+                      value={data.siem_webhook_url}
+                      onChange={(v: any) => update("siem_webhook_url", v)}
+                      placeholder="https://siem-collector..."
+                    />
+                  </div>
 
-                <Input
-                  label="Auth Token"
-                  type="password"
-                  value={data.siem_auth_token}
-                  onChange={(v: any) => update("siem_auth_token", v)}
-                  placeholder={
-                    data.siem_auth_token_configured
-                      ? "Токен уже сохранён. Введите новый только если хотите обновить"
-                      : "Введите токен, если нужен"
-                  }
-                />
+                  <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <Select
+                      label="Auth Type"
+                      value={data.siem_auth_type || "none"}
+                      onChange={(v: any) => update("siem_auth_type", v)}
+                    >
+                      <option value="none">None</option>
+                      <option value="bearer">Bearer</option>
+                      <option value="token">Authorization Token</option>
+                      <option value="api_key">X-API-Key</option>
+                      <option value="custom">Custom Headers</option>
+                    </Select>
 
-                <div className="md:col-span-2">
-                  <label className="block text-sm text-gray-400 mb-1.5 font-medium">
-                    Custom Headers JSON
-                  </label>
+                    <Input
+                      label="Auth Token"
+                      type="password"
+                      value={data.siem_auth_token}
+                      onChange={(v: any) => update("siem_auth_token", v)}
+                      placeholder={
+                        data.siem_auth_token_configured
+                          ? "Токен уже сохранён. Введите новый только если хотите обновить"
+                          : "Введите токен, если нужен"
+                      }
+                    />
 
-                  <textarea
-                    value={data.siem_headers_json || ""}
-                    onChange={(e) => update("siem_headers_json", e.target.value)}
-                    rows={5}
-                    placeholder='{"Authorization":"Splunk abc123","X-Source":"KazPAM"}'
-                    className={`w-full bg-[#0E1A3A] border rounded-lg px-4 py-3 text-white placeholder-gray-600 focus:border-[#0052FF] focus:ring-1 focus:ring-blue-500 focus:outline-none transition-all resize-none ${
-                      validateSiemHeadersJson(data.siem_headers_json)
-                        ? "border-red-500"
-                        : "border-[#2A3B55]"
-                    }`}
+                    <div className="md:col-span-2">
+                      <label className="block text-sm text-gray-400 mb-1.5 font-medium">
+                        Custom Headers JSON
+                      </label>
+
+                      <textarea
+                        value={data.siem_headers_json || ""}
+                        onChange={(e) => update("siem_headers_json", e.target.value)}
+                        rows={5}
+                        placeholder='{"Authorization":"Splunk abc123","X-Source":"KazPAM"}'
+                        className={`w-full bg-[#0E1A3A] border rounded-lg px-4 py-3 text-white placeholder-gray-600 focus:border-[#0052FF] focus:ring-1 focus:ring-blue-500 focus:outline-none transition-all resize-none ${
+                          validateSiemHeadersJson(data.siem_headers_json)
+                            ? "border-red-500"
+                            : "border-[#2A3B55]"
+                        }`}
+                      />
+
+                      {validateSiemHeadersJson(data.siem_headers_json) ? (
+                        <div className="mt-2 text-xs text-red-400">
+                          {validateSiemHeadersJson(data.siem_headers_json)}
+                        </div>
+                      ) : (
+                        <div className="mt-1 text-xs text-gray-500">
+                          Для custom-интеграций можно передать дополнительные HTTP headers в JSON-формате.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {(data.siem_transport || "webhook") === "syslog" && (
+                <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Input
+                    label="Syslog host / IP"
+                    value={data.siem_syslog_host}
+                    onChange={(v: any) => update("siem_syslog_host", v)}
+                    placeholder="10.10.10.50 или siem.company.kz"
                   />
 
-                  {validateSiemHeadersJson(data.siem_headers_json) ? (
-                    <div className="mt-2 text-xs text-red-400">
-                      {validateSiemHeadersJson(data.siem_headers_json)}
-                    </div>
-                  ) : (
-                    <div className="mt-1 text-xs text-gray-500">
-                      Для custom-интеграций можно передать дополнительные HTTP headers в JSON-формате.
-                    </div>
-                  )}
+                  <Input
+                    label="Syslog port"
+                    type="number"
+                    value={data.siem_syslog_port || 514}
+                    onChange={(v: any) => update("siem_syslog_port", Number(v))}
+                  />
+
+                  <Select
+                    label="Protocol"
+                    value={data.siem_syslog_protocol || "udp"}
+                    onChange={(v: any) => update("siem_syslog_protocol", v)}
+                  >
+                    <option value="udp">UDP</option>
+                    <option value="tcp">TCP</option>
+                  </Select>
+
+                  <Select
+                    label="Format"
+                    value={data.siem_syslog_format || "json"}
+                    onChange={(v: any) => update("siem_syslog_format", v)}
+                  >
+                    <option value="json">JSON</option>
+                    <option value="cef">CEF</option>
+                    <option value="leef">LEEF</option>
+                  </Select>
+
+                  <Input
+                    label="Facility"
+                    value={data.siem_syslog_facility || "local0"}
+                    onChange={(v: any) => update("siem_syslog_facility", v)}
+                    placeholder="local0"
+                  />
+
+                  <div className="md:col-span-2 text-xs text-gray-500 leading-5">
+                    Простая отправка событий в SIEM через Syslog. Для первого рабочего варианта используется JSON over Syslog.
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div className="mt-4 flex flex-wrap items-center gap-3">
                 <button
                   onClick={handleTestSiem}
-                  disabled={testingSiem}
+                  disabled={testingSiem || integrationsDirty || saving === "integrations"}
                   className="text-xs px-3 py-2 bg-blue-600/20 text-blue-300 hover:bg-blue-600/30 rounded border border-blue-500/30 transition disabled:opacity-50"
                 >
-                  {testingSiem ? "Проверка SIEM..." : "Проверить SIEM"}
+                  {testingSiem
+                    ? "Проверка SIEM..."
+                    : integrationsDirty
+                      ? "Сначала сохраните настройки"
+                      : "Проверить SIEM"}
                 </button>
 
                 <button
                   onClick={handleExportSiem}
-                  disabled={exportingSiem}
+                  disabled={exportingSiem || integrationsDirty || saving === "integrations"}
                   className="text-xs px-3 py-2 bg-purple-600/20 text-purple-300 hover:bg-purple-600/30 rounded border border-purple-500/30 transition disabled:opacity-50"
                 >
-                  {exportingSiem ? "Экспорт SIEM..." : "Export now"}
+                  {exportingSiem
+                    ? "Экспорт SIEM..."
+                    : integrationsDirty
+                      ? "Сначала сохраните настройки"
+                      : "Export now"}
                 </button>
 
                 <span
@@ -940,7 +1011,7 @@ export default function SettingsPage() {
                 <div className="flex items-center justify-between gap-3">
                   <div className="text-white font-medium">Последний результат SIEM</div>
                   <div className="text-xs text-gray-400">
-                    Auth: {data.siem_auth_type || "none"} · Token:{" "}
+                    Transport: {data.siem_transport || "webhook"} · Auth: {data.siem_auth_type || "none"} · Token:{" "}
                     {data.siem_auth_token_configured ? "configured" : "not set"}
                   </div>
                 </div>
@@ -1035,17 +1106,81 @@ export default function SettingsPage() {
             <div>
               <div className="flex items-center justify-between mb-3">
                 <h3 className="font-semibold text-white">Аутентификация RADIUS</h3>
-                <Toggle checked={data.radius_enabled} onChange={(v: boolean) => update("radius_enabled", v)} />
+                <Toggle
+                  checked={data.radius_enabled}
+                  onChange={(v: boolean) => update("radius_enabled", v)}
+                />
               </div>
 
               {data.radius_enabled && (
-                <Input
-                  label="Shared Secret"
-                  type="password"
-                  value={data.radius_secret}
-                  onChange={(v: any) => update("radius_secret", v)}
-                  placeholder="Введите новый secret только если нужно обновить"
-                />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Input
+                    label="RADIUS server IP / host"
+                    value={data.radius_host}
+                    onChange={(v: any) => update("radius_host", v)}
+                    placeholder="10.10.10.20"
+                  />
+
+                  <Input
+                    label="Auth port"
+                    type="number"
+                    value={data.radius_auth_port || 1812}
+                    onChange={(v: any) => update("radius_auth_port", Number(v))}
+                  />
+
+                  <Input
+                    label="Accounting port"
+                    type="number"
+                    value={data.radius_accounting_port || 1813}
+                    onChange={(v: any) => update("radius_accounting_port", Number(v))}
+                  />
+
+                  <Input
+                    label="NAS ID"
+                    value={data.radius_nas_id}
+                    onChange={(v: any) => update("radius_nas_id", v)}
+                    placeholder="kazpam-gateway"
+                  />
+
+                  <Select
+                    label="Метод аутентификации / шифрования"
+                    value={data.radius_auth_method || "pap"}
+                    onChange={(v: any) => update("radius_auth_method", v)}
+                  >
+                    <option value="pap">PAP</option>
+                    <option value="chap">CHAP</option>
+                    <option value="mschapv2">MS-CHAPv2</option>
+                    <option value="radsec">RadSec / TLS</option>
+                  </Select>
+
+                  <Input
+                    label="Timeout (seconds)"
+                    type="number"
+                    value={data.radius_timeout_seconds || 5}
+                    onChange={(v: any) => update("radius_timeout_seconds", Number(v))}
+                  />
+
+                  <Input
+                    label="Retries"
+                    type="number"
+                    value={data.radius_retries || 3}
+                    onChange={(v: any) => update("radius_retries", Number(v))}
+                  />
+
+                  <div className="md:col-span-2">
+                    <Input
+                      label="Shared Secret"
+                      type="password"
+                      value={data.radius_secret}
+                      onChange={(v: any) => update("radius_secret", v)}
+                      placeholder={
+                        data.radius_secret_configured
+                          ? "Secret уже сохранён. Введите новый только если хотите обновить"
+                          : "Введите shared secret"
+                      }
+                    />
+                  </div>
+                </div>
               )}
             </div>
           </div>

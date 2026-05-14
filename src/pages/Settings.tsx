@@ -14,7 +14,6 @@ import {
   settingsApi,
   type Settings,
   type SettingsIntegrationsPayload,
-  type ADTestPayload,
   type SIEMTestResponse,
   type SIEMExportResponse,
 } from "../api/settings";
@@ -23,15 +22,66 @@ import LdapSyncCard from "@/components/settings/LdapSyncCard";
 
 type SettingsFormData = Settings & {
   ad_bind_password?: string;
+  ad_ca_cert?: string;
   radius_secret?: string;
   siem_auth_token?: string;
   smtp_password?: string;
 };
 
+const integrationFields = new Set<keyof SettingsFormData>([
+  "ad_enabled",
+  "ad_host",
+  "ad_port",
+  "ad_base_dn",
+  "ad_bind_dn",
+  "ad_bind_password",
+  "ad_use_ssl",
+  "ad_verify_cert",
+  "ad_ca_cert",
+  "ad_user_search_base",
+  "ad_group_search_base",
+  "ad_default_role",
+  "ad_jit_enabled",
+  "ad_require_mapped_role",
+
+  "siem_webhook_url",
+  "siem_transport",
+  "siem_syslog_host",
+  "siem_syslog_port",
+  "siem_syslog_protocol",
+  "siem_syslog_format",
+  "siem_syslog_facility",
+  "siem_auth_type",
+  "siem_auth_token",
+  "siem_headers_json",
+
+  "radius_enabled",
+  "radius_host",
+  "radius_auth_port",
+  "radius_accounting_port",
+  "radius_secret",
+  "radius_nas_id",
+  "radius_auth_method",
+  "radius_timeout_seconds",
+  "radius_retries",
+
+  "smtp_enabled",
+  "smtp_host",
+  "smtp_port",
+  "smtp_security",
+  "smtp_auth_enabled",
+  "smtp_user",
+  "smtp_password",
+  "smtp_from_email",
+  "smtp_from_name",
+  "smtp_timeout_seconds",
+]);
+
 export default function SettingsPage() {
   const [data, setData] = useState<SettingsFormData | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
+  const [integrationsDirty, setIntegrationsDirty] = useState(false);
 
   const [testingAd, setTestingAd] = useState(false);
   const [adTestResult, setAdTestResult] = useState<any | null>(null);
@@ -55,10 +105,12 @@ export default function SettingsPage() {
       setData({
         ...res,
         ad_bind_password: "",
+        ad_ca_cert: "",
         radius_secret: "",
         siem_auth_token: "",
         smtp_password: "",
       });
+      setIntegrationsDirty(false);
     } catch {
       toast.error("Ошибка загрузки настроек");
     } finally {
@@ -83,10 +135,18 @@ export default function SettingsPage() {
             siem_last_error: latest.siem_last_error,
             siem_last_delivery_operation: latest.siem_last_delivery_operation,
             siem_last_exported_events: latest.siem_last_exported_events,
+            siem_transport: latest.siem_transport,
+            siem_syslog_host: latest.siem_syslog_host,
+            siem_syslog_port: latest.siem_syslog_port,
+            siem_syslog_protocol: latest.siem_syslog_protocol,
+            siem_syslog_format: latest.siem_syslog_format,
+            siem_syslog_facility: latest.siem_syslog_facility,
           }
         : prev
     );
   };
+
+  
 
   const save = async (
     section: "general" | "security" | "integrations",
@@ -110,24 +170,17 @@ export default function SettingsPage() {
   const handleTestAd = async () => {
     if (!data) return;
 
+    if (integrationsDirty) {
+      toast.error("Сначала сохраните настройки AD/LDAP, затем выполните проверку подключения");
+      return;
+    }
+
     setTestingAd(true);
     setAdTestError(null);
     setAdTestResult(null);
 
     try {
-      const payload: ADTestPayload = {
-        host: data.ad_host,
-        port: data.ad_port,
-        bind_dn: data.ad_bind_dn,
-        base_dn: data.ad_base_dn,
-        use_ssl: data.ad_use_ssl,
-      };
-
-      if (data.ad_bind_password?.trim()) {
-        payload.bind_password = data.ad_bind_password.trim();
-      }
-
-      const res = await settingsApi.testAd(payload);
+      const res = await settingsApi.testAd();
       setAdTestResult(res);
       toast.success(`Соединение с ${data.ad_host || "AD"} успешно проверено`);
     } catch (e: any) {
@@ -141,15 +194,20 @@ export default function SettingsPage() {
   const handleTestSiem = async () => {
     if (!data) return;
 
+    if (integrationsDirty) {
+      toast.error("Сначала сохраните настройки SIEM, затем выполните проверку");
+      return;
+    }
+
     setTestingSiem(true);
     setSiemTestError(null);
     setSiemTestResult(null);
 
     try {
-      const res = await settingsApi.testSiem(data.siem_webhook_url?.trim());
+      const res = await settingsApi.testSiem();
       setSiemTestResult(res);
       await refreshSiemStatus();
-      toast.success(res.message || "SIEM webhook успешно проверен");
+      toast.success(res.message || "SIEM успешно проверен");
     } catch (e: any) {
       setSiemTestError(e?.message || "Ошибка теста SIEM");
       try {
@@ -166,12 +224,17 @@ export default function SettingsPage() {
   const handleExportSiem = async () => {
     if (!data) return;
 
+    if (integrationsDirty) {
+      toast.error("Сначала сохраните настройки SIEM, затем выполните экспорт");
+      return;
+    }
+
     setExportingSiem(true);
     setSiemExportError(null);
     setSiemExportResult(null);
 
     try {
-      const res = await settingsApi.exportSiemNow(data.siem_webhook_url?.trim());
+      const res = await settingsApi.exportSiemNow();
       setSiemExportResult(res);
       await refreshSiemStatus();
       toast.success(res.message || "SIEM export успешно отправлен");
@@ -189,6 +252,16 @@ export default function SettingsPage() {
   };
 
   const update = (field: keyof SettingsFormData, value: any) => {
+    if (integrationFields.has(field)) {
+      setIntegrationsDirty(true);
+      setAdTestResult(null);
+      setAdTestError(null);
+      setSiemTestResult(null);
+      setSiemTestError(null);
+      setSiemExportResult(null);
+      setSiemExportError(null);
+    }
+
     setData((prev) => (prev ? { ...prev, [field]: value } : null));
   };
 
@@ -202,6 +275,7 @@ export default function SettingsPage() {
       ad_base_dn: data.ad_base_dn,
       ad_bind_dn: data.ad_bind_dn,
       ad_use_ssl: data.ad_use_ssl,
+      ad_verify_cert: data.ad_verify_cert ?? true,
 
       ad_user_search_base: data.ad_user_search_base,
       ad_group_search_base: data.ad_group_search_base,
@@ -210,8 +284,14 @@ export default function SettingsPage() {
       ad_require_mapped_role: data.ad_require_mapped_role,
 
       siem_webhook_url: data.siem_webhook_url,
+      siem_transport: data.siem_transport || "webhook",
       siem_auth_type: data.siem_auth_type,
       siem_headers_json: data.siem_headers_json,
+      siem_syslog_host: data.siem_syslog_host,
+      siem_syslog_port: data.siem_syslog_port,
+      siem_syslog_protocol: data.siem_syslog_protocol || "udp",
+      siem_syslog_format: data.siem_syslog_format || "json",
+      siem_syslog_facility: data.siem_syslog_facility || "local0",
 
       smtp_enabled: data.smtp_enabled,
       smtp_host: data.smtp_host,
@@ -224,10 +304,21 @@ export default function SettingsPage() {
       smtp_timeout_seconds: data.smtp_timeout_seconds,
 
       radius_enabled: data.radius_enabled,
+      radius_host: data.radius_host,
+      radius_auth_port: data.radius_auth_port,
+      radius_accounting_port: data.radius_accounting_port,
+      radius_nas_id: data.radius_nas_id,
+      radius_auth_method: data.radius_auth_method || "pap",
+      radius_timeout_seconds: data.radius_timeout_seconds,
+      radius_retries: data.radius_retries,
     };
 
     if (data.ad_bind_password?.trim()) {
       payload.ad_bind_password = data.ad_bind_password.trim();
+    }
+
+    if (data.ad_ca_cert?.trim()) {
+      payload.ad_ca_cert = data.ad_ca_cert.trim();
     }
 
     if (data.siem_auth_token?.trim()) {
@@ -260,13 +351,16 @@ export default function SettingsPage() {
     }
   };
 
-  const handleSaveIntegrations = () => {
-    const validationError = validateSiemHeadersJson(data?.siem_headers_json);
-    if (validationError) {
-      toast.error(validationError);
-      return;
+  const handleSaveIntegrations = async () => {
+    if ((data?.siem_transport || "webhook") === "webhook") {
+      const validationError = validateSiemHeadersJson(data?.siem_headers_json);
+      if (validationError) {
+        toast.error(validationError);
+        return;
+      }
     }
-    void save("integrations", buildIntegrationsPayload());
+
+    await save("integrations", buildIntegrationsPayload());
   };
 
   const getSiemStatusBadgeClass = (status?: string | null) => {
@@ -524,6 +618,16 @@ export default function SettingsPage() {
                     <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
                       <input
                         type="checkbox"
+                        checked={data.ad_verify_cert ?? true}
+                        onChange={(e) => update("ad_verify_cert", e.target.checked)}
+                        className="accent-blue-500 w-4 h-4"
+                      />
+                      Проверять сертификат LDAPS
+                    </label>
+
+                    <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
+                      <input
+                        type="checkbox"
                         checked={!!data.ad_jit_enabled}
                         onChange={(e) => update("ad_jit_enabled", e.target.checked)}
                         className="accent-blue-500 w-4 h-4"
@@ -543,14 +647,42 @@ export default function SettingsPage() {
 
                     <button
                       onClick={handleTestAd}
-                      disabled={testingAd}
-                      className="text-xs px-3 py-1.5 bg-blue-600/20 text-blue-300 hover:bg-blue-600/30 rounded border border-blue-500/30 transition"
+                      disabled={testingAd || integrationsDirty || saving === "integrations"}
+                      className="text-xs px-3 py-1.5 bg-blue-600/20 text-blue-300 hover:bg-blue-600/30 rounded border border-blue-500/30 transition disabled:opacity-50"
                     >
                       {testingAd
                         ? "Проверка..."
-                        : "Проверка доступности контроллера домена и корректность параметров подключения"}
+                        : integrationsDirty
+                          ? "Сначала сохраните настройки"
+                          : "Проверить подключение AD/LDAP"}
                     </button>
                   </div>
+
+                  {data.ad_use_ssl && (
+                    <div className="md:col-span-2">
+                      <label className="block text-sm text-gray-400 mb-1.5 font-medium">
+                        AD/LDAP CA certificate / Root certificate
+                      </label>
+
+                      <textarea
+                        value={data.ad_ca_cert || ""}
+                        onChange={(e) => update("ad_ca_cert", e.target.value)}
+                        rows={8}
+                        placeholder={
+                          data.ad_ca_cert_configured
+                            ? "Сертификат уже сохранён. Вставьте новый PEM только если хотите обновить"
+                            : "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"
+                        }
+                        className="w-full bg-[#0E1A3A] border border-[#2A3B55] rounded-lg px-4 py-3 text-white placeholder-gray-600 focus:border-[#0052FF] focus:ring-1 focus:ring-blue-500 focus:outline-none transition-all resize-none font-mono text-xs"
+                      />
+
+                      <FieldHelp>
+                        Для LDAPS требуется DNS-имя Domain Controller, порт 636,
+                        включённая проверка сертификата и CA/root certificate в PEM-формате.
+                        Проверка подключения выполняется только после сохранения настроек.
+                      </FieldHelp>
+                    </div>
+                  )}
                 </div>
 
                 {(adTestResult || adTestError) && (

@@ -17,16 +17,23 @@ export interface Settings {
   ad_base_dn?: string;
   ad_bind_dn?: string;
   ad_use_ssl: boolean;
+  ad_verify_cert?: boolean;
+  ad_ca_cert_configured?: boolean;
 
   ad_user_search_base?: string;
   ad_group_search_base?: string;
   ad_default_role?: string;
   ad_jit_enabled?: boolean;
   ad_require_mapped_role?: boolean;
-
   ad_bind_password_configured?: boolean;
 
   siem_webhook_url?: string;
+  siem_transport?: "webhook" | "syslog" | string;
+  siem_syslog_host?: string | null;
+  siem_syslog_port?: number;
+  siem_syslog_protocol?: "udp" | "tcp" | string;
+  siem_syslog_format?: "json" | "cef" | "leef" | string;
+  siem_syslog_facility?: string | null;
 
   siem_auth_type?: string | null;
   siem_auth_token_configured?: boolean;
@@ -42,6 +49,13 @@ export interface Settings {
 
   radius_enabled: boolean;
   radius_secret_configured?: boolean;
+  radius_host?: string | null;
+  radius_auth_port?: number;
+  radius_accounting_port?: number;
+  radius_nas_id?: string | null;
+  radius_auth_method?: "pap" | "chap" | "mschapv2" | "radsec" | string;
+  radius_timeout_seconds?: number;
+  radius_retries?: number;
 
   smtp_enabled?: boolean;
   smtp_host?: string | null;
@@ -68,6 +82,8 @@ export interface SettingsIntegrationsPayload {
   ad_bind_dn?: string;
   ad_bind_password?: string;
   ad_use_ssl?: boolean;
+  ad_verify_cert?: boolean;
+  ad_ca_cert?: string;
 
   ad_user_search_base?: string;
   ad_group_search_base?: string;
@@ -76,12 +92,26 @@ export interface SettingsIntegrationsPayload {
   ad_require_mapped_role?: boolean;
 
   siem_webhook_url?: string;
+  siem_transport?: string;
+  siem_syslog_host?: string | null;
+  siem_syslog_port?: number;
+  siem_syslog_protocol?: string;
+  siem_syslog_format?: string;
+  siem_syslog_facility?: string | null;
+
   siem_auth_type?: string | null;
   siem_auth_token?: string;
   siem_headers_json?: string | null;
 
   radius_enabled?: boolean;
   radius_secret?: string;
+  radius_host?: string | null;
+  radius_auth_port?: number;
+  radius_accounting_port?: number;
+  radius_nas_id?: string | null;
+  radius_auth_method?: string;
+  radius_timeout_seconds?: number;
+  radius_retries?: number;
 
   smtp_enabled?: boolean;
   smtp_host?: string | null;
@@ -95,17 +125,9 @@ export interface SettingsIntegrationsPayload {
   smtp_timeout_seconds?: number;
 }
 
-export interface ADTestPayload {
-  host?: string;
-  port?: number;
-  bind_dn?: string;
-  bind_password?: string;
-  base_dn?: string;
-  use_ssl?: boolean;
-}
-
 export interface SIEMTestResponse {
   status: "success" | "failed" | string;
+  transport?: string;
   http_status?: number;
   message?: string;
   last_test_at?: string | null;
@@ -118,6 +140,7 @@ export interface SIEMTestResponse {
 
 export interface SIEMExportResponse {
   status: "success" | "failed" | string;
+  transport?: string;
   http_status?: number;
   exported_events?: number;
   message?: string;
@@ -191,11 +214,11 @@ export const settingsApi = {
     return json;
   },
 
-  testAd: async (data: ADTestPayload) => {
+  testAd: async () => {
     const res = await fetch(`${API_URL}/settings/integrations/ad/test`, {
       method: "POST",
       headers: getHeaders(),
-      body: JSON.stringify(data),
+      body: JSON.stringify({}),
     });
 
     const json = await res.json();
@@ -203,11 +226,11 @@ export const settingsApi = {
     return json;
   },
 
-  testSiem: async (webhook_url?: string): Promise<SIEMTestResponse> => {
+  testSiem: async (): Promise<SIEMTestResponse> => {
     const res = await fetch(`${API_URL}/settings/integrations/siem/test`, {
       method: "POST",
       headers: getHeaders(),
-      body: JSON.stringify({ webhook_url }),
+      body: JSON.stringify({}),
     });
 
     const json = await res.json();
@@ -215,11 +238,11 @@ export const settingsApi = {
     return json;
   },
 
-  exportSiemNow: async (webhook_url?: string): Promise<SIEMExportResponse> => {
+  exportSiemNow: async (): Promise<SIEMExportResponse> => {
     const res = await fetch(`${API_URL}/settings/integrations/siem/export-now`, {
       method: "POST",
       headers: getHeaders(),
-      body: JSON.stringify({ webhook_url }),
+      body: JSON.stringify({}),
     });
 
     const json = await res.json();

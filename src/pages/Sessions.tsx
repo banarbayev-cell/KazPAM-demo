@@ -599,7 +599,7 @@ export default function Sessions() {
   const handleLaunch = async () => {
     try {
       setLaunchLoading(true);
-      
+
       if (!manualMode && !selectedTarget) {
         toast.error("Выберите целевую систему");
         return;
@@ -607,13 +607,13 @@ export default function Sessions() {
 
       if (launchProtocol === "ssh") {
         let startResponse: Awaited<ReturnType<typeof startSession>> | null = null;
-      
+
         if (!manualMode) {
           if (!selectedTarget) {
             toast.error("Выберите целевую систему");
             return;
           }
-          
+
           startResponse = await startSession({
             user:
               selectedTarget.username?.trim() ||
@@ -645,21 +645,26 @@ export default function Sessions() {
         const matchedSession =
           (startedSessionId
             ? freshSessions.find((s) => s.id === startedSessionId) || null
-           : null) ||
+            : null) ||
           findRecentlyCreatedSession(freshSessions, {
             targetId: !manualMode ? selectedTarget?.id ?? null : null,
             system: manualMode ? manualForm.system : selectedTarget?.name,
             ip: manualMode ? manualForm.ip : selectedTarget?.host,
-            user:
-              !manualMode
-                ? selectedTarget?.username?.trim() || authUser?.email || ""
-                : manualForm.user,
+            user: !manualMode
+              ? selectedTarget?.username?.trim() || authUser?.email || ""
+              : manualForm.user,
           });
 
         if (matchedSession) {
           setLaunchedSession(matchedSession);
           setSelectedSession(matchedSession);
-          setLaunchResultOpen(true);
+
+          if (isActiveSshSession(matchedSession)) {
+            toast.success("SSH-сессия создана. Открываем экран подключения...");
+            navigate(`/sessions/${matchedSession.id}/connect`);
+          } else {
+            setLaunchResultOpen(true);
+          }
         }
 
         setSelectedTargetId("");
@@ -670,15 +675,18 @@ export default function Sessions() {
           ip: "",
         });
 
-        toast.success("SSH-сессия создана");
+        if (!matchedSession) {
+          toast.success("SSH-сессия создана");
+        }
+
         return;
       }
-      
+
       if (!selectedTarget) {
         toast.error("Выберите целевую систему");
         return;
       }
-      
+
       if (launchProtocol === "https") {
         const result = await launchWebAccess(selectedTarget.id);
 
@@ -717,11 +725,9 @@ export default function Sessions() {
           result.common_session_id
             ? `RDP launch создан · RDP #${result.id} · session #${result.common_session_id}`
             : `RDP launch создан · RDP #${result.id}`
-        );    
+        );
         return;
-      }  
-
-        
+      }
 
       if (launchProtocol === "mssql") {
         const result = await launchDbAccess(selectedTarget.id);
@@ -762,36 +768,36 @@ export default function Sessions() {
       const message = extractErrorMessage(error, "Не удалось запустить доступ");
 
       if (
-        message.includes("Target requires a bound vault secret and active approval before launch")
-      ) {
-        toast.error(
-          "Для этого target нужен Vault Secret и активное согласование. Привяжите секрет к target и создайте/одобрите запрос доступа."
-        );
-      } else if (
-        message.includes("Target requires an active approval grant before launch")
-      ) {
-        toast.error(
-          "Для этого target нужен approval. Создайте и одобрите запрос доступа перед запуском."
-        );
-      } else if (
-        message.includes("Target requires a bound vault secret before launch")
-      ) {
-        toast.error(
-          "Для этого target нужно сначала привязать Vault Secret."
-        );
-      } else if (
-        message.includes("Access denied for this target")
-      ) {
-        toast.error(
-          "Нет доступа к этому target. Назначьте роль через Targets → Доступ."
-        );
-      } else {
-        toast.error(message);
-      }
-    } finally {
-      setLaunchLoading(false);
+      message.includes("Target requires a bound vault secret and active approval before launch")
+    ) {
+      toast.error(
+        "Для этого target нужен Vault Secret и активное согласование. Привяжите секрет к target и создайте/одобрите запрос доступа."
+      );
+    } else if (
+      message.includes("Target requires an active approval grant before launch")
+    ) {
+      toast.error(
+        "Для этого target нужен approval. Создайте и одобрите запрос доступа перед запуском."
+      );
+    } else if (
+      message.includes("Target requires a bound vault secret before launch")
+    ) {
+      toast.error(
+        "Для этого target нужно сначала привязать Vault Secret."
+      );
+    } else if (
+      message.includes("Access denied for this target")
+    ) {
+      toast.error(
+        "Нет доступа к этому target. Назначьте роль через Targets → Доступ."
+      );
+    } else {
+      toast.error(message);
     }
-  };
+  } finally {
+    setLaunchLoading(false);
+  }
+};
 
   const activeCount = sessions.filter((s) => s.status === "active").length;
   const completedCount = sessions.filter(
@@ -978,6 +984,15 @@ export default function Sessions() {
         onAudit={() =>
           selectedSession && handleAudit(selectedSession)
         }
+        onOpenReplay={() => {
+          const recordingId = getSessionRecordingId(selectedSession);
+          if (!recordingId) {
+            toast.info("Recording недоступен для этой сессии или ещё обрабатывается");
+            return;
+          }
+
+          navigate(`/recordings/${recordingId}`);
+        }}
       />
 
       {launchResultOpen && launchedSession && (

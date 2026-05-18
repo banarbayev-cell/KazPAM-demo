@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Copy, RefreshCw, ShieldCheck, TerminalSquare } from "lucide-react";
+import {
+  AlertTriangle,
+  Copy,
+  RefreshCw,
+  ShieldCheck,
+  TerminalSquare,
+} from "lucide-react";
 import { toast } from "sonner";
 import {
   getSessionConnectInfo,
@@ -35,12 +41,55 @@ async function copyText(text: string) {
   copyTextFallback(text);
 }
 
-function normalizeDisplayProxyHost(rawHost?: string) {
-  const value = String(rawHost || "").trim().toLowerCase();
-  if (!value || value === "127.0.0.1" || value === "localhost" || value === "0.0.0.0") {
-    return window.location.hostname || rawHost || "127.0.0.1";
+function normalizeHost(value?: string | null) {
+  return String(value || "").trim();
+}
+
+function isLocalOnlyGatewayHost(value?: string | null) {
+  const host = normalizeHost(value).toLowerCase();
+
+  return (
+    !host ||
+    host === "127.0.0.1" ||
+    host === "localhost" ||
+    host === "0.0.0.0" ||
+    host === "::1"
+  );
+}
+
+function buildSshCommand(connectInfo: SessionConnectInfo) {
+  const backendCommand = String(connectInfo.ssh_command || "").trim();
+
+  if (backendCommand) {
+    return backendCommand;
   }
-  return rawHost || value;
+
+  const proxyHost = normalizeHost(connectInfo.proxy_host);
+
+  if (!proxyHost || isLocalOnlyGatewayHost(proxyHost)) {
+    return "";
+  }
+
+  return `ssh -p ${connectInfo.proxy_port} ${connectInfo.grant_token}@${proxyHost}`;
+}
+
+function getGatewayConfigWarning(connectInfo: SessionConnectInfo) {
+  const proxyHost = normalizeHost(connectInfo.proxy_host);
+  const backendCommand = String(connectInfo.ssh_command || "").trim();
+
+  if (backendCommand) {
+    return "";
+  }
+
+  if (!proxyHost) {
+    return "Gateway host не настроен. Backend должен вернуть публичный SSH Gateway host для подключения пользователя.";
+  }
+
+  if (isLocalOnlyGatewayHost(proxyHost)) {
+    return `Gateway host сейчас указан как "${proxyHost}". Это локальный адрес сервера и он обычно недоступен с рабочей станции пользователя. Для production нужно настроить публичный DNS/IP KazPAM SSH Gateway.`;
+  }
+
+  return "";
 }
 
 export default function SessionConnect() {
@@ -85,31 +134,29 @@ export default function SessionConnect() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
-  const displayProxyHost = useMemo(() => {
-    return normalizeDisplayProxyHost(connectInfo?.proxy_host);
-  }, [connectInfo?.proxy_host]);
-
   const sshCommand = useMemo(() => {
     if (!connectInfo) return "";
-    return `ssh -p ${connectInfo.proxy_port} ${connectInfo.grant_token}@${displayProxyHost}`;
-  }, [connectInfo, displayProxyHost]);
+    return buildSshCommand(connectInfo);
+  }, [connectInfo]);
+
+  const gatewayWarning = useMemo(() => {
+    if (!connectInfo) return "";
+    return getGatewayConfigWarning(connectInfo);
+  }, [connectInfo]);
+
+  const canCopyCommand = Boolean(sshCommand);
 
   const handleCopyCommand = async () => {
+    if (!sshCommand) {
+      toast.error("Команда подключения недоступна: проверьте настройку SSH Gateway host");
+      return;
+    }
+
     try {
       await copyText(sshCommand);
       toast.success("Команда подключения скопирована");
     } catch {
       toast.error("Не удалось скопировать команду");
-    }
-  };
-
-  const handleCopyGrant = async () => {
-    if (!connectInfo?.grant_token) return;
-    try {
-      await copyText(connectInfo.grant_token);
-      toast.success("Grant token скопирован");
-    } catch {
-      toast.error("Не удалось скопировать grant token");
     }
   };
 
@@ -119,6 +166,7 @@ export default function SessionConnect() {
     const ok = window.confirm(
       `Завершить SSH-сессию #${connectInfo.session_id}?`
     );
+
     if (!ok) return;
 
     try {
@@ -137,6 +185,7 @@ export default function SessionConnect() {
     return (
       <div className="p-6 w-full bg-gray-100 text-gray-900">
         <h1 className="text-3xl font-bold mb-6">Подключение к SSH-сессии</h1>
+
         <div className="rounded-2xl border border-[#D8DCE7] bg-white p-6 shadow-sm">
           Подготовка данных подключения...
         </div>
@@ -178,14 +227,17 @@ export default function SessionConnect() {
     );
   }
 
+  const gatewayHost = normalizeHost(connectInfo.proxy_host) || "—";
+
   return (
     <div className="p-6 w-full bg-gray-100 text-gray-900">
       <div className="flex items-start justify-between gap-4 mb-6">
         <div>
           <h1 className="text-3xl font-bold">Подключение к SSH-сессии</h1>
+
           <p className="text-sm text-gray-600 mt-2">
-            Сессия уже создана в KazPAM. Для начала работы выполните команду
-            подключения через KazPAM SSH Gateway.
+            Сессия уже создана в KazPAM. Для начала работы выполните готовую
+            команду подключения через KazPAM SSH Gateway.
           </p>
         </div>
 
@@ -219,6 +271,30 @@ export default function SessionConnect() {
         </div>
       </div>
 
+      {gatewayWarning && (
+        <div className="rounded-2xl border border-yellow-300 bg-yellow-50 p-5 shadow-sm mb-6">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="text-yellow-700 mt-0.5" size={20} />
+
+            <div>
+              <div className="font-semibold text-yellow-900">
+                Требуется настройка публичного SSH Gateway host
+              </div>
+
+              <div className="mt-1 text-sm text-yellow-900 leading-6">
+                {gatewayWarning}
+              </div>
+
+              <div className="mt-2 text-xs text-yellow-800 leading-5">
+                Для заказчика это должно задаваться на backend/gateway уровне:
+                например через системные настройки, env-переменную или настройку
+                Gateway Node. Frontend не подменяет адрес автоматически.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         <div className="rounded-2xl border border-[#D8DCE7] bg-white p-6 shadow-sm">
           <h2 className="text-lg font-semibold mb-4">Параметры сессии</h2>
@@ -228,10 +304,11 @@ export default function SessionConnect() {
             <Row label="Статус" value={connectInfo.session_status} />
             <Row label="Протокол" value={connectInfo.protocol?.toUpperCase()} />
             <Row label="Система" value={connectInfo.system} />
-            <Row label="IP" value={connectInfo.ip} />
             <Row label="Target host" value={connectInfo.target_host} />
             <Row label="Target port" value={connectInfo.target_port} />
             <Row label="Target user" value={connectInfo.target_user} />
+            <Row label="Gateway host" value={gatewayHost} />
+            <Row label="Gateway port" value={connectInfo.proxy_port} />
             <Row label="Gateway node" value={connectInfo.gateway_node || "—"} />
             <Row label="SSH auth mode" value={connectInfo.ssh_auth_mode || "—"} />
             <Row label="Grant expires" value={connectInfo.expires_at} />
@@ -247,44 +324,48 @@ export default function SessionConnect() {
         <div className="rounded-2xl border border-[#D8DCE7] bg-white p-6 shadow-sm">
           <div className="flex items-center gap-2 mb-4">
             <TerminalSquare size={18} />
-            <h2 className="text-lg font-semibold">Команда подключения</h2>
+            <h2 className="text-lg font-semibold">Готовая команда подключения</h2>
           </div>
 
           <div className="text-sm text-gray-600 mb-3">
-            Откройте PowerShell, Terminal или SSH-клиент на своей рабочей станции
-            и выполните команду ниже.
+            Откройте PowerShell, Terminal или SSH-клиент на рабочей станции и
+            выполните команду ниже.
           </div>
 
-          <div className="rounded-xl border border-[#D8DCE7] bg-[#0E1A3A] p-4 text-green-300 font-mono text-sm break-all">
-            {sshCommand}
-          </div>
+          {sshCommand ? (
+            <div className="rounded-xl border border-[#D8DCE7] bg-[#0E1A3A] p-4 text-green-300 font-mono text-sm break-all">
+              {sshCommand}
+            </div>
+          ) : (
+            <div className="rounded-xl border border-yellow-300 bg-yellow-50 p-4 text-sm text-yellow-900 leading-6">
+              Команда подключения недоступна, потому что публичный адрес SSH Gateway
+              не настроен. Настройте Gateway host на backend/gateway уровне и обновите доступ.
+            </div>
+          )}
 
           <div className="mt-4 flex flex-wrap gap-3">
             <button
               onClick={handleCopyCommand}
-              className="px-4 py-2 rounded bg-[#0052FF] text-white inline-flex items-center gap-2"
+              disabled={!canCopyCommand}
+              className="px-4 py-2 rounded bg-[#0052FF] text-white inline-flex items-center gap-2 disabled:bg-gray-400 disabled:cursor-not-allowed"
             >
               <Copy size={16} />
               Скопировать команду
             </button>
-
-            <button
-              onClick={handleCopyGrant}
-              className="px-4 py-2 rounded bg-[#1A243F] text-white"
-            >
-              Скопировать grant token
-            </button>
           </div>
 
           <div className="mt-5 rounded-xl border border-[#D8DCE7] bg-gray-50 p-4 text-sm text-gray-700 space-y-2">
-            <div>1. Откройте PowerShell / Terminal.</div>
-            <div>2. Выполните команду подключения.</div>
-            <div>3. При первом подключении SSH может попросить подтвердить host key.</div>
-            <div>4. После этого откроется рабочая shell-сессия через KazPAM Gateway.</div>
+            <div>1. Откройте PowerShell / Terminal / SSH-клиент.</div>
+            <div>2. Скопируйте и выполните готовую команду подключения.</div>
+            <div>3. Подключение пойдёт через KazPAM SSH Gateway.</div>
+            <div>4. Все события сессии фиксируются в Audit/SOC.</div>
           </div>
 
-          <div className="mt-4 text-xs text-gray-500">
-            Grant token краткоживущий и используется для контролируемого доступа к уже созданной PAM-сессии.
+          <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-4 text-xs text-blue-900 leading-5">
+            Grant token — это временный технический пропуск для KazPAM Gateway.
+            Пользователю не нужно вводить его отдельно: он уже включён в готовую
+            SSH-команду. После истечения срока действия или завершения сессии
+            этот доступ становится недействительным.
           </div>
         </div>
       </div>
@@ -319,6 +400,7 @@ function Row({
   return (
     <div className="flex items-start justify-between gap-4 border-b border-gray-100 pb-2">
       <span className="text-gray-500">{label}</span>
+
       <span className="text-right font-medium text-gray-900 break-all">
         {value ?? "—"}
       </span>

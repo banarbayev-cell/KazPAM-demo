@@ -200,7 +200,7 @@ function findRecentlyCreatedSession(
 
   if (exactByTarget) return exactByTarget;
 
-  const byManualFields =
+  const byFields =
     sessions.find((s) => {
       const sameUser =
         !normalizedUser ||
@@ -217,7 +217,7 @@ function findRecentlyCreatedSession(
       return sameUser && sameSystem && sameIp && s.status === "active";
     }) || null;
 
-  if (byManualFields) return byManualFields;
+  if (byFields) return byFields;
 
   return sessions.find((s) => s.status === "active") || null;
 }
@@ -447,22 +447,14 @@ export default function Sessions() {
       setSessions((prev): Session[] =>
         prev
           .map((s): Session =>
-            s.id === session.id
-              ? {
-                  ...s,
-                  status: "terminated" as const,
-                }
-              : s
+            s.id === session.id ? { ...s, status: "terminated" as const } : s
           )
           .sort((a, b) => b.id - a.id)
       );
 
       setSelectedSession((prev) =>
         prev && prev.id === session.id
-          ? {
-              ...prev,
-              status: "terminated" as const,
-            }
+          ? { ...prev, status: "terminated" as const }
           : prev
       );
 
@@ -567,7 +559,7 @@ export default function Sessions() {
         notifySessionsChanged();
 
         const startedSessionId =
-          startResponse?.session?.id ?? startResponse?.id ?? null;
+          (startResponse as any)?.session?.id ?? (startResponse as any)?.id ?? null;
 
         const matchedSession =
           (startedSessionId
@@ -1002,12 +994,8 @@ export default function Sessions() {
 
             <div className="rounded-lg bg-[#0E1A3A] border border-[#1E2A45] p-4 text-sm space-y-2">
               <div>Session ID: #{webAccessResult.session_id}</div>
-              <div>
-                Target: #{webAccessResult.target_id} · {webAccessResult.target_name}
-              </div>
-              <div>
-                Host: {webAccessResult.target_host}:{webAccessResult.target_port}
-              </div>
+              <div>Target: #{webAccessResult.target_id} · {webAccessResult.target_name}</div>
+              <div>Host: {webAccessResult.target_host}:{webAccessResult.target_port}</div>
               <div>Protocol: {webAccessResult.protocol.toUpperCase()}</div>
               <div>Break-glass: {webAccessResult.break_glass ? "Да" : "Нет"}</div>
             </div>
@@ -1125,12 +1113,8 @@ export default function Sessions() {
 
             <div className="rounded-lg bg-[#0E1A3A] border border-[#1E2A45] p-4 text-sm space-y-2">
               <div>Session ID: #{dbAccessResult.session_id}</div>
-              <div>
-                Target: #{dbAccessResult.target_id} · {dbAccessResult.target_name}
-              </div>
-              <div>
-                Host: {dbAccessResult.target_host}:{dbAccessResult.target_port}
-              </div>
+              <div>Target: #{dbAccessResult.target_id} · {dbAccessResult.target_name}</div>
+              <div>Host: {dbAccessResult.target_host}:{dbAccessResult.target_port}</div>
               <div>User: {dbAccessResult.username || "—"}</div>
               <div>Break-glass: {dbAccessResult.break_glass ? "Да" : "Нет"}</div>
             </div>
@@ -1172,15 +1156,9 @@ export default function Sessions() {
 
             <div className="rounded-lg bg-[#0E1A3A] border border-[#1E2A45] p-4 text-sm space-y-2">
               <div>Session ID: #{vncAccessResult.session_id}</div>
-              <div>
-                Target: #{vncAccessResult.target_id} · {vncAccessResult.target_name}
-              </div>
-              <div>
-                Target host: {vncAccessResult.target_host}:{vncAccessResult.target_port}
-              </div>
-              <div>
-                Launch: {vncAccessResult.launch_host}:{vncAccessResult.launch_port}
-              </div>
+              <div>Target: #{vncAccessResult.target_id} · {vncAccessResult.target_name}</div>
+              <div>Target host: {vncAccessResult.target_host}:{vncAccessResult.target_port}</div>
+              <div>Launch: {vncAccessResult.launch_host}:{vncAccessResult.launch_port}</div>
               <div>User: {vncAccessResult.username || "—"}</div>
               <div>Break-glass: {vncAccessResult.break_glass ? "Да" : "Нет"}</div>
             </div>

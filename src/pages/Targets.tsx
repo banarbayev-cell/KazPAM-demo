@@ -123,7 +123,7 @@ function validateTargetForm(form: TargetFormState): string | null {
   const vaultSecretId = normalizeVaultSecretId(form.vault_secret_id);
 
   if (!form.name.trim()) {
-    return "Укажите name целевой системы";
+    return "Укажите понятное название целевой системы";
   }
 
   if (!form.host.trim()) {
@@ -132,7 +132,7 @@ function validateTargetForm(form: TargetFormState): string | null {
 
   if (protocol === "ssh" && form.ssh_auth_mode === "gateway_key") {
     if (!form.username.trim()) {
-      return "Для SSH gateway_key укажите target username";
+      return "Для SSH gateway_key укажите учётную запись target";
     }
   }
 
@@ -1072,16 +1072,19 @@ async function handleOpenVncBreakGlass() {
               <div className="px-6 py-5 overflow-y-auto flex-1 space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <label className="text-sm text-gray-300">Name</label>
+                    <label className="text-sm text-gray-300">Название целевой системы</label>
                     <input
                       value={createForm.name}
                       onChange={(e) =>
                         setCreateForm((s) => ({ ...s, name: e.target.value }))
                       }
                       className="w-full p-2 rounded bg-[#0E1A3A] border border-[#1E2A45] text-white"
-                      placeholder="rdp-test-1"
+                      placeholder="например: linux-prod-01 / rdp-dc-01 / mssql-core-db"
                     />
+                <div className="text-xs text-gray-500 leading-5">
+                  Название используется в Sessions, Audit, SOC, Recordings и SIEM. Укажите понятное имя сервера, базы данных или приложения.
                 </div>
+              </div>
 
                 <div className="space-y-2">
                   <label className="text-sm text-gray-300">Host</label>
@@ -1108,15 +1111,18 @@ async function handleOpenVncBreakGlass() {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-sm text-gray-300">Username</label>
+                  <label className="text-sm text-gray-300">Учётная запись target</label>
                   <input
                     value={createForm.username}
                     onChange={(e) =>
                       setCreateForm((s) => ({ ...s, username: e.target.value }))
                     }
                     className="w-full p-2 rounded bg-[#0E1A3A] border border-[#1E2A45] text-white"
-                    placeholder="Administrator"
+                    placeholder="например: Administrator / root / admin"
                   />
+                </div>
+                <div className="text-xs text-gray-500 leading-5">
+                  Учётная запись, под которой KazPAM Gateway подключается к целевой системе. Для SSH gateway_key это поле обязательно.
                 </div>
 
                 <div className="space-y-2">
@@ -1360,7 +1366,7 @@ async function handleOpenVncBreakGlass() {
               <div className="px-6 py-5 overflow-y-auto flex-1 space-y-4">
                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <label className="text-sm text-gray-300">Name</label>
+                  <label className="text-sm text-gray-300">Название целевой системы</label>
                   <input
                     value={editForm.name}
                     onChange={(e) =>
@@ -1393,7 +1399,7 @@ async function handleOpenVncBreakGlass() {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-sm text-gray-300">Username</label>
+                  <label className="text-sm text-gray-300">Учётная запись target</label>
                   <input
                     value={editForm.username}
                     onChange={(e) =>

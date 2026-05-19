@@ -6,6 +6,9 @@ import {
   RefreshCw,
   ShieldCheck,
   TerminalSquare,
+  KeyRound,
+  ExternalLink,
+  CheckCircle2,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -92,6 +95,13 @@ function getGatewayConfigWarning(connectInfo: SessionConnectInfo) {
   return "";
 }
 
+function maskGrantToken(value?: string | null) {
+  const raw = String(value || "").trim();
+  if (!raw) return "—";
+  if (raw.length <= 10) return "••••••••";
+  return `${raw.slice(0, 6)}••••••${raw.slice(-6)}`;
+}
+
 export default function SessionConnect() {
   const navigate = useNavigate();
   const { id } = useParams();
@@ -145,6 +155,7 @@ export default function SessionConnect() {
   }, [connectInfo]);
 
   const canCopyCommand = Boolean(sshCommand);
+  const gatewayReady = Boolean(connectInfo && !gatewayWarning && sshCommand);
 
   const handleCopyCommand = async () => {
     if (!sshCommand) {
@@ -157,6 +168,20 @@ export default function SessionConnect() {
       toast.success("Команда подключения скопирована");
     } catch {
       toast.error("Не удалось скопировать команду");
+    }
+  };
+
+  const handleCopyToken = async () => {
+    if (!connectInfo?.grant_token) {
+      toast.error("Grant token недоступен");
+      return;
+    }
+
+    try {
+      await copyText(connectInfo.grant_token);
+      toast.success("Grant token скопирован");
+    } catch {
+      toast.error("Не удалось скопировать grant token");
     }
   };
 
@@ -260,14 +285,60 @@ export default function SessionConnect() {
         </div>
       </div>
 
-      <div className="rounded-2xl border border-green-200 bg-white p-5 shadow-sm mb-6">
-        <div className="flex items-center gap-2 text-green-700 font-semibold">
-          <ShieldCheck size={18} />
-          Сессия активна и готова к подключению
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 mb-6">
+        <div className="rounded-2xl border border-green-200 bg-white p-5 shadow-sm">
+          <div className="flex items-center gap-2 text-green-700 font-semibold">
+            <ShieldCheck size={18} />
+            Сессия активна
+          </div>
+
+          <div className="mt-2 text-sm text-gray-600 leading-6">
+            KazPAM создал управляемую SSH-сессию. Все действия в рамках подключения
+            идут через Gateway и попадают в контроль/audit.
+          </div>
         </div>
 
-        <div className="mt-2 text-sm text-gray-600">
-          Доступ идёт через KazPAM Gateway, записывается и контролируется системой.
+        <div className="rounded-2xl border border-[#D8DCE7] bg-white p-5 shadow-sm">
+          <div className="flex items-center gap-2 font-semibold text-gray-900">
+            <CheckCircle2 size={18} />
+            Gateway readiness
+          </div>
+
+          <div className="mt-2 text-sm text-gray-600">
+            {gatewayReady
+              ? "Gateway host выглядит корректно, команда подключения готова."
+              : "Нужно проверить gateway host / ssh_command на backend стороне."}
+          </div>
+
+          <div className="mt-4 text-xs text-gray-500 leading-5">
+            Host: <span className="font-medium text-gray-800">{gatewayHost}</span>
+            <br />
+            Port: <span className="font-medium text-gray-800">{connectInfo.proxy_port}</span>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-[#D8DCE7] bg-white p-5 shadow-sm">
+          <div className="flex items-center gap-2 font-semibold text-gray-900">
+            <KeyRound size={18} />
+            Grant token
+          </div>
+
+          <div className="mt-2 text-sm text-gray-600 leading-6">
+            Это временный технический пропуск для SSH Gateway. Пользователь
+            обычно не вставляет его отдельно — он уже встроен в команду подключения.
+          </div>
+
+          <div className="mt-3 rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 font-mono text-xs text-gray-800 break-all">
+            {maskGrantToken(connectInfo.grant_token)}
+          </div>
+
+          <button
+            onClick={handleCopyToken}
+            className="mt-3 px-3 py-2 rounded bg-[#1A243F] text-white text-sm inline-flex items-center gap-2"
+          >
+            <Copy size={15} />
+            Скопировать token
+          </button>
         </div>
       </div>
 
@@ -286,9 +357,8 @@ export default function SessionConnect() {
               </div>
 
               <div className="mt-2 text-xs text-yellow-800 leading-5">
-                Для заказчика это должно задаваться на backend/gateway уровне:
-                например через системные настройки, env-переменную или настройку
-                Gateway Node. Frontend не подменяет адрес автоматически.
+                Для production это должно задаваться на backend/gateway уровне.
+                Frontend здесь только показывает готовые параметры, а не угадывает адрес.
               </div>
             </div>
           </div>
@@ -327,9 +397,9 @@ export default function SessionConnect() {
             <h2 className="text-lg font-semibold">Готовая команда подключения</h2>
           </div>
 
-          <div className="text-sm text-gray-600 mb-3">
-            Откройте PowerShell, Terminal или SSH-клиент на рабочей станции и
-            выполните команду ниже.
+          <div className="text-sm text-gray-600 mb-3 leading-6">
+            Откройте PowerShell, Windows Terminal, macOS Terminal или Linux shell
+            и выполните готовую команду ниже.
           </div>
 
           {sshCommand ? (
@@ -352,20 +422,47 @@ export default function SessionConnect() {
               <Copy size={16} />
               Скопировать команду
             </button>
+
+            <button
+              onClick={() => navigate(`/audit?session_id=${connectInfo.session_id}`)}
+              className="px-4 py-2 rounded bg-[#1A243F] text-white inline-flex items-center gap-2"
+            >
+              <ExternalLink size={16} />
+              Открыть Audit
+            </button>
           </div>
 
           <div className="mt-5 rounded-xl border border-[#D8DCE7] bg-gray-50 p-4 text-sm text-gray-700 space-y-2">
             <div>1. Откройте PowerShell / Terminal / SSH-клиент.</div>
             <div>2. Скопируйте и выполните готовую команду подключения.</div>
-            <div>3. Подключение пойдёт через KazPAM SSH Gateway.</div>
-            <div>4. Все события сессии фиксируются в Audit/SOC.</div>
+            <div>3. KazPAM Gateway примет встроенный grant token автоматически.</div>
+            <div>4. Дополнительно вставлять token в отдельное поле не нужно.</div>
+            <div>5. Все события сессии фиксируются в Audit/SOC.</div>
           </div>
 
           <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-4 text-xs text-blue-900 leading-5">
-            Grant token — это временный технический пропуск для KazPAM Gateway.
-            Пользователю не нужно вводить его отдельно: он уже включён в готовую
-            SSH-команду. После истечения срока действия или завершения сессии
-            этот доступ становится недействительным.
+            Grant token — это короткоживущий технический пропуск для KazPAM Gateway.
+            Он уже встроен в SSH-команду как временное имя пользователя для gateway-auth
+            и после истечения срока действия становится недействительным.
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-6 rounded-2xl border border-[#D8DCE7] bg-white p-5 shadow-sm">
+        <div className="font-semibold text-gray-900 mb-3">Troubleshooting</div>
+
+        <div className="space-y-2 text-sm text-gray-700 leading-6">
+          <div>
+            <b>Вижу экран, но команда пустая:</b> не настроен публичный SSH Gateway host.
+          </div>
+          <div>
+            <b>Команда скопировалась, но не подключается:</b> проверьте доступность gateway host и порт {connectInfo.proxy_port}.
+          </div>
+          <div>
+            <b>Token истёк:</b> нажмите “Обновить доступ”, будет выдан новый временный grant.
+          </div>
+          <div>
+            <b>Сессию уже завершили:</b> экран подключения откроется только для активной SSH-сессии.
           </div>
         </div>
       </div>

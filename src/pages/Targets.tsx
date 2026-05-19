@@ -1063,21 +1063,24 @@ async function handleOpenVncBreakGlass() {
         </div>
 
         {showCreateModal && (
-          <div className="fixed inset-0 flex items-center justify-center bg-black/50 z-50">
-            <div className="bg-[#121A33] p-6 rounded-xl border border-[#1E2A45] w-[760px] max-w-[95vw] space-y-4">
-              <h2 className="text-lg font-semibold text-white">Создать target</h2>
+          <div className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-[#121A33] rounded-xl border border-[#1E2A45] w-[1040px] max-w-[96vw] max-h-[92vh] shadow-2xl overflow-hidden flex flex-col">
+              <div className="px-6 py-5 border-b border-[#1E2A45] shrink-0">
+                <h2 className="text-lg font-semibold text-white">Создать target</h2>
+              </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-sm text-gray-300">Name</label>
-                  <input
-                    value={createForm.name}
-                    onChange={(e) =>
-                      setCreateForm((s) => ({ ...s, name: e.target.value }))
-                    }
-                    className="w-full p-2 rounded bg-[#0E1A3A] border border-[#1E2A45] text-white"
-                    placeholder="rdp-test-1"
-                  />
+              <div className="px-6 py-5 overflow-y-auto flex-1 space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm text-gray-300">Name</label>
+                    <input
+                      value={createForm.name}
+                      onChange={(e) =>
+                        setCreateForm((s) => ({ ...s, name: e.target.value }))
+                      }
+                      className="w-full p-2 rounded bg-[#0E1A3A] border border-[#1E2A45] text-white"
+                      placeholder="rdp-test-1"
+                    />
                 </div>
 
                 <div className="space-y-2">
@@ -1322,20 +1325,23 @@ async function handleOpenVncBreakGlass() {
                 </label>
               </div>
 
-              <div className="flex justify-end gap-2 pt-2">
+              </div>
+              <div className="px-6 py-4 border-t border-[#1E2A45] bg-[#121A33] shrink-0 flex justify-end gap-3">
                 <button
+                  type="button"
                   onClick={() => setShowCreateModal(false)}
-                  className="px-3 py-1 rounded bg-gray-600 hover:bg-gray-700 text-white text-sm"
+                  className="px-4 py-2 rounded-lg bg-gray-600 hover:bg-gray-700 text-white text-sm"
                 >
                   Отмена
                 </button>
 
                 <button
+                  type="button"
                   onClick={handleCreate}
                   disabled={submitting}
-                  className="px-3 py-1 rounded bg-[#0052FF] hover:bg-[#0046D8] disabled:bg-gray-600 text-white text-sm"
+                  className="px-4 py-2 rounded-lg bg-[#0052FF] hover:bg-[#0046D8] disabled:bg-gray-600 text-white text-sm"
                 >
-                  Создать
+                  {submitting ? "Создание..." : "Создать"}
                 </button>
               </div>
             </div>
@@ -1343,13 +1349,16 @@ async function handleOpenVncBreakGlass() {
         )}
 
         {editingTarget && (
-          <div className="fixed inset-0 flex items-center justify-center bg-black/50 z-50">
-            <div className="bg-[#121A33] p-6 rounded-xl border border-[#1E2A45] w-[760px] max-w-[95vw] space-y-4">
-              <h2 className="text-lg font-semibold text-white">
-                Редактировать target #{editingTarget.id}
-              </h2>
+          <div className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-[#121A33] rounded-xl border border-[#1E2A45] w-[1040px] max-w-[96vw] max-h-[92vh] shadow-2xl overflow-hidden flex flex-col">
+              <div className="px-6 py-5 border-b border-[#1E2A45] shrink-0">
+                <h2 className="text-lg font-semibold text-white">
+                  Редактировать target #{editingTarget.id}
+                </h2>
+              </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="px-6 py-5 overflow-y-auto flex-1 space-y-4">
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className="text-sm text-gray-300">Name</label>
                   <input
@@ -1600,35 +1609,40 @@ async function handleOpenVncBreakGlass() {
                 </label>
               </div>
 
-              <div className="flex justify-between gap-2 pt-2">
+              </div>
+              <div className="px-6 py-4 border-t border-[#1E2A45] bg-[#121A33] shrink-0 flex justify-between gap-3">
                 <button
+                  type="button"
                   onClick={() => editingTarget && handleDeleteTarget(editingTarget)}
                   disabled={submitting}
-                  className="px-3 py-1 rounded bg-red-600 hover:bg-red-700 disabled:bg-gray-600 text-white text-sm"
+                  className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 disabled:bg-gray-600 text-white text-sm"
                 >
                   Удалить
                 </button>
 
-                <div className="flex gap-2">
+                <div className="flex justify-end gap-3">
                   <button
-                    onClick={closeEdit}  
-                    className="px-3 py-1 rounded bg-gray-600 hover:bg-gray-700 text-white text-sm"
+                    type="button"
+                    onClick={closeEdit}
+                    className="px-4 py-2 rounded-lg bg-gray-600 hover:bg-gray-700 text-white text-sm"
                   >
                     Отмена
                   </button>
 
                   <button
+                    type="button"
                     onClick={handleUpdate}
                     disabled={submitting}
-                    className="px-3 py-1 rounded bg-[#0052FF] hover:bg-[#0046D8] disabled:bg-gray-600 text-white text-sm"
+                    className="px-4 py-2 rounded-lg bg-[#0052FF] hover:bg-[#0046D8] disabled:bg-gray-600 text-white text-sm"
                   >
-                    Сохранить
+                    {submitting ? "Сохранение..." : "Сохранить"}
                   </button>
                 </div>
               </div>
             </div>
-          </div> 
+          </div>
         )}
+
         {breakGlassTarget && (
           <div className="fixed inset-0 flex items-center justify-center bg-black/50 z-50">
             <div className="bg-[#121A33] p-6 rounded-xl border border-[#1E2A45] w-[560px] max-w-[95vw] space-y-4">

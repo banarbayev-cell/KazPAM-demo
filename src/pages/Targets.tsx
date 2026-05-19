@@ -105,6 +105,52 @@ function normalizeTtl(raw: string): number {
   return Math.max(1, Math.min(240, parsed));
 }
 
+
+function normalizeVaultSecretId(raw: string): number | undefined {
+  const value = raw.trim();
+  if (!value) return undefined;
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return undefined;
+  }
+
+  return parsed;
+}
+
+function validateTargetForm(form: TargetFormState): string | null {
+  const protocol = toTargetProtocol(form.protocol);
+  const vaultSecretId = normalizeVaultSecretId(form.vault_secret_id);
+
+  if (!form.name.trim()) {
+    return "Укажите name целевой системы";
+  }
+
+  if (!form.host.trim()) {
+    return "Укажите host / IP целевой системы";
+  }
+
+  if (protocol === "ssh" && form.ssh_auth_mode === "gateway_key") {
+    if (!form.username.trim()) {
+      return "Для SSH gateway_key укажите target username";
+    }
+  }
+
+  if (
+    protocol === "ssh" &&
+    ["vault_password", "vault_private_key"].includes(form.ssh_auth_mode) &&
+    !vaultSecretId
+  ) {
+    return "Для SSH auth mode через Vault нужно указать Vault Secret ID";
+  }
+
+  if (form.requires_vault_secret && !vaultSecretId) {
+    return "Если включён Vault secret required, нужно указать Vault Secret ID";
+  }
+
+  return null;
+}
+
 function toTargetProtocol(value: string): TargetProtocol {
   const normalized = (value || "").trim().toLowerCase();
 
@@ -168,6 +214,7 @@ function nextSuggestedPort(nextProtocol: string, currentPort: string): string {
 
 function buildPayload(form: TargetFormState): TargetCreatePayload {
   const protocol = toTargetProtocol(form.protocol);
+  const vaultSecretId = normalizeVaultSecretId(form.vault_secret_id);
 
   return {
     name: form.name.trim(),
@@ -177,6 +224,7 @@ function buildPayload(form: TargetFormState): TargetCreatePayload {
     protocol,
     ssh_auth_mode: form.ssh_auth_mode,
     username: form.username.trim() || undefined,
+    vault_secret_id: vaultSecretId,
     requires_vault_secret: form.requires_vault_secret,
     approval_required: form.approval_required,
     break_glass_enabled: form.break_glass_enabled,
@@ -190,6 +238,7 @@ function buildPayload(form: TargetFormState): TargetCreatePayload {
 
 function buildUpdatePayload(form: TargetFormState): TargetUpdatePayload {
   const protocol = toTargetProtocol(form.protocol);
+  const vaultSecretId = normalizeVaultSecretId(form.vault_secret_id);
 
   return {
     name: form.name.trim(),
@@ -199,6 +248,7 @@ function buildUpdatePayload(form: TargetFormState): TargetUpdatePayload {
     protocol,
     ssh_auth_mode: form.ssh_auth_mode,
     username: form.username.trim() || undefined,
+    vault_secret_id: vaultSecretId,
     requires_vault_secret: form.requires_vault_secret,
     approval_required: form.approval_required,
     break_glass_enabled: form.break_glass_enabled,
@@ -359,18 +409,20 @@ export default function Targets() {
   }
 
   async function handleCreate() {
-    if (!createForm.name.trim() || !createForm.host.trim()) {
-      toast.error("Укажите name и host");
+    const validationError = validateTargetForm(createForm);
+    if (validationError) {
+      toast.error(validationError);
       return;
     }
 
     setSubmitting(true);
+
     try {
-      const desiredSecretId = Number(createForm.vault_secret_id);
+      const desiredSecretId = normalizeVaultSecretId(createForm.vault_secret_id);
 
       const created = await createTarget(buildPayload(createForm));
 
-      if (Number.isFinite(desiredSecretId) && desiredSecretId > 0) {
+      if (desiredSecretId) {
         await bindTargetVaultSecret(created.id, desiredSecretId);
       }
 
@@ -388,19 +440,21 @@ export default function Targets() {
   async function handleUpdate() {
     if (!editingTarget) return;
 
-    if (!editForm.name.trim() || !editForm.host.trim()) {
-      toast.error("Укажите name и host");
+    const validationError = validateTargetForm(editForm);
+    if (validationError) {
+      toast.error(validationError);
       return;
     }
 
     setSubmitting(true);
+
     try {
-      const desiredSecretId = Number(editForm.vault_secret_id);
+      const desiredSecretId = normalizeVaultSecretId(editForm.vault_secret_id);
       const currentSecretId = editingTarget.vault_secret_id ?? null;
 
       await updateTarget(editingTarget.id, buildUpdatePayload(editForm));
 
-      if (Number.isFinite(desiredSecretId) && desiredSecretId > 0) {
+      if (desiredSecretId) {
         if (currentSecretId !== desiredSecretId) {
           await bindTargetVaultSecret(editingTarget.id, desiredSecretId);
         }
@@ -1134,6 +1188,10 @@ async function handleOpenVncBreakGlass() {
                     className="w-full p-2 rounded bg-[#0E1A3A] border border-[#1E2A45] text-white"
                     placeholder="например: 17"
                   />
+                  <div className="text-xs text-gray-500 leading-5">
+                    Vault Secret ID нужен, если доступ к target должен выполняться через секрет из Vault
+                    или если включён режим Vault secret required. Пользователь не видит пароль или ключ.
+                  </div>
                 </div>
 
                 <div className="space-y-2">
@@ -1149,6 +1207,10 @@ async function handleOpenVncBreakGlass() {
                     className="w-full p-2 rounded bg-[#0E1A3A] border border-[#1E2A45] text-white"
                     placeholder="необязательно"
                   />
+                  <div className="text-xs text-gray-500 leading-5">
+                    Gateway Node — узел KazPAM Gateway, через который выполняется подключение к target.
+                    Используется для сегментов сети, филиалов или DMZ. Если не указан, применяется gateway по умолчанию.
+                  </div>
                 </div>
 
                 <div className="col-span-2 space-y-2">
@@ -1179,7 +1241,7 @@ async function handleOpenVncBreakGlass() {
                       }))
                     }
                   />
-                  Vault secret required
+                  Vault secret required — блокировать запуск без привязанного Vault Secret
                 </label>
 
                 <label className="flex items-center gap-2">
@@ -1406,6 +1468,11 @@ async function handleOpenVncBreakGlass() {
                   />
                 </div>
 
+                <div className="text-xs text-gray-500 leading-5">
+                  Vault Secret ID нужен, если доступ к target должен выполняться через секрет из Vault
+                  или если включён режим Vault secret required. Пользователь не видит пароль или ключ.
+                </div>
+
                 <div className="space-y-2">
                   <label className="text-sm text-gray-300">Gateway Node</label>
                   <input
@@ -1418,6 +1485,11 @@ async function handleOpenVncBreakGlass() {
                     }
                     className="w-full p-2 rounded bg-[#0E1A3A] border border-[#1E2A45] text-white"
                   />
+                </div>
+
+                <div className="text-xs text-gray-500 leading-5">
+                  Gateway Node — узел KazPAM Gateway, через который выполняется подключение к target.
+                  Используется для сегментов сети, филиалов или DMZ. Если не указан, применяется gateway по умолчанию.
                 </div>
 
                 <div className="col-span-2 space-y-2">
@@ -1447,7 +1519,7 @@ async function handleOpenVncBreakGlass() {
                       }))
                     }
                   />
-                  Vault secret required
+                  Vault secret required — блокировать запуск без привязанного Vault Secret
                 </label>
 
                 <label className="flex items-center gap-2">

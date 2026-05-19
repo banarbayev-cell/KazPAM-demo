@@ -9,11 +9,8 @@ import {
   archiveSession,
   exportSessions,
 } from "../api/sessions";
-import {
-  listAccessibleTargets,
-  listTargets,
-} from "../api/targets";
-import type { Target } from "../types/targets";
+import { listAccessibleTargets } from "../api/targets";
+import type { Target, TargetProtocol } from "../types/targets";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useAuth } from "../store/auth";
@@ -30,7 +27,6 @@ import {
   launchVncAccess,
   type VNCAccessLaunchResponse,
 } from "../api/vncAccess";
-import type { TargetProtocol } from "../types/targets";
 
 /* ===============================
    UI MODEL
@@ -122,17 +118,9 @@ function extractSessions(payload: unknown): BackendSession[] {
   if (payload && typeof payload === "object") {
     const obj = payload as Record<string, unknown>;
 
-    if (Array.isArray(obj.sessions)) {
-      return obj.sessions as BackendSession[];
-    }
-
-    if (Array.isArray(obj.items)) {
-      return obj.items as BackendSession[];
-    }
-
-    if (Array.isArray(obj.data)) {
-      return obj.data as BackendSession[];
-    }
+    if (Array.isArray(obj.sessions)) return obj.sessions as BackendSession[];
+    if (Array.isArray(obj.items)) return obj.items as BackendSession[];
+    if (Array.isArray(obj.data)) return obj.data as BackendSession[];
   }
 
   return [];
@@ -188,7 +176,6 @@ function extractErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
-
 function findRecentlyCreatedSession(
   sessions: Session[],
   options: {
@@ -207,9 +194,7 @@ function findRecentlyCreatedSession(
   const exactByTarget =
     options.targetId != null
       ? sessions.find(
-          (s) =>
-            s.target_id === options.targetId &&
-            s.status === "active"
+          (s) => s.target_id === options.targetId && s.status === "active"
         ) || null
       : null;
 
@@ -236,7 +221,6 @@ function findRecentlyCreatedSession(
 
   return sessions.find((s) => s.status === "active") || null;
 }
-
 
 function isActiveSshSession(
   session: Pick<Session, "protocol" | "app" | "conn" | "status">
@@ -321,14 +305,11 @@ function getSessionRecordingId(session: Session | null): number | null {
       if (Number.isFinite(n) && n > 0) return n;
     }
   } catch {
-    // details can be plain text; ignore
+    // ignore non-JSON details
   }
 
   return null;
 }
-
-// Для archive/filter/export режимов mergeSessions больше не нужен.
-// Список всегда берём заново с backend по текущим фильтрам.
 
 export default function Sessions() {
   const navigate = useNavigate();
@@ -346,13 +327,6 @@ export default function Sessions() {
   const [startOpen, setStartOpen] = useState(false);
   const [launchProtocol, setLaunchProtocol] = useState<LaunchProtocol>("ssh");
   const [selectedTargetId, setSelectedTargetId] = useState("");
-  const [manualMode, setManualMode] = useState(false);
-  const [manualForm, setManualForm] = useState({
-    user: "",
-    system: "",
-    os: "Linux",
-    ip: "",
-  });
 
   const [loading, setLoading] = useState(false);
   const [targetsLoading, setTargetsLoading] = useState(false);
@@ -362,13 +336,10 @@ export default function Sessions() {
 
   const [webAccessResult, setWebAccessResult] =
     useState<WebAccessLaunchResponse | null>(null);
-
   const [dbAccessResult, setDbAccessResult] =
     useState<DBAccessLaunchResponse | null>(null);
-
   const [vncAccessResult, setVncAccessResult] =
     useState<VNCAccessLaunchResponse | null>(null);
-
   const [rdpLaunchResult, setRdpLaunchResult] =
     useState<RDPSessionStartResponse | null>(null);
 
@@ -376,13 +347,11 @@ export default function Sessions() {
     window.dispatchEvent(new Event("kazpam:sessions-changed"));
   };
 
-  const loadSessions = async (
-    options?: {
-      archived?: boolean;
-      status?: string;
-    }
-  ): Promise<Session[]> => {
-    setLoading(true);    
+  const loadSessions = async (options?: {
+    archived?: boolean;
+    status?: string;
+  }): Promise<Session[]> => {
+    setLoading(true);
 
     try {
       const data = await getAllSessions(
@@ -390,6 +359,7 @@ export default function Sessions() {
         options?.archived ?? archiveMode === "archived",
         options?.status ?? statusFilter
       );
+
       const normalized = extractSessions(data)
         .map(mapBackendSession)
         .sort((a, b) => b.id - a.id);
@@ -410,22 +380,8 @@ export default function Sessions() {
 
     try {
       const accessible = await listAccessibleTargets(protocol);
-      const accessibleByProtocol = Array.isArray(accessible)
+      const filteredByProtocol = Array.isArray(accessible)
         ? accessible.filter(
-            (t) =>
-              String(t.protocol || "").toLowerCase() === protocol &&
-              t.is_active !== false
-          )
-        : [];
-
-      if (accessibleByProtocol.length > 0) {
-        setTargets(accessibleByProtocol);
-        return;
-      }
-
-      const all = await listTargets();
-      const filteredByProtocol = Array.isArray(all)
-        ? all.filter(
             (t) =>
               String(t.protocol || "").toLowerCase() === protocol &&
               t.is_active !== false
@@ -436,7 +392,7 @@ export default function Sessions() {
     } catch (error) {
       setTargets([]);
       toast.error(
-        extractErrorMessage(error, "Не удалось загрузить список систем")
+        extractErrorMessage(error, "Не удалось загрузить список доступных систем")
       );
     } finally {
       setTargetsLoading(false);
@@ -446,24 +402,14 @@ export default function Sessions() {
   useEffect(() => {
     loadSessions();
   }, [archiveMode, statusFilter]);
-  
+
   useEffect(() => {
     if (!startOpen) return;
 
     setSelectedTargetId("");
-    setManualMode(false);
     loadTargets(launchProtocol);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [startOpen, launchProtocol]);  
-
-  useEffect(() => {
-    if (!startOpen) return;
-
-    setManualForm((prev) => ({
-      ...prev,
-      user: prev.user || authUser?.email || "",
-    }));
-  }, [startOpen, authUser?.email]);
+  }, [startOpen, launchProtocol]);
 
   const protocolTargets = useMemo(() => {
     return targets.filter(
@@ -525,13 +471,9 @@ export default function Sessions() {
 
       await loadSessions();
     } catch (error) {
-      toast.error(
-        extractErrorMessage(error, "Не удалось завершить сессию")
-      );
+      toast.error(extractErrorMessage(error, "Не удалось завершить сессию"));
     }
   };
-
-
 
   const handleAudit = (session: Session) => {
     navigate(`/audit?session_id=${session.id}`);
@@ -600,39 +542,24 @@ export default function Sessions() {
     try {
       setLaunchLoading(true);
 
-      if (!manualMode && !selectedTarget) {
+      if (!selectedTarget) {
         toast.error("Выберите целевую систему");
         return;
       }
 
       if (launchProtocol === "ssh") {
-        let startResponse: Awaited<ReturnType<typeof startSession>> | null = null;
-
-        if (!manualMode) {
-          if (!selectedTarget) {
-            toast.error("Выберите целевую систему");
-            return;
-          }
-
-          startResponse = await startSession({
-            user:
-              selectedTarget.username?.trim() ||
-              authUser?.email ||
-              "unknown",
-            target_id: selectedTarget.id,
-            app: "SSH",
-            mfa_passed: false,
-          });
-        } else {
-          startResponse = await startSession({
-            user: manualForm.user,
-            system: manualForm.system,
-            os: manualForm.os,
-            ip: manualForm.ip,
-            app: "SSH",
-            mfa_passed: false,
-          });
+        const targetUsername = selectedTarget.username?.trim();
+        if (!targetUsername) {
+          toast.error("Для выбранной SSH-системы не задана учётная запись");
+          return;
         }
+
+        const startResponse = await startSession({
+          user: targetUsername,
+          target_id: selectedTarget.id,
+          app: "SSH",
+          mfa_passed: false,
+        });
 
         setStartOpen(false);
 
@@ -647,12 +574,10 @@ export default function Sessions() {
             ? freshSessions.find((s) => s.id === startedSessionId) || null
             : null) ||
           findRecentlyCreatedSession(freshSessions, {
-            targetId: !manualMode ? selectedTarget?.id ?? null : null,
-            system: manualMode ? manualForm.system : selectedTarget?.name,
-            ip: manualMode ? manualForm.ip : selectedTarget?.host,
-            user: !manualMode
-              ? selectedTarget?.username?.trim() || authUser?.email || ""
-              : manualForm.user,
+            targetId: selectedTarget.id,
+            system: selectedTarget.name,
+            ip: selectedTarget.host,
+            user: targetUsername,
           });
 
         if (matchedSession) {
@@ -668,22 +593,11 @@ export default function Sessions() {
         }
 
         setSelectedTargetId("");
-        setManualForm({
-          user: authUser?.email || "",
-          system: "",
-          os: "Linux",
-          ip: "",
-        });
 
         if (!matchedSession) {
           toast.success("SSH-сессия создана");
         }
 
-        return;
-      }
-
-      if (!selectedTarget) {
-        toast.error("Выберите целевую систему");
         return;
       }
 
@@ -768,36 +682,34 @@ export default function Sessions() {
       const message = extractErrorMessage(error, "Не удалось запустить доступ");
 
       if (
-      message.includes("Target requires a bound vault secret and active approval before launch")
-    ) {
-      toast.error(
-        "Для этого target нужен Vault Secret и активное согласование. Привяжите секрет к target и создайте/одобрите запрос доступа."
-      );
-    } else if (
-      message.includes("Target requires an active approval grant before launch")
-    ) {
-      toast.error(
-        "Для этого target нужен approval. Создайте и одобрите запрос доступа перед запуском."
-      );
-    } else if (
-      message.includes("Target requires a bound vault secret before launch")
-    ) {
-      toast.error(
-        "Для этого target нужно сначала привязать Vault Secret."
-      );
-    } else if (
-      message.includes("Access denied for this target")
-    ) {
-      toast.error(
-        "Нет доступа к этому target. Назначьте роль через Targets → Доступ."
-      );
-    } else {
-      toast.error(message);
+        message.includes(
+          "Target requires a bound vault secret and active approval before launch"
+        )
+      ) {
+        toast.error(
+          "Для этого target нужен Vault Secret и активное согласование. Привяжите секрет к target и создайте/одобрите запрос доступа."
+        );
+      } else if (
+        message.includes("Target requires an active approval grant before launch")
+      ) {
+        toast.error(
+          "Для этого target нужен approval. Создайте и одобрите запрос доступа перед запуском."
+        );
+      } else if (
+        message.includes("Target requires a bound vault secret before launch")
+      ) {
+        toast.error("Для этого target нужно сначала привязать Vault Secret.");
+      } else if (message.includes("Access denied for this target")) {
+        toast.error(
+          "Нет доступа к этому target. Назначьте роль через Targets → Доступ."
+        );
+      } else {
+        toast.error(message);
+      }
+    } finally {
+      setLaunchLoading(false);
     }
-  } finally {
-    setLaunchLoading(false);
-  }
-};
+  };
 
   const activeCount = sessions.filter((s) => s.status === "active").length;
   const completedCount = sessions.filter(
@@ -806,7 +718,6 @@ export default function Sessions() {
   const failedCount = sessions.filter((s) => s.status === "failed").length;
   const archivedCount = sessions.filter((s) => s.is_archived).length;
   const recordedCount = sessions.filter((s) => getSessionRecordingId(s)).length;
-
 
   return (
     <div className="p-6 w-full bg-gray-100 text-gray-900">
@@ -842,53 +753,54 @@ export default function Sessions() {
       <div className="mb-5 rounded-xl border border-blue-200 bg-white p-4 text-sm text-gray-700 shadow-sm">
         <div className="font-semibold text-gray-900 mb-1">Enterprise session control</div>
         <div>
-          Архивирование не удаляет сессию, audit и recording. Оно только скрывает завершённую сессию из основного списка.
-          Для расследования используйте “Аудит этой сессии” и “Replay”, если запись доступна.
+          Архивирование не удаляет сессию, audit и recording. Оно только скрывает завершённую
+          сессию из основного списка. Для расследования используйте “Аудит этой сессии” и
+          “Replay”, если запись доступна.
         </div>
-      </div>  
+      </div>
 
-    <div className="mb-6 flex flex-wrap gap-3 items-center">
-      <button
-        onClick={() => setStartOpen(true)}
-        className="px-4 py-2 bg-[#0052FF] text-white rounded"
-      >
-        Запустить сессию
-      </button>
+      <div className="mb-6 flex flex-wrap gap-3 items-center">
+        <button
+          onClick={() => setStartOpen(true)}
+          className="px-4 py-2 bg-[#0052FF] text-white rounded"
+        >
+          Запустить сессию
+        </button>
 
-      <button
-        onClick={handleExportCsv}
-        className="px-4 py-2 bg-[#1A243F] text-white rounded"
-      >
-        Экспорт CSV
-      </button>
+        <button
+          onClick={handleExportCsv}
+          className="px-4 py-2 bg-[#1A243F] text-white rounded"
+        >
+          Экспорт CSV
+        </button>
 
-      <button
-        onClick={handleExportJson}
-        className="px-4 py-2 bg-[#1A243F] text-white rounded"
-      >
-        Экспорт JSON
-      </button>
+        <button
+          onClick={handleExportJson}
+          className="px-4 py-2 bg-[#1A243F] text-white rounded"
+        >
+          Экспорт JSON
+        </button>
 
-      <select
-        value={archiveMode}
-        onChange={(e) => setArchiveMode(e.target.value as "main" | "archived")}
-        className="px-3 py-2 rounded border bg-white text-gray-900"
-      >
-        <option value="main">Основной список</option>
-        <option value="archived">Архив</option>
-      </select>
+        <select
+          value={archiveMode}
+          onChange={(e) => setArchiveMode(e.target.value as "main" | "archived")}
+          className="px-3 py-2 rounded border bg-white text-gray-900"
+        >
+          <option value="main">Основной список</option>
+          <option value="archived">Архив</option>
+        </select>
 
-      <select
-        value={statusFilter}
-        onChange={(e) => setStatusFilter(e.target.value)}
-        className="px-3 py-2 rounded border bg-white text-gray-900"
-      >
-        <option value="all">Все статусы</option>
-        <option value="active">Активные</option>
-        <option value="terminated">Завершённые</option>
-        <option value="failed">Ошибки</option>
-      </select>
-    </div>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="px-3 py-2 rounded border bg-white text-gray-900"
+        >
+          <option value="all">Все статусы</option>
+          <option value="active">Активные</option>
+          <option value="terminated">Завершённые</option>
+          <option value="failed">Ошибки</option>
+        </select>
+      </div>
 
       <Input
         placeholder="Поиск: session ID / user / system / IP / protocol / target / vault / recording..."
@@ -910,7 +822,7 @@ export default function Sessions() {
               <th className="p-3">Действия</th>
             </tr>
           </thead>
- 
+
           <tbody>
             {loading ? (
               <tr className="border-t border-[#1E2A45]">
@@ -978,12 +890,8 @@ export default function Sessions() {
         open={detailOpen}
         onClose={() => setDetailOpen(false)}
         session={selectedSession}
-        onTerminate={() =>
-          selectedSession && handleTerminate(selectedSession)
-        }
-        onAudit={() =>
-          selectedSession && handleAudit(selectedSession)
-        }
+        onTerminate={() => selectedSession && handleTerminate(selectedSession)}
+        onAudit={() => selectedSession && handleAudit(selectedSession)}
         onOpenReplay={() => {
           const recordingId = getSessionRecordingId(selectedSession);
           if (!recordingId) {
@@ -996,8 +904,8 @@ export default function Sessions() {
       />
 
       {launchResultOpen && launchedSession && (
-         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[9999]">
-           <div className="bg-[#121A33] p-6 rounded-xl w-[560px] max-w-[95vw] max-h-[90vh] overflow-y-auto text-white space-y-4 border border-[#1E2A45] shadow-2xl">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[9999]">
+          <div className="bg-[#121A33] p-6 rounded-xl w-[560px] max-w-[95vw] max-h-[90vh] overflow-y-auto text-white space-y-4 border border-[#1E2A45] shadow-2xl">
             <h2 className="text-lg font-semibold">Сессия создана</h2>
 
             <div className="text-sm text-gray-300 leading-6">
@@ -1051,8 +959,8 @@ export default function Sessions() {
 
             <div className="rounded-lg border border-[#1E2A45] bg-[#0E1A3A] p-4 text-sm text-gray-300 leading-6">
               {launchedSession && isActiveSshSession(launchedSession)
-              ? "Сессия создана. Для начала работы откройте экран подключения: там будет готовая SSH-команда для входа через KazPAM Gateway."
-              : "Сессия создана и доступна для просмотра и контроля из интерфейса KazPAM."}
+                ? "Сессия создана. Для начала работы откройте экран подключения: там будет готовая SSH-команда для входа через KazPAM Gateway."
+                : "Сессия создана и доступна для просмотра и контроля из интерфейса KazPAM."}
             </div>
 
             <div className="flex justify-end gap-2">
@@ -1070,7 +978,7 @@ export default function Sessions() {
                   setLaunchResultOpen(false);
                   if (launchedSession) {
                     openSession(launchedSession);
-                  }  
+                  }
                 }}
                 className="px-4 py-2 bg-[#0052FF] rounded"
               >
@@ -1094,8 +1002,12 @@ export default function Sessions() {
 
             <div className="rounded-lg bg-[#0E1A3A] border border-[#1E2A45] p-4 text-sm space-y-2">
               <div>Session ID: #{webAccessResult.session_id}</div>
-              <div>Target: #{webAccessResult.target_id} · {webAccessResult.target_name}</div>
-              <div>Host: {webAccessResult.target_host}:{webAccessResult.target_port}</div>
+              <div>
+                Target: #{webAccessResult.target_id} · {webAccessResult.target_name}
+              </div>
+              <div>
+                Host: {webAccessResult.target_host}:{webAccessResult.target_port}
+              </div>
               <div>Protocol: {webAccessResult.protocol.toUpperCase()}</div>
               <div>Break-glass: {webAccessResult.break_glass ? "Да" : "Нет"}</div>
             </div>
@@ -1137,11 +1049,12 @@ export default function Sessions() {
 
       {rdpLaunchResult && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[9999]">
-           <div className="bg-[#121A33] p-6 rounded-xl w-[620px] max-w-[95vw] max-h-[90vh] overflow-y-auto text-white space-y-4 border border-[#1E2A45] shadow-2xl">
+          <div className="bg-[#121A33] p-6 rounded-xl w-[620px] max-w-[95vw] max-h-[90vh] overflow-y-auto text-white space-y-4 border border-[#1E2A45] shadow-2xl">
             <h2 className="text-lg font-semibold">RDP launch создан</h2>
 
             <div className="text-sm text-gray-300 leading-6">
-              KazPAM создал RDP-доступ и grant token. Используйте его для подключения через RDP gateway/client flow.
+              KazPAM создал RDP-доступ и grant token. Используйте его для подключения через
+              RDP gateway/client flow.
             </div>
 
             <div className="grid grid-cols-2 gap-3 text-sm">
@@ -1153,7 +1066,7 @@ export default function Sessions() {
                 {rdpLaunchResult.common_session_id
                   ? `#${rdpLaunchResult.common_session_id}`
                   : "—"}
-              </div>    
+              </div>
               <div className="rounded bg-[#0E1A3A] border border-[#1E2A45] p-3">
                 Status: {rdpLaunchResult.status}
               </div>
@@ -1212,8 +1125,12 @@ export default function Sessions() {
 
             <div className="rounded-lg bg-[#0E1A3A] border border-[#1E2A45] p-4 text-sm space-y-2">
               <div>Session ID: #{dbAccessResult.session_id}</div>
-              <div>Target: #{dbAccessResult.target_id} · {dbAccessResult.target_name}</div>
-              <div>Host: {dbAccessResult.target_host}:{dbAccessResult.target_port}</div>
+              <div>
+                Target: #{dbAccessResult.target_id} · {dbAccessResult.target_name}
+              </div>
+              <div>
+                Host: {dbAccessResult.target_host}:{dbAccessResult.target_port}
+              </div>
               <div>User: {dbAccessResult.username || "—"}</div>
               <div>Break-glass: {dbAccessResult.break_glass ? "Да" : "Нет"}</div>
             </div>
@@ -1235,9 +1152,9 @@ export default function Sessions() {
                   await copyText(dbAccessResult.connection_string_stub);
                   toast.success("MS SQL connection string скопирован");
                 }}
-                  className="px-4 py-2 rounded bg-[#0052FF] text-white"
+                className="px-4 py-2 rounded bg-[#0052FF] text-white"
               >
-                  Скопировать строку
+                Скопировать строку
               </button>
             </div>
           </div>
@@ -1246,7 +1163,7 @@ export default function Sessions() {
 
       {vncAccessResult && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[9999]">
-           <div className="bg-[#121A33] p-6 rounded-xl w-[620px] max-w-[95vw] max-h-[90vh] overflow-y-auto text-white space-y-4 border border-[#1E2A45] shadow-2xl">
+          <div className="bg-[#121A33] p-6 rounded-xl w-[620px] max-w-[95vw] max-h-[90vh] overflow-y-auto text-white space-y-4 border border-[#1E2A45] shadow-2xl">
             <h2 className="text-lg font-semibold">VNC access подготовлен</h2>
 
             <div className="text-sm text-gray-300 leading-6">
@@ -1255,9 +1172,15 @@ export default function Sessions() {
 
             <div className="rounded-lg bg-[#0E1A3A] border border-[#1E2A45] p-4 text-sm space-y-2">
               <div>Session ID: #{vncAccessResult.session_id}</div>
-              <div>Target: #{vncAccessResult.target_id} · {vncAccessResult.target_name}</div>
-              <div>Target host: {vncAccessResult.target_host}:{vncAccessResult.target_port}</div>
-              <div>Launch: {vncAccessResult.launch_host}:{vncAccessResult.launch_port}</div>
+              <div>
+                Target: #{vncAccessResult.target_id} · {vncAccessResult.target_name}
+              </div>
+              <div>
+                Target host: {vncAccessResult.target_host}:{vncAccessResult.target_port}
+              </div>
+              <div>
+                Launch: {vncAccessResult.launch_host}:{vncAccessResult.launch_port}
+              </div>
               <div>User: {vncAccessResult.username || "—"}</div>
               <div>Break-glass: {vncAccessResult.break_glass ? "Да" : "Нет"}</div>
             </div>
@@ -1288,10 +1211,9 @@ export default function Sessions() {
         </div>
       )}
 
-
       {startOpen && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[9999]">
-           <div className="bg-[#121A33] p-6 rounded-xl w-[520px] max-w-[95vw] max-h-[90vh] overflow-y-auto text-white space-y-4 border border-[#1E2A45] shadow-2xl">
+          <div className="bg-[#121A33] p-6 rounded-xl w-[520px] max-w-[95vw] max-h-[90vh] overflow-y-auto text-white space-y-4 border border-[#1E2A45] shadow-2xl">
             <h2 className="text-lg font-semibold">Запуск сессии</h2>
 
             <div className="space-y-1">
@@ -1323,13 +1245,16 @@ export default function Sessions() {
                 value={selectedTargetId}
                 onChange={(e) => setSelectedTargetId(e.target.value)}
                 className="w-full px-3 py-2 rounded bg-[#0E1A3A] border border-[#1E2A45] text-sm text-white"
-                disabled={targetsLoading}
+                disabled={targetsLoading || launchLoading}
               >
                 <option value="">
                   {targetsLoading
                     ? "Загрузка систем..."
+                    : protocolTargets.length === 0
+                    ? `Нет доступных ${protocolLabel(launchProtocol)} targets`
                     : `Выберите ${protocolLabel(launchProtocol)} target`}
                 </option>
+
                 {protocolTargets.map((target) => (
                   <option key={target.id} value={target.id}>
                     {target.name} — {target.host}:{target.port}
@@ -1365,7 +1290,7 @@ export default function Sessions() {
                   <div className="space-y-1">
                     <div className="text-sm text-gray-400">Учётная запись</div>
                     <div className="px-3 py-2 rounded bg-[#0E1A3A] border border-[#1E2A45] text-sm">
-                      {selectedTarget.username || "Будет определена backend"}
+                      {selectedTarget.username || "—"}
                     </div>
                   </div>
                 </div>
@@ -1390,51 +1315,6 @@ export default function Sessions() {
               </>
             )}
 
-           {launchProtocol === "ssh" && (
-             <>
-               <div className="pt-1">
-                  <button
-                    type="button"
-                    onClick={() => setManualMode((prev) => !prev)}
-                    className="text-xs text-gray-400 underline"
-                  >
-                    {manualMode
-                      ? "Скрыть ручной режим"
-                      : "Ручной режим (admin fallback)"}
-                  </button>
-                </div>
-
-            {manualMode && (
-              <div className="space-y-3 pt-2 border-t border-[#1E2A45]">
-                <Input
-                  placeholder="Пользователь / учётная запись"
-                  value={manualForm.user}
-                  onChange={(e) =>
-                    setManualForm({ ...manualForm, user: e.target.value })
-                  }
-                />
-
-                <Input
-                  placeholder="Система"
-                  value={manualForm.system}
-                  onChange={(e) =>
-                    setManualForm({ ...manualForm, system: e.target.value })
-                  }
-                />
-
-                <Input
-                  placeholder="IP"
-                  value={manualForm.ip}
-                  onChange={(e) =>
-                    setManualForm({ ...manualForm, ip: e.target.value })
-                  }
-                />
-              </div>
-            )}
-          </>
-        )}
-
-
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => setStartOpen(false)}
@@ -1444,11 +1324,11 @@ export default function Sessions() {
               </button>
 
               <button
-                disabled={launchLoading || (!manualMode && !selectedTarget)}
+                disabled={launchLoading || !selectedTarget}
                 className="px-4 py-2 bg-[#0052FF] rounded disabled:bg-gray-600"
                 onClick={handleLaunch}
               >
-                Запустить
+                {launchLoading ? "Запуск..." : "Запустить"}
               </button>
             </div>
           </div>

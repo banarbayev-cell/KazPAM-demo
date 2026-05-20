@@ -27,6 +27,7 @@ import type {
   SSHAuthMode,
   TargetProtocol,
 } from "@/types/targets";
+import TargetUserAccessModal from "@/components/modals/TargetUserAccessModal";
 
 type TargetFormState = {
   name: string;
@@ -325,6 +326,10 @@ export default function Targets() {
     user?.permissions?.includes("request_vault_access")
   );
 
+  const canManageInventoryAccess = Boolean(
+    user?.permissions?.includes("manage_inventory_access")
+  );
+
   const [targets, setTargets] = useState<Target[]>([]);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -339,6 +344,7 @@ export default function Targets() {
   const [editForm, setEditForm] = useState<TargetFormState>(emptyForm);
 
   const [roleAccessTarget, setRoleAccessTarget] = useState<Target | null>(null);
+  const [userAccessTarget, setUserAccessTarget] = useState<Target | null>(null);
 
   const [breakGlassTarget, setBreakGlassTarget] = useState<Target | null>(null);
   const [breakGlassReason, setBreakGlassReason] = useState("");
@@ -958,14 +964,23 @@ async function handleOpenVncBreakGlass() {
                           Edit
                         </button>
 
-                        {canManageTargets && (
-                          <button
-                            onClick={() => setRoleAccessTarget(target)}
-                            className="px-3 py-1 rounded bg-[#0052FF] hover:bg-[#0046D8] text-white text-xs"
-                          >
-                            Доступ
-                          </button>
-                          )}
+                        {canManageInventoryAccess && (
+                          <>
+                            <button
+                              onClick={() => setUserAccessTarget(target)}
+                              className="px-3 py-1 rounded bg-[#0052FF] hover:bg-[#0046D8] text-white text-xs"
+                            >
+                              Пользователи
+                            </button>
+
+                            <button
+                              onClick={() => setRoleAccessTarget(target)}
+                              className="px-3 py-1 rounded bg-[#1E2A45] hover:bg-[#2A3A5F] text-white text-xs"
+                            >
+                              Роли
+                            </button>
+                          </>
+                        )}
 
                         {target.protocol === "rdp" && canStartRdp && (
                           <button
@@ -1896,6 +1911,13 @@ async function handleOpenVncBreakGlass() {
                 </div>
               </div>
             )}
+
+              <TargetUserAccessModal
+                open={Boolean(userAccessTarget)}
+                target={userAccessTarget}
+                onClose={() => setUserAccessTarget(null)}
+                onUpdated={load}
+              />
 
               <TargetRoleAccessModal
                 open={Boolean(roleAccessTarget)}
